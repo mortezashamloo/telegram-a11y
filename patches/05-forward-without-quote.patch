@@ -1,0 +1,16 @@
+# Guidance-style patch. Upstream line numbers drift; CI also uses sed fallbacks.
+# Full instructions: see 05-forward-without-quote.md
+
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java
+@@ -2563,7 +2563,9 @@
+                     }
+                     req.random_id = randomIds;
+                     req.id = ids;
+-                    req.drop_author = forwardFromMyName;
++                    // a11y-fork: honour separate "Forward without quote" menu item
++                    req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE;
++                    org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;
+                     req.drop_media_captions = hideCaption;
+                     req.with_my_score = messages.size() == 1 && messages.get(0).messageOwner.with_my_score;
+                     req.from_ephemeral = fwdEphemeral;
