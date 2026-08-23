@@ -2,10 +2,6 @@ name: Build APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "patches/**"
-      - ".github/workflows/build-apk.yml"
 
 jobs:
   build:
@@ -13,30 +9,24 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Checkout this repo (patches + workflow)
+      - name: Checkout this repo
         uses: actions/checkout@v4
         with:
           path: patches-repo
 
-      - name: Clone Telegram sources (full submodules)
+      - name: Clone Telegram with submodules
         run: |
           set -e
-          git clone --recursive --depth 1 \
-            https://github.com/DrKLO/Telegram.git telegram
+          git clone --recursive --depth 1 https://github.com/DrKLO/Telegram.git telegram
           cd telegram
-          # Ensure every submodule is present (shallow can leave empty dirs)
           git submodule sync --recursive
-          git submodule update --init --recursive --depth 1 || \
-            git submodule update --init --recursive
-          # jlatexmath is required by TMessagesProj
+          git submodule update --init --recursive --depth 1 || git submodule update --init --recursive
           if [ ! -f TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle ] && [ ! -f TMessagesProj/lib/jlatexmath/build.gradle ]; then
-            echo "jlatexmath missing — cloning explicitly"
+            echo "jlatexmath missing - cloning explicitly"
             rm -rf TMessagesProj/lib/jlatexmath
             git clone --depth 1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
           fi
-          echo "=== jlatexmath tree ==="
           find TMessagesProj/lib/jlatexmath -maxdepth 3 -type f -name "build.gradle" | head -20
-          ls -la TMessagesProj/lib/jlatexmath || true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -47,17 +37,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK platform / build-tools / NDK
+      - name: Install SDK components
         run: |
-          sdkmanager --install \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;27.2.12479018" \
-            "cmake;3.22.1"
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
-          echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
 
-      - name: Inject API_ID / API_HASH into BuildVars
+      - name: Inject API credentials
         env:
           API_ID: ${{ secrets.TELEGRAM_API_ID }}
           API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -80,68 +65,49 @@ jobs:
           print("BuildVars patched OK")
           PY
 
-      - name: Wire jlatexmath into settings.gradle
+      - name: Wire jlatexmath module
         run: |
           set -e
           cd telegram
-          # Find actual module path inside the submodule
           if [ -f TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle ]; then
             JDIR="TMessagesProj/lib/jlatexmath/jlatexmath"
           elif [ -f TMessagesProj/lib/jlatexmath/build.gradle ]; then
             JDIR="TMessagesProj/lib/jlatexmath"
           else
             echo "ERROR: cannot locate jlatexmath build.gradle"
-            find TMessagesProj/lib -type f -name "build.gradle" | head -20
+            find TMessagesProj/lib -type f -name "build.gradle" | head -20 || true
             exit 1
           fi
-          echo "jlatexmath module dir: $JDIR"
-          # Append include if missing
+          echo "jlatexmath dir: $JDIR"
           if ! grep -q "include ':jlatexmath'" settings.gradle; then
-            cat >> settings.gradle <<EOF
-
-include ':jlatexmath'
-project(':jlatexmath').projectDir = new File(rootDir, '$JDIR')
-EOF
-            echo "Patched settings.gradle:"
-            cat settings.gradle
+            printf "\ninclude ':jlatexmath'\nproject(':jlatexmath').projectDir = new File(rootDir, '%s')\n" "$JDIR" >> settings.gradle
           fi
+          cat settings.gradle
 
-      - name: Apply accessibility patches (if present)
+      - name: Apply a11y patches
         run: |
           set -e
           PDIR="patches-repo/patches"
           if [ -d "$PDIR" ]; then
-            echo "Patches folder found — apply any *.patch files"
             shopt -s nullglob
             for f in "$PDIR"/*.patch; do
               echo "Applying $f"
-              # apply from telegram root with absolute patch path
-              git -C telegram apply --whitespace=nowarn "$PWD/$f" || \
-                git -C telegram apply -3 "$PWD/$f" || true
+              git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
             done
           fi
-
           SMH="telegram/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java"
           CA="telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java"
-          if [ -f "$SMH" ]; then
-            if ! grep -q "IS_FORWARD_NO_QUOTE" "$SMH" 2>/dev/null; then
-              sed -i 's/req\.drop_author = forwardFromMyName;/req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE; org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;/' "$SMH" || true
-              echo "Patched drop_author line in SendMessagesHelper (flag-aware)"
-            fi
+          if [ -f "$SMH" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$SMH"; then
+            sed -i 's/req\.drop_author = forwardFromMyName;/req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE; org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;/' "$SMH" || true
           fi
-          if [ -f "$CA" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$CA" 2>/dev/null; then
+          if [ -f "$CA" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$CA"; then
             sed -i '0,/protected TLRPC.Chat currentChat;/s//public static boolean IS_FORWARD_NO_QUOTE = false;\n    protected TLRPC.Chat currentChat;/' "$CA" || true
-            echo "Injected IS_FORWARD_NO_QUOTE into ChatActivity"
           fi
-
-      - name: Make gradlew executable
-        working-directory: telegram
-        run: chmod +x gradlew
 
       - name: Build debug APK
         working-directory: telegram
         run: |
-          # App module produces the installable APK (library module does not)
+          chmod +x gradlew
           ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
@@ -153,7 +119,7 @@ EOF
           echo "path=$APK" >> $GITHUB_OUTPUT
           ls -lh "$APK"
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: telegram-a11y-debug
