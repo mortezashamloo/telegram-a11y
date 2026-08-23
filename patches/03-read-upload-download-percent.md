@@ -1,68 +1,26 @@
-# ۳) خواندن درصد آپلود و دانلود
+# 03 – Announce upload/download percent (TalkBack)
 
-TalkBack به‌طور پیش‌فرض درصد را مدام اعلام نمی‌کند. باید هنگام تغییر پیشرفت، رویداد دسترس‌پذیری بفرستی.
+## Why previous APK had no changes
 
-## الف) هنگام ساخت متن درصد (قبلاً در سلول هست)
+Most “patches” were **documentation only** (`.md`). CI only auto-applies `*.patch` + a few sed lines. The APK you installed was built from an early workflow with almost **no real code edits**.
 
-در `ChatMessageCell` حدود متد ساخت `loadingProgressLayout` (جستجو: `loadingProgressLayout = new StaticLayout`)  
-متن درصد مثل `"42%"` ساخته می‌شود. همانجا بعد از به‌روز شدن درصد، announce کن.
+## NekoGram pattern
 
-### الگوی پیشنهادی (داخل `ChatMessageCell`):
+Nekogram exposes `AccConfig.announceFileProgress` (default `true`) and settings string `AccAnnounceFileProgress` (“Announce file progress”). The actual announce logic is meant to fire while file radial progress updates — throttle so TalkBack is not flooded.
 
-```java
-private int lastAnnouncedProgress = -1;
+Our CI injects equivalent behavior into Telegram’s `RadialProgress` (message media load/upload ring):
 
-private void maybeAnnounceProgress(int percent, boolean uploading) {
-    if (percent < 0 || percent > 100) return;
-    // فقط هر ۵٪ یک‌بار تا شلوغ نشود
-    if (percent != 100 && percent / 5 == lastAnnouncedProgress / 5 && percent != 0) {
-        return;
-    }
-    if (percent == lastAnnouncedProgress) return;
-    lastAnnouncedProgress = percent;
+- On progress change, if accessibility is enabled
+- Announce every **10%** step: `"Uploading 40 percent"` / `"Downloading 40 percent"` (or generic `"40 percent"`)
+- Skip tiny deltas
 
-    AccessibilityManager am = (AccessibilityManager)
-            getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
-    if (am == null || !am.isEnabled()) return;
+## Implementation location
 
-    String msg = uploading
-            ? LocaleController.formatString("A11yUploadingPercent", R.string.A11yUploadingPercent, percent)
-            : LocaleController.formatString("A11yDownloadingPercent", R.string.A11yDownloadingPercent, percent);
+- `org.telegram.ui.Components.RadialProgress` — `setProgress(float, boolean)`
+- Optionally `ChatMessageCell` when it updates `radialProgress`
 
-    announceForAccessibility(msg);
-}
-```
+## Manual test
 
-### کجا صدا بزنی؟
-
-هر جا `radialProgress.setProgress(loadingProgress, ...)` یا `loadingProgressLayout` با درصد جدید ساخته می‌شود:
-
-```java
-float loadingProgress = DownloadController.getProgress(progress); // 0..1
-int percent = Math.round(loadingProgress * 100f);
-maybeAnnounceProgress(percent, /* uploading= */ buttonState == /* upload state */);
-```
-
-## ب) رشته‌های فارسی / انگلیسی
-
-در `TMessagesProj/src/main/res/values/strings.xml`:
-
-```xml
-<string name="A11yUploadingPercent">Uploading %1$d percent</string>
-<string name="A11yDownloadingPercent">Downloading %1$d percent</string>
-```
-
-در `values-fa/strings.xml` (اگر هست):
-
-```xml
-<string name="A11yUploadingPercent">در حال ارسال، %1$d درصد</string>
-<string name="A11yDownloadingPercent">در حال دریافت، %1$d درصد</string>
-```
-
-## ج) ریست هنگام پیام جدید
-
-در جایی که `setMessageObject` / تعویض پیام سلول انجام می‌شود:
-
-```java
-lastAnnouncedProgress = -1;
-```
+1. TalkBack on
+2. Send a large file / download a large media
+3. Hear percent steps ~0, 10, 20, … 100
