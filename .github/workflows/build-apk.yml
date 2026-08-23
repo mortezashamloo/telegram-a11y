@@ -22,7 +22,6 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive --depth 1 || git submodule update --init --recursive
           if [ ! -f TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle ] && [ ! -f TMessagesProj/lib/jlatexmath/build.gradle ]; then
-            echo "jlatexmath missing - cloning explicitly"
             rm -rf TMessagesProj/lib/jlatexmath
             git clone --depth 1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
           fi
@@ -74,15 +73,13 @@ jobs:
             JDIR="TMessagesProj/lib/jlatexmath"
           else
             echo "ERROR: cannot locate jlatexmath build.gradle"
-            find TMessagesProj/lib -type f -name "build.gradle" | head -20 || true
             exit 1
           fi
-          echo "jlatexmath dir: $JDIR"
           if ! grep -q "include ':jlatexmath'" settings.gradle; then
             printf "\ninclude ':jlatexmath'\nproject(':jlatexmath').projectDir = new File(rootDir, '%s')\n" "$JDIR" >> settings.gradle
           fi
 
-      - name: Apply a11y patches
+      - name: Apply a11y patches (REAL code edits)
         run: |
           set -e
           PDIR="patches-repo/patches"
@@ -97,91 +94,117 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
+
+          # --- AppName ---
           root = Path("telegram/TMessagesProj/src/main/res")
-          for rel in ["values/strings.xml"]:
-              p = root / rel
-              if not p.exists():
-                  continue
+          p = root / "values/strings.xml"
+          if p.exists():
               t = p.read_text(encoding="utf-8")
-              t2, n = re.subn(
-                  r'(<string\s+name="AppName">)[^<]*(</string>)',
-                  r"\1Telegram Accessible\2",
-                  t,
-                  count=1,
-              )
+              t2, n = re.subn(r'(<string\s+name="AppName">)[^<]*(</string>)', r"\1Telegram Accessible\2", t, count=1)
               if n:
                   p.write_text(t2, encoding="utf-8")
-                  print(f"AppName EN patched in {rel}")
-              else:
-                  print(f"WARN: AppName not found in {rel}")
-          for rel in ["values-fa/strings.xml", "values-fa-rIR/strings.xml"]:
-              p = root / rel
-              if not p.exists():
-                  if rel == "values-fa/strings.xml":
-                      p.parent.mkdir(parents=True, exist_ok=True)
-                      p.write_text(
-                          '<?xml version="1.0" encoding="utf-8"?>\n'
-                          '<resources>\n'
-                          '    <string name="AppName">تلگرام دسترس‌پذیر</string>\n'
-                          '</resources>\n',
-                          encoding="utf-8",
-                      )
-                      print(f"Created {rel} with Persian AppName")
-                  continue
-              t = p.read_text(encoding="utf-8")
+                  print("AppName EN OK")
+          fa = root / "values-fa/strings.xml"
+          fa.parent.mkdir(parents=True, exist_ok=True)
+          if not fa.exists():
+              fa.write_text('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="AppName">تلگرام دسترس‌پذیر</string>\n</resources>\n', encoding="utf-8")
+          else:
+              t = fa.read_text(encoding="utf-8")
               if 'name="AppName"' in t:
+                  t2, _ = re.subn(r'(<string\s+name="AppName">)[^<]*(</string>)', r"\1تلگرام دسترس‌پذیر\2", t, count=1)
+                  fa.write_text(t2, encoding="utf-8")
+              else:
+                  fa.write_text(t.replace("</resources>", '    <string name="AppName">تلگرام دسترس‌پذیر</string>\n</resources>'), encoding="utf-8")
+          print("AppName FA OK")
+
+          # --- RadialProgress: announce every 10% (Neko announceFileProgress idea) ---
+          rp = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Components/RadialProgress.java")
+          if rp.exists():
+              t = rp.read_text(encoding="utf-8")
+              if "a11y-fork: announce progress" not in t:
+                  # add fields after currentProgress
+                  t = t.replace(
+                      "private float currentProgress = 0;",
+                      "private float currentProgress = 0;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
+                      1,
+                  )
+                  inject = '''
+        // a11y-fork: announce progress (Neko-style AccConfig.announceFileProgress)
+        if (parent != null && android.view.accessibility.AccessibilityManager.getInstance(parent.getContext()).isEnabled()) {
+            int pct = Math.round(value * 100f);
+            if (pct >= 100) pct = 100;
+            if (pct < 0) pct = 0;
+            int step = (pct / 10) * 10;
+            if (step != a11yLastAnnouncedPercent && (step % 10 == 0 || pct == 100)) {
+                a11yLastAnnouncedPercent = step;
+                try {
+                    parent.announceForAccessibility(step + " percent");
+                } catch (Throwable ignore) {}
+            }
+            if (pct == 0) a11yLastAnnouncedPercent = -1;
+        }
+'''
+                  # inject at start of setProgress body after opening brace of method
+                  m = re.search(r"public void setProgress\(float value, boolean animated\) \{\n", t)
+                  if m:
+                      pos = m.end()
+                      t = t[:pos] + inject + t[pos:]
+                      rp.write_text(t, encoding="utf-8")
+                      print("RadialProgress announce OK")
+                  else:
+                      print("WARN: setProgress not found")
+              else:
+                  print("RadialProgress already patched")
+          else:
+              print("WARN: RadialProgress.java missing")
+
+          # --- Hide share button ---
+          cmc = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java")
+          if cmc.exists():
+              t = cmc.read_text(encoding="utf-8")
+              if "a11y-fork: hide share" not in t:
                   t2, n = re.subn(
-                      r'(<string\s+name="AppName">)[^<]*(</string>)',
-                      r"\1تلگرام دسترس‌پذیر\2",
+                      r"(boolean\s+checkNeedDrawShareButton\s*\([^)]*\)\s*\{)",
+                      r"\1\n        // a11y-fork: hide share button between messages\n        if (true) return false;",
                       t,
                       count=1,
                   )
-                  p.write_text(t2, encoding="utf-8")
-                  print(f"AppName FA patched in {rel} (n={n})")
+                  if n:
+                      cmc.write_text(t2, encoding="utf-8")
+                      print("Hide share OK")
+                  else:
+                      print("WARN: checkNeedDrawShareButton not found")
               else:
-                  t2 = t.replace("</resources>", '    <string name="AppName">تلگرام دسترس‌پذیر</string>\n</resources>')
-                  p.write_text(t2, encoding="utf-8")
-                  print(f"AppName FA inserted in {rel}")
-          PY
+                  print("Hide share already present")
 
-          SMH="telegram/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java"
-          CA="telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java"
-          if [ -f "$SMH" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$SMH"; then
-            sed -i 's/req\.drop_author = forwardFromMyName;/req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE; org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;/' "$SMH" || true
-            echo "SendMessagesHelper drop_author patched"
-          fi
-          if [ -f "$CA" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$CA"; then
-            sed -i '0,/protected TLRPC.Chat currentChat;/s//public static boolean IS_FORWARD_NO_QUOTE = false;\n    protected TLRPC.Chat currentChat;/' "$CA" || true
-            echo "ChatActivity IS_FORWARD_NO_QUOTE flag patched"
-          fi
-
-          CMC="telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java"
-          if [ -f "$CMC" ] && grep -q "checkNeedDrawShareButton" "$CMC"; then
-            python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java")
-          t = p.read_text(encoding="utf-8")
-          if "a11y-fork: hide share" not in t:
-              t2, n = re.subn(
-                  r"(boolean\s+checkNeedDrawShareButton\s*\([^)]*\)\s*\{)",
-                  r"\1\n        // a11y-fork: hide share button between messages\n        if (true) return false;",
-                  t,
-                  count=1,
+          # --- Forward without quote flag ---
+          smh = Path("telegram/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java")
+          if smh.exists() and "IS_FORWARD_NO_QUOTE" not in smh.read_text(encoding="utf-8"):
+              t = smh.read_text(encoding="utf-8")
+              t2 = t.replace(
+                  "req.drop_author = forwardFromMyName;",
+                  "req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE; org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;",
+                  1,
               )
-              if n:
-                  p.write_text(t2, encoding="utf-8")
-                  print("Hide share button patched")
-              else:
-                  print("WARN: checkNeedDrawShareButton not patched")
-          else:
-              print("Hide share already present")
+              smh.write_text(t2, encoding="utf-8")
+              print("drop_author OK")
+          ca = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java")
+          if ca.exists():
+              t = ca.read_text(encoding="utf-8")
+              if "IS_FORWARD_NO_QUOTE" not in t:
+                  t2, n = re.subn(
+                      r"(protected TLRPC\.Chat currentChat;)",
+                      r"public static boolean IS_FORWARD_NO_QUOTE = false;\n    \1",
+                      t,
+                      count=1,
+                  )
+                  if n:
+                      ca.write_text(t2, encoding="utf-8")
+                      print("IS_FORWARD_NO_QUOTE OK")
+
+          print("A11y REAL patches done")
           PY
-          fi
 
-          echo "A11y patch step done"
-
-      # arm64 flavor only (not afat multi-ABI) → much smaller APK; most phones are arm64
       - name: Build arm64 debug APK
         working-directory: telegram
         run: |
