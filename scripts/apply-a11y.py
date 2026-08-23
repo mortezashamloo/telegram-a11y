@@ -46,8 +46,6 @@ def _set_string(path: Path, name: str, value: str) -> None:
 
 
 def patch_app_name() -> None:
-    # Debug builds use AndroidManifest_SDK23 -> @string/AppNameBeta
-    # Release uses @string/AppName. Patch BOTH.
     for rel in ("values/strings.xml",):
         p = RES / rel
         if p.exists():
@@ -60,22 +58,29 @@ def patch_app_name() -> None:
     print("AppName + AppNameBeta OK")
 
 
-def patch_radial_progress() -> None:
-    rp = JAVA / "org/telegram/ui/Components/RadialProgress.java"
-    if not rp.exists():
-        print("WARN: RadialProgress.java missing")
+def _inject_progress_announce(java_path: Path, class_hint: str) -> None:
+    if not java_path.exists():
+        print(f"WARN: {java_path.name} missing")
         return
-    t = rp.read_text(encoding="utf-8")
+    t = java_path.read_text(encoding="utf-8")
     if "a11y-fork: announce progress" in t:
-        print("RadialProgress already patched")
+        print(f"{java_path.name} already patched")
         return
-    t = t.replace(
-        "private float currentProgress = 0;",
-        "private float currentProgress = 0;\n"
-        "    // a11y-fork: announce progress\n"
-        "    private int a11yLastAnnouncedPercent = -1;",
-        1,
-    )
+
+    # field near parent View
+    if "private View parent;" in t and "a11yLastAnnouncedPercent" not in t:
+        t = t.replace(
+            "private View parent;",
+            "private View parent;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
+            1,
+        )
+    elif "private float currentProgress = 0;" in t and "a11yLastAnnouncedPercent" not in t:
+        t = t.replace(
+            "private float currentProgress = 0;",
+            "private float currentProgress = 0;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
+            1,
+        )
+
     inject = """
         // a11y-fork: announce progress every 5%
         if (parent != null) {
@@ -98,11 +103,22 @@ def patch_radial_progress() -> None:
 """
     m = re.search(r"public void setProgress\(float value, boolean animated\) \{\n", t)
     if not m:
-        print("WARN: setProgress not found")
+        print(f"WARN: setProgress not found in {java_path.name} ({class_hint})")
         return
     t = t[: m.end()] + inject + t[m.end() :]
-    rp.write_text(t, encoding="utf-8")
-    print("RadialProgress announce every 5% OK")
+    java_path.write_text(t, encoding="utf-8")
+    print(f"{java_path.name} announce every 5% OK")
+
+
+def patch_radial_progress() -> None:
+    # ChatMessageCell uses RadialProgress2 for file upload/download rings
+    _inject_progress_announce(
+        JAVA / "org/telegram/ui/Components/RadialProgress2.java", "RadialProgress2"
+    )
+    # Keep old class too (other screens)
+    _inject_progress_announce(
+        JAVA / "org/telegram/ui/Components/RadialProgress.java", "RadialProgress"
+    )
 
 
 def patch_hide_share() -> None:
@@ -126,7 +142,6 @@ def patch_hide_share() -> None:
     else:
         print("Hide share already present")
 
-    # Channel "Leave a comment" bar under posts — hide from between messages
     if "a11y-fork: hide comment button" not in t:
         if "drawCommentButton = true;" in t:
             t = t.replace(
