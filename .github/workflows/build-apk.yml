@@ -95,7 +95,6 @@ jobs:
           from pathlib import Path
           import re
 
-          # --- AppName ---
           root = Path("telegram/TMessagesProj/src/main/res")
           p = root / "values/strings.xml"
           if p.exists():
@@ -117,25 +116,24 @@ jobs:
                   fa.write_text(t.replace("</resources>", '    <string name="AppName">تلگرام دسترس‌پذیر</string>\n</resources>'), encoding="utf-8")
           print("AppName FA OK")
 
-          # --- RadialProgress: announce every 10% (Neko announceFileProgress idea) ---
+          # RadialProgress: announce every 5%
           rp = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Components/RadialProgress.java")
           if rp.exists():
               t = rp.read_text(encoding="utf-8")
               if "a11y-fork: announce progress" not in t:
-                  # add fields after currentProgress
                   t = t.replace(
                       "private float currentProgress = 0;",
                       "private float currentProgress = 0;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
                       1,
                   )
                   inject = '''
-        // a11y-fork: announce progress (Neko-style AccConfig.announceFileProgress)
+        // a11y-fork: announce progress every 5% (inspired by Neko AccConfig.announceFileProgress)
         if (parent != null && android.view.accessibility.AccessibilityManager.getInstance(parent.getContext()).isEnabled()) {
             int pct = Math.round(value * 100f);
             if (pct >= 100) pct = 100;
             if (pct < 0) pct = 0;
-            int step = (pct / 10) * 10;
-            if (step != a11yLastAnnouncedPercent && (step % 10 == 0 || pct == 100)) {
+            int step = (pct / 5) * 5;
+            if (step != a11yLastAnnouncedPercent) {
                 a11yLastAnnouncedPercent = step;
                 try {
                     parent.announceForAccessibility(step + " percent");
@@ -144,13 +142,12 @@ jobs:
             if (pct == 0) a11yLastAnnouncedPercent = -1;
         }
 '''
-                  # inject at start of setProgress body after opening brace of method
                   m = re.search(r"public void setProgress\(float value, boolean animated\) \{\n", t)
                   if m:
                       pos = m.end()
                       t = t[:pos] + inject + t[pos:]
                       rp.write_text(t, encoding="utf-8")
-                      print("RadialProgress announce OK")
+                      print("RadialProgress announce every 5% OK")
                   else:
                       print("WARN: setProgress not found")
               else:
@@ -158,7 +155,6 @@ jobs:
           else:
               print("WARN: RadialProgress.java missing")
 
-          # --- Hide share button ---
           cmc = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java")
           if cmc.exists():
               t = cmc.read_text(encoding="utf-8")
@@ -174,10 +170,7 @@ jobs:
                       print("Hide share OK")
                   else:
                       print("WARN: checkNeedDrawShareButton not found")
-              else:
-                  print("Hide share already present")
 
-          # --- Forward without quote flag ---
           smh = Path("telegram/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java")
           if smh.exists() and "IS_FORWARD_NO_QUOTE" not in smh.read_text(encoding="utf-8"):
               t = smh.read_text(encoding="utf-8")
