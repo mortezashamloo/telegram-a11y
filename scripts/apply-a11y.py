@@ -74,20 +74,25 @@ def patch_radial_progress() -> None:
         "    private int a11yLastAnnouncedPercent = -1;",
         1,
     )
+    # AccessibilityManager has no getInstance(); use Context.getSystemService
     inject = """
         // a11y-fork: announce progress every 5%
-        if (parent != null && android.view.accessibility.AccessibilityManager.getInstance(parent.getContext()).isEnabled()) {
-            int pct = Math.round(value * 100f);
-            if (pct >= 100) pct = 100;
-            if (pct < 0) pct = 0;
-            int step = (pct / 5) * 5;
-            if (step != a11yLastAnnouncedPercent) {
-                a11yLastAnnouncedPercent = step;
-                try {
-                    parent.announceForAccessibility(step + " percent");
-                } catch (Throwable ignore) {}
-            }
-            if (pct == 0) a11yLastAnnouncedPercent = -1;
+        if (parent != null) {
+            try {
+                Object amObj = parent.getContext().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);
+                android.view.accessibility.AccessibilityManager am = (android.view.accessibility.AccessibilityManager) amObj;
+                if (am != null && am.isEnabled()) {
+                    int pct = Math.round(value * 100f);
+                    if (pct >= 100) pct = 100;
+                    if (pct < 0) pct = 0;
+                    int step = (pct / 5) * 5;
+                    if (step != a11yLastAnnouncedPercent) {
+                        a11yLastAnnouncedPercent = step;
+                        parent.announceForAccessibility(step + " percent");
+                    }
+                    if (pct == 0) a11yLastAnnouncedPercent = -1;
+                }
+            } catch (Throwable ignore) {}
         }
 """
     m = re.search(r"public void setProgress\(float value, boolean animated\) \{\n", t)
