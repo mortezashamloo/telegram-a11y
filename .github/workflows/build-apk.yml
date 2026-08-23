@@ -94,12 +94,10 @@ jobs:
             done
           fi
 
-          # --- App display name ---
           python3 - <<'PY'
           from pathlib import Path
           import re
           root = Path("telegram/TMessagesProj/src/main/res")
-          # Default / English
           for rel in ["values/strings.xml"]:
               p = root / rel
               if not p.exists():
@@ -116,11 +114,9 @@ jobs:
                   print(f"AppName EN patched in {rel}")
               else:
                   print(f"WARN: AppName not found in {rel}")
-          # Persian
           for rel in ["values-fa/strings.xml", "values-fa-rIR/strings.xml"]:
               p = root / rel
               if not p.exists():
-                  # create minimal override file
                   if rel == "values-fa/strings.xml":
                       p.parent.mkdir(parents=True, exist_ok=True)
                       p.write_text(
@@ -148,7 +144,6 @@ jobs:
                   print(f"AppName FA inserted in {rel}")
           PY
 
-          # --- Forward without quote (flag + drop_author) ---
           SMH="telegram/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java"
           CA="telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java"
           if [ -f "$SMH" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$SMH"; then
@@ -160,16 +155,13 @@ jobs:
             echo "ChatActivity IS_FORWARD_NO_QUOTE flag patched"
           fi
 
-          # --- Hide share button between messages (best-effort) ---
           CMC="telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java"
           if [ -f "$CMC" ] && grep -q "checkNeedDrawShareButton" "$CMC"; then
-            # Force method to return false early when possible (heuristic)
             python3 - <<'PY'
           from pathlib import Path
           import re
           p = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java")
           t = p.read_text(encoding="utf-8")
-          # Only if not already patched
           if "a11y-fork: hide share" not in t:
               t2, n = re.subn(
                   r"(boolean\s+checkNeedDrawShareButton\s*\([^)]*\)\s*\{)",
@@ -189,11 +181,12 @@ jobs:
 
           echo "A11y patch step done"
 
-      - name: Build debug APK
+      # arm64 flavor only (not afat multi-ABI) → much smaller APK; most phones are arm64
+      - name: Build arm64 debug APK
         working-directory: telegram
         run: |
           chmod +x gradlew
-          ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon
+          ./gradlew :TMessagesProj_App:assembleArm64Debug --stacktrace --no-daemon
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
@@ -207,7 +200,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-accessible-debug
+          name: telegram-accessible-arm64-debug
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 14
