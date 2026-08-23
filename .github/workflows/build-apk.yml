@@ -30,7 +30,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -38,30 +38,19 @@ jobs:
       - name: Install SDK components
         run: |
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Inject API credentials
         env:
           API_ID: ${{ secrets.TELEGRAM_API_ID }}
           API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
         run: |
+          set -e
           if [ -z "$API_ID" ] || [ -z "$API_HASH" ]; then
             echo "ERROR: Set secrets TELEGRAM_API_ID and TELEGRAM_API_HASH"
             exit 1
           fi
-          python3 - <<'PY'
-          import os, re, pathlib
-          p = pathlib.Path("telegram/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java")
-          t = p.read_text(encoding="utf-8")
-          api_id = os.environ["API_ID"].strip()
-          api_hash = os.environ["API_HASH"].strip()
-          t2, n1 = re.subn(r"(APP_ID\s*=\s*)[^;\n]+", r"\g<1>" + api_id, t, count=1)
-          t2, n2 = re.subn(r'(APP_HASH\s*=\s*)"[^"]*"', r'\g<1>"' + api_hash + '"', t2, count=1)
-          if n1 < 1 or n2 < 1:
-              raise SystemExit(f"Could not patch BuildVars (id={n1}, hash={n2})")
-          p.write_text(t2, encoding="utf-8")
-          print("BuildVars patched OK")
-          PY
+          python3 patches-repo/scripts/inject-api.py
 
       - name: Wire jlatexmath module
         run: |
@@ -79,124 +68,15 @@ jobs:
             printf "\ninclude ':jlatexmath'\nproject(':jlatexmath').projectDir = new File(rootDir, '%s')\n" "$JDIR" >> settings.gradle
           fi
 
-      - name: Apply a11y patches (REAL code edits)
+      - name: Apply a11y patches
         run: |
           set -e
-          PDIR="patches-repo/patches"
-          if [ -d "$PDIR" ]; then
-            shopt -s nullglob
-            for f in "$PDIR"/*.patch; do
-              echo "Applying $f"
-              git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
-            done
-          fi
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          root = Path("telegram/TMessagesProj/src/main/res")
-          p = root / "values/strings.xml"
-          if p.exists():
-              t = p.read_text(encoding="utf-8")
-              t2, n = re.subn(r'(<string\s+name="AppName">)[^<]*(</string>)', r"\1Telegram Accessible\2", t, count=1)
-              if n:
-                  p.write_text(t2, encoding="utf-8")
-                  print("AppName EN OK")
-          fa = root / "values-fa/strings.xml"
-          fa.parent.mkdir(parents=True, exist_ok=True)
-          if not fa.exists():
-              fa.write_text('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="AppName">تلگرام دسترس‌پذیر</string>\n</resources>\n', encoding="utf-8")
-          else:
-              t = fa.read_text(encoding="utf-8")
-              if 'name="AppName"' in t:
-                  t2, _ = re.subn(r'(<string\s+name="AppName">)[^<]*(</string>)', r"\1تلگرام دسترس‌پذیر\2", t, count=1)
-                  fa.write_text(t2, encoding="utf-8")
-              else:
-                  fa.write_text(t.replace("</resources>", '    <string name="AppName">تلگرام دسترس‌پذیر</string>\n</resources>'), encoding="utf-8")
-          print("AppName FA OK")
-
-          # RadialProgress: announce every 5%
-          rp = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Components/RadialProgress.java")
-          if rp.exists():
-              t = rp.read_text(encoding="utf-8")
-              if "a11y-fork: announce progress" not in t:
-                  t = t.replace(
-                      "private float currentProgress = 0;",
-                      "private float currentProgress = 0;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
-                      1,
-                  )
-                  inject = '''
-        // a11y-fork: announce progress every 5% (inspired by Neko AccConfig.announceFileProgress)
-        if (parent != null && android.view.accessibility.AccessibilityManager.getInstance(parent.getContext()).isEnabled()) {
-            int pct = Math.round(value * 100f);
-            if (pct >= 100) pct = 100;
-            if (pct < 0) pct = 0;
-            int step = (pct / 5) * 5;
-            if (step != a11yLastAnnouncedPercent) {
-                a11yLastAnnouncedPercent = step;
-                try {
-                    parent.announceForAccessibility(step + " percent");
-                } catch (Throwable ignore) {}
-            }
-            if (pct == 0) a11yLastAnnouncedPercent = -1;
-        }
-'''
-                  m = re.search(r"public void setProgress\(float value, boolean animated\) \{\n", t)
-                  if m:
-                      pos = m.end()
-                      t = t[:pos] + inject + t[pos:]
-                      rp.write_text(t, encoding="utf-8")
-                      print("RadialProgress announce every 5% OK")
-                  else:
-                      print("WARN: setProgress not found")
-              else:
-                  print("RadialProgress already patched")
-          else:
-              print("WARN: RadialProgress.java missing")
-
-          cmc = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java")
-          if cmc.exists():
-              t = cmc.read_text(encoding="utf-8")
-              if "a11y-fork: hide share" not in t:
-                  t2, n = re.subn(
-                      r"(boolean\s+checkNeedDrawShareButton\s*\([^)]*\)\s*\{)",
-                      r"\1\n        // a11y-fork: hide share button between messages\n        if (true) return false;",
-                      t,
-                      count=1,
-                  )
-                  if n:
-                      cmc.write_text(t2, encoding="utf-8")
-                      print("Hide share OK")
-                  else:
-                      print("WARN: checkNeedDrawShareButton not found")
-
-          smh = Path("telegram/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java")
-          if smh.exists() and "IS_FORWARD_NO_QUOTE" not in smh.read_text(encoding="utf-8"):
-              t = smh.read_text(encoding="utf-8")
-              t2 = t.replace(
-                  "req.drop_author = forwardFromMyName;",
-                  "req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE; org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;",
-                  1,
-              )
-              smh.write_text(t2, encoding="utf-8")
-              print("drop_author OK")
-          ca = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java")
-          if ca.exists():
-              t = ca.read_text(encoding="utf-8")
-              if "IS_FORWARD_NO_QUOTE" not in t:
-                  t2, n = re.subn(
-                      r"(protected TLRPC\.Chat currentChat;)",
-                      r"public static boolean IS_FORWARD_NO_QUOTE = false;\n    \1",
-                      t,
-                      count=1,
-                  )
-                  if n:
-                      ca.write_text(t2, encoding="utf-8")
-                      print("IS_FORWARD_NO_QUOTE OK")
-
-          print("A11y REAL patches done")
-          PY
+          shopt -s nullglob
+          for f in patches-repo/patches/*.patch; do
+            echo "Applying $f"
+            git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
+          done
+          python3 patches-repo/scripts/apply-a11y.py
 
       - name: Build arm64 debug APK
         working-directory: telegram
@@ -210,7 +90,7 @@ jobs:
         id: apk
         run: |
           APK=$(find telegram -path "*outputs/apk*" -name "*.apk" | head -n 1)
-          echo "path=$APK" >> $GITHUB_OUTPUT
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
           ls -lh "$APK"
 
       - name: Upload APK
