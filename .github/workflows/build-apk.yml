@@ -26,7 +26,6 @@ jobs:
             rm -rf TMessagesProj/lib/jlatexmath
             git clone --depth 1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
           fi
-          find TMessagesProj/lib/jlatexmath -maxdepth 3 -type f -name "build.gradle" | head -20
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -82,7 +81,6 @@ jobs:
           if ! grep -q "include ':jlatexmath'" settings.gradle; then
             printf "\ninclude ':jlatexmath'\nproject(':jlatexmath').projectDir = new File(rootDir, '%s')\n" "$JDIR" >> settings.gradle
           fi
-          cat settings.gradle
 
       - name: Apply a11y patches
         run: |
@@ -95,14 +93,101 @@ jobs:
               git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
             done
           fi
+
+          # --- App display name ---
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path("telegram/TMessagesProj/src/main/res")
+          # Default / English
+          for rel in ["values/strings.xml"]:
+              p = root / rel
+              if not p.exists():
+                  continue
+              t = p.read_text(encoding="utf-8")
+              t2, n = re.subn(
+                  r'(<string\s+name="AppName">)[^<]*(</string>)',
+                  r"\1Telegram Accessible\2",
+                  t,
+                  count=1,
+              )
+              if n:
+                  p.write_text(t2, encoding="utf-8")
+                  print(f"AppName EN patched in {rel}")
+              else:
+                  print(f"WARN: AppName not found in {rel}")
+          # Persian
+          for rel in ["values-fa/strings.xml", "values-fa-rIR/strings.xml"]:
+              p = root / rel
+              if not p.exists():
+                  # create minimal override file
+                  if rel == "values-fa/strings.xml":
+                      p.parent.mkdir(parents=True, exist_ok=True)
+                      p.write_text(
+                          '<?xml version="1.0" encoding="utf-8"?>\n'
+                          '<resources>\n'
+                          '    <string name="AppName">تلگرام دسترس‌پذیر</string>\n'
+                          '</resources>\n',
+                          encoding="utf-8",
+                      )
+                      print(f"Created {rel} with Persian AppName")
+                  continue
+              t = p.read_text(encoding="utf-8")
+              if 'name="AppName"' in t:
+                  t2, n = re.subn(
+                      r'(<string\s+name="AppName">)[^<]*(</string>)',
+                      r"\1تلگرام دسترس‌پذیر\2",
+                      t,
+                      count=1,
+                  )
+                  p.write_text(t2, encoding="utf-8")
+                  print(f"AppName FA patched in {rel} (n={n})")
+              else:
+                  t2 = t.replace("</resources>", '    <string name="AppName">تلگرام دسترس‌پذیر</string>\n</resources>')
+                  p.write_text(t2, encoding="utf-8")
+                  print(f"AppName FA inserted in {rel}")
+          PY
+
+          # --- Forward without quote (flag + drop_author) ---
           SMH="telegram/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java"
           CA="telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java"
           if [ -f "$SMH" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$SMH"; then
             sed -i 's/req\.drop_author = forwardFromMyName;/req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE; org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;/' "$SMH" || true
+            echo "SendMessagesHelper drop_author patched"
           fi
           if [ -f "$CA" ] && ! grep -q "IS_FORWARD_NO_QUOTE" "$CA"; then
             sed -i '0,/protected TLRPC.Chat currentChat;/s//public static boolean IS_FORWARD_NO_QUOTE = false;\n    protected TLRPC.Chat currentChat;/' "$CA" || true
+            echo "ChatActivity IS_FORWARD_NO_QUOTE flag patched"
           fi
+
+          # --- Hide share button between messages (best-effort) ---
+          CMC="telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java"
+          if [ -f "$CMC" ] && grep -q "checkNeedDrawShareButton" "$CMC"; then
+            # Force method to return false early when possible (heuristic)
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java")
+          t = p.read_text(encoding="utf-8")
+          # Only if not already patched
+          if "a11y-fork: hide share" not in t:
+              t2, n = re.subn(
+                  r"(boolean\s+checkNeedDrawShareButton\s*\([^)]*\)\s*\{)",
+                  r"\1\n        // a11y-fork: hide share button between messages\n        if (true) return false;",
+                  t,
+                  count=1,
+              )
+              if n:
+                  p.write_text(t2, encoding="utf-8")
+                  print("Hide share button patched")
+              else:
+                  print("WARN: checkNeedDrawShareButton not patched")
+          else:
+              print("Hide share already present")
+          PY
+          fi
+
+          echo "A11y patch step done"
 
       - name: Build debug APK
         working-directory: telegram
@@ -122,7 +207,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-a11y-debug
+          name: telegram-accessible-debug
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 14
