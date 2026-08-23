@@ -8,54 +8,56 @@ ROOT = Path("telegram/TMessagesProj")
 RES = ROOT / "src/main/res"
 JAVA = ROOT / "src/main/java"
 
+FA_NAME = "\u062a\u0644\u06af\u0631\u0627\u0645 \u062f\u0633\u062a\u0631\u0633\u200c\u067e\u0630\u06cc\u0631"
+EN_NAME = "Telegram Accessible"
 
-def patch_app_name() -> None:
-    p = RES / "values/strings.xml"
-    if p.exists():
-        t = p.read_text(encoding="utf-8")
-        t2, n = re.subn(
-            r'(<string\s+name="AppName">)[^<]*(</string>)',
-            r"\1Telegram Accessible\2",
-            t,
-            count=1,
-        )
-        if n:
-            p.write_text(t2, encoding="utf-8")
-            print("AppName EN OK")
-        else:
-            print("WARN: AppName EN not found")
 
-    fa = RES / "values-fa/strings.xml"
-    fa.parent.mkdir(parents=True, exist_ok=True)
-    fa_name = "\u062a\u0644\u06af\u0631\u0627\u0645 \u062f\u0633\u062a\u0631\u0633\u200c\u067e\u0630\u06cc\u0631"
-    if not fa.exists():
-        fa.write_text(
+def _set_string(path: Path, name: str, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text(
             '<?xml version="1.0" encoding="utf-8"?>\n'
             "<resources>\n"
-            f'    <string name="AppName">{fa_name}</string>\n'
+            f'    <string name="{name}">{value}</string>\n'
             "</resources>\n",
             encoding="utf-8",
         )
-        print("AppName FA created")
+        print(f"created {path} {name}")
+        return
+    t = path.read_text(encoding="utf-8")
+    if f'name="{name}"' in t:
+        t2, n = re.subn(
+            rf'(<string\s+name="{name}">)[^<]*(</string>)',
+            rf"\1{value}\2",
+            t,
+            count=1,
+        )
+        path.write_text(t2, encoding="utf-8")
+        print(f"patched {path.name} {name} n={n}")
     else:
-        t = fa.read_text(encoding="utf-8")
-        if 'name="AppName"' in t:
-            t2, _ = re.subn(
-                r'(<string\s+name="AppName">)[^<]*(</string>)',
-                rf"\1{fa_name}\2",
-                t,
-                count=1,
-            )
-            fa.write_text(t2, encoding="utf-8")
-        else:
-            fa.write_text(
-                t.replace(
-                    "</resources>",
-                    f'    <string name="AppName">{fa_name}</string>\n</resources>',
-                ),
-                encoding="utf-8",
-            )
-        print("AppName FA OK")
+        path.write_text(
+            t.replace(
+                "</resources>",
+                f'    <string name="{name}">{value}</string>\n</resources>',
+            ),
+            encoding="utf-8",
+        )
+        print(f"inserted {path.name} {name}")
+
+
+def patch_app_name() -> None:
+    # Debug builds use AndroidManifest_SDK23 -> @string/AppNameBeta
+    # Release uses @string/AppName. Patch BOTH.
+    for rel in ("values/strings.xml",):
+        p = RES / rel
+        if p.exists():
+            _set_string(p, "AppName", EN_NAME)
+            _set_string(p, "AppNameBeta", EN_NAME)
+    for rel in ("values-fa/strings.xml", "values-fa-rIR/strings.xml"):
+        p = RES / rel
+        _set_string(p, "AppName", FA_NAME)
+        _set_string(p, "AppNameBeta", FA_NAME)
+    print("AppName + AppNameBeta OK")
 
 
 def patch_radial_progress() -> None:
@@ -74,7 +76,6 @@ def patch_radial_progress() -> None:
         "    private int a11yLastAnnouncedPercent = -1;",
         1,
     )
-    # AccessibilityManager has no getInstance(); use Context.getSystemService
     inject = """
         // a11y-fork: announce progress every 5%
         if (parent != null) {
@@ -110,20 +111,35 @@ def patch_hide_share() -> None:
         print("WARN: ChatMessageCell missing")
         return
     t = cmc.read_text(encoding="utf-8")
-    if "a11y-fork: hide share" in t:
-        print("Hide share already present")
-        return
-    t2, n = re.subn(
-        r"(boolean\s+checkNeedDrawShareButton\s*\([^)]*\)\s*\{)",
-        r"\1\n        // a11y-fork: hide share button between messages\n        if (true) return false;",
-        t,
-        count=1,
-    )
-    if n:
-        cmc.write_text(t2, encoding="utf-8")
-        print("Hide share OK")
+    if "a11y-fork: hide share" not in t:
+        t2, n = re.subn(
+            r"(boolean\s+checkNeedDrawShareButton\s*\([^)]*\)\s*\{)",
+            r"\1\n        // a11y-fork: hide share button between messages\n        if (true) return false;",
+            t,
+            count=1,
+        )
+        if n:
+            t = t2
+            print("Hide share OK")
+        else:
+            print("WARN: checkNeedDrawShareButton not found")
     else:
-        print("WARN: checkNeedDrawShareButton not found")
+        print("Hide share already present")
+
+    # Channel "Leave a comment" bar under posts — hide from between messages
+    if "a11y-fork: hide comment button" not in t:
+        if "drawCommentButton = true;" in t:
+            t = t.replace(
+                "drawCommentButton = true;",
+                "drawCommentButton = false; // a11y-fork: hide comment button between messages",
+            )
+            print("Hide leave-comment between messages OK")
+        else:
+            print("WARN: drawCommentButton = true not found")
+    else:
+        print("Hide comment already present")
+
+    cmc.write_text(t, encoding="utf-8")
 
 
 def patch_forward_no_quote() -> None:
