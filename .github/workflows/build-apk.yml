@@ -77,12 +77,15 @@ jobs:
             git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
           done
           python3 patches-repo/scripts/apply-a11y.py
+          python3 patches-repo/scripts/slim-arm64.py
 
-      - name: Build arm64 debug APK
+      # Official Telegram only allows debug builds for product flavor "afat".
+      # We still shrink size by forcing afat abiFilters to arm64-v8a only.
+      - name: Build debug APK (afat / arm64 libs)
         working-directory: telegram
         run: |
           chmod +x gradlew
-          ./gradlew :TMessagesProj_App:assembleArm64Debug --stacktrace --no-daemon
+          ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
