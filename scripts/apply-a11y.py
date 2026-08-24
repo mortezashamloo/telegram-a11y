@@ -123,6 +123,78 @@ def patch_radial_progress() -> None:
     _inject_progress_announce(JAVA / "org/telegram/ui/Components/RadialProgress.java")
 
 
+def patch_dialogcell_name_then_type() -> None:
+    """TalkBack: name first, then type — e.g. 'morteza. Channel' / bot name then Bot."""
+    dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
+    if not dc.exists():
+        print("WARN: DialogCell missing")
+        return
+    t = dc.read_text(encoding="utf-8")
+    if "a11y-fork: name then type" in t:
+        print("DialogCell already patched")
+        return
+
+    old_chat = """            } else if (chat != null) {
+                if (chat.broadcast) {
+                    sb.append(getString(R.string.AccDescrChannel));
+                } else {
+                    sb.append(getString(R.string.AccDescrGroup));
+                }
+                sb.append(". ");
+                sb.append(chat.title);
+                sb.append(". ");
+            }"""
+    new_chat = """            } else if (chat != null) {
+                // a11y-fork: name then type
+                sb.append(chat.title);
+                sb.append(". ");
+                if (chat.broadcast) {
+                    sb.append(getString(R.string.AccDescrChannel));
+                } else {
+                    sb.append(getString(R.string.AccDescrGroup));
+                }
+                sb.append(". ");
+            }"""
+
+    old_bot = """                    if (user.bot) {
+                        sb.append(getString(R.string.Bot));
+                        sb.append(". ");
+                    }
+                    if (user.self) {
+                        sb.append(getString(R.string.SavedMessages));
+                    } else {
+                        sb.append(ContactsController.formatName(user.first_name, user.last_name));
+                    }"""
+    new_bot = """                    // a11y-fork: name then type for bots
+                    if (user.self) {
+                        sb.append(getString(R.string.SavedMessages));
+                    } else {
+                        sb.append(ContactsController.formatName(user.first_name, user.last_name));
+                        if (user.bot) {
+                            sb.append(". ");
+                            sb.append(getString(R.string.Bot));
+                        }
+                    }"""
+
+    changed = False
+    if old_chat in t:
+        t = t.replace(old_chat, new_chat, 1)
+        changed = True
+        print("DialogCell chat name-then-type OK")
+    else:
+        print("WARN: DialogCell chat block not found")
+
+    if old_bot in t:
+        t = t.replace(old_bot, new_bot, 1)
+        changed = True
+        print("DialogCell bot name-then-type OK")
+    else:
+        print("WARN: DialogCell bot block not found")
+
+    if changed:
+        dc.write_text(t, encoding="utf-8")
+
+
 def patch_hide_share_and_comment() -> None:
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
@@ -190,7 +262,6 @@ def patch_voice_bitrate() -> None:
                 "result = opus_encoder_ctl(_encoder, OPUS_SET_BITRATE(a11y_record_bitrate > 0 ? a11y_record_bitrate : bitrate));",
                 1,
             )
-            # JNI setter near other JNI methods if present
             if "Java_org_telegram_messenger_MediaController_startRecord" in t and "setRecordBitrate" not in t:
                 jni = """
 JNIEXPORT void Java_org_telegram_messenger_MediaController_setRecordBitrate(JNIEnv *env, jclass clazz, jint br) {
@@ -270,6 +341,7 @@ def main() -> int:
     patch_app_name()
     install_a11y_config()
     patch_radial_progress()
+    patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
     patch_forward_no_quote()
     patch_voice_bitrate()
