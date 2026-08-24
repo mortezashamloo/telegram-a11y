@@ -30,7 +30,6 @@ SCRIPTS = _find_scripts_dir()
 FA_NAME = "\u062a\u0644\u06af\u0631\u0627\u0645 \u062f\u0633\u062a\u0631\u0633\u200c\u067e\u0630\u06cc\u0631"
 EN_NAME = "Telegram Accessible"
 
-# Custom menu option ids (must not collide with official OPTION_*)
 OPTION_FORWARD_NO_QUOTE = 200
 OPTION_REACTIONS_MENU = 201
 OPTION_FORWARD_TO_SAVED = 202
@@ -293,7 +292,6 @@ def patch_forward_menu_extras() -> None:
             t = t2
             print("IS_FORWARD_NO_QUOTE field OK")
 
-    # Menu items next to Forward
     if "a11y-fork: forward menu extras" not in t:
         old = (
             "                if (canForward) {\n"
@@ -313,7 +311,7 @@ def patch_forward_menu_extras() -> None:
             "                    icons.add(R.drawable.msg_forward);\n"
             "                    items.add(\"Forward to Saved Messages\");\n"
             f"                    options.add({OPTION_FORWARD_TO_SAVED});\n"
-            "                    icons.add(R.drawable.msg_saved);\n"
+            "                    icons.add(R.drawable.msg_forward);\n"
             "                }"
         )
         if old in t:
@@ -322,7 +320,6 @@ def patch_forward_menu_extras() -> None:
         else:
             print("WARN: canForward menu block not found")
 
-    # processSelectedOption cases
     if "a11y-fork: OPTION_FORWARD_NO_QUOTE" not in t:
         old_case = "            case OPTION_FORWARD: {"
         new_case = (
@@ -365,7 +362,6 @@ def patch_forward_menu_extras() -> None:
 
 
 def patch_reactions_as_menu() -> None:
-    """Hide reaction strip on long-press to reduce menu clutter."""
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         return
