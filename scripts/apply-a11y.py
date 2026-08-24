@@ -88,11 +88,9 @@ def _inject_progress_announce(java_path: Path) -> None:
         print(f"WARN: {java_path.name} missing")
         return
     t = java_path.read_text(encoding="utf-8")
-    # Always re-apply inject block if old version without focus check
     if "a11y-fork: announce progress only if focused" in t:
         print(f"{java_path.name} already patched (focus-aware)")
         return
-    # Remove older a11y inject if present so we can upgrade
     if "a11y-fork: announce progress" in t:
         t = re.sub(
             r"\n\s*// a11y-fork: announce progress[\s\S]*?if \(pct == 0\) a11yLastAnnouncedPercent = -1;\s*\}\s*\} catch \(Throwable ignore\) \{\}\s*\}\s*",
@@ -302,17 +300,20 @@ def patch_voice_bitrate() -> None:
                 "result = opus_encoder_ctl(_encoder, OPUS_SET_BITRATE(a11y_record_bitrate > 0 ? a11y_record_bitrate : bitrate));",
                 1,
             )
-            if "Java_org_telegram_messenger_MediaController_startRecord" in t and "setRecordBitrate" not in t:
-                jni = """
-JNIEXPORT void Java_org_telegram_messenger_MediaController_setRecordBitrate(JNIEnv *env, jclass clazz, jint br) {
-    if (br > 0) a11y_record_bitrate = br;
-}
-"""
-                t = t.replace(
-                    "Java_org_telegram_messenger_MediaController_startRecord",
-                    jni + "\nJava_org_telegram_messenger_MediaController_startRecord",
-                    1,
+            # Insert full JNI function BEFORE the entire startRecord declaration line
+            # (must not split "JNIEXPORT jint Java_..._startRecord")
+            start_line = (
+                "JNIEXPORT jint Java_org_telegram_messenger_MediaController_startRecord"
+            )
+            if start_line in t and "setRecordBitrate" not in t:
+                jni = (
+                    "JNIEXPORT void Java_org_telegram_messenger_MediaController_setRecordBitrate"
+                    "(JNIEnv *env, jclass clazz, jint br) {\n"
+                    "    if (br > 0) a11y_record_bitrate = br;\n"
+                    "}\n\n"
+                    + start_line
                 )
+                t = t.replace(start_line, jni, 1)
             audio.write_text(t, encoding="utf-8")
             print("audio.c bitrate OK")
         else:
