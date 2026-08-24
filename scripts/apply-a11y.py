@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Apply accessibility patches to cloned Telegram tree (cwd parent of telegram/)."""
+"""Apply accessibility patches to cloned Telegram tree (cwd parent of telegram/).
+
+Portable: works with GitHub Actions (patches-repo/scripts) or local kit (scripts/).
+When DrKLO/Telegram updates, re-run this script on a fresh clone.
+"""
 from pathlib import Path
 import re
 import shutil
@@ -8,7 +12,20 @@ import sys
 ROOT = Path("telegram/TMessagesProj")
 RES = ROOT / "src/main/res"
 JAVA = ROOT / "src/main/java"
-SCRIPTS = Path("patches-repo/scripts")
+
+
+def _find_scripts_dir() -> Path:
+    for cand in (
+        Path("patches-repo/scripts"),
+        Path("scripts"),
+        Path(__file__).resolve().parent,
+    ):
+        if (cand / "A11yConfig.java").exists() or (cand / "apply-a11y.py").exists():
+            return cand
+    return Path("scripts")
+
+
+SCRIPTS = _find_scripts_dir()
 
 FA_NAME = "\u062a\u0644\u06af\u0631\u0627\u0645 \u062f\u0633\u062a\u0631\u0633\u200c\u067e\u0630\u06cc\u0631"
 EN_NAME = "Telegram Accessible"
@@ -59,11 +76,11 @@ def install_a11y_config() -> None:
     src = SCRIPTS / "A11yConfig.java"
     dst = JAVA / "org/telegram/messenger/A11yConfig.java"
     if not src.exists():
-        print("WARN: A11yConfig.java missing in scripts")
+        print("WARN: A11yConfig.java missing in", SCRIPTS)
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, dst)
-    print("A11yConfig.java installed")
+    print("A11yConfig.java installed from", SCRIPTS)
 
 
 def _inject_progress_announce(java_path: Path) -> None:
@@ -71,40 +88,64 @@ def _inject_progress_announce(java_path: Path) -> None:
         print(f"WARN: {java_path.name} missing")
         return
     t = java_path.read_text(encoding="utf-8")
-    if "a11y-fork: announce progress" in t:
-        print(f"{java_path.name} already patched")
+    # Always re-apply inject block if old version without focus check
+    if "a11y-fork: announce progress only if focused" in t:
+        print(f"{java_path.name} already patched (focus-aware)")
         return
-    if "private View parent;" in t and "a11yLastAnnouncedPercent" not in t:
-        t = t.replace(
-            "private View parent;",
-            "private View parent;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
-            1,
+    # Remove older a11y inject if present so we can upgrade
+    if "a11y-fork: announce progress" in t:
+        t = re.sub(
+            r"\n\s*// a11y-fork: announce progress[\s\S]*?if \(pct == 0\) a11yLastAnnouncedPercent = -1;\s*\}\s*\} catch \(Throwable ignore\) \{\}\s*\}\s*",
+            "\n",
+            t,
+            count=1,
         )
-    elif "private float currentProgress = 0;" in t and "a11yLastAnnouncedPercent" not in t:
-        t = t.replace(
-            "private float currentProgress = 0;",
-            "private float currentProgress = 0;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
-            1,
-        )
+    if "a11yLastAnnouncedPercent" not in t:
+        if "private View parent;" in t:
+            t = t.replace(
+                "private View parent;",
+                "private View parent;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
+                1,
+            )
+        elif "private float currentProgress = 0;" in t:
+            t = t.replace(
+                "private float currentProgress = 0;",
+                "private float currentProgress = 0;\n    // a11y-fork: announce progress\n    private int a11yLastAnnouncedPercent = -1;",
+                1,
+            )
     inject = """
-        // a11y-fork: announce progress (step from A11yConfig)
+        // a11y-fork: announce progress only if focused on this message cell
         if (parent != null) {
             try {
                 Object amObj = parent.getContext().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);
                 android.view.accessibility.AccessibilityManager am = (android.view.accessibility.AccessibilityManager) amObj;
                 if (am != null && am.isEnabled()) {
-                    int pct = Math.round(value * 100f);
-                    if (pct >= 100) pct = 100;
-                    if (pct < 0) pct = 0;
-                    int stepSize = 5;
-                    try { stepSize = org.telegram.messenger.A11yConfig.getProgressStep(); } catch (Throwable ignore2) {}
-                    if (stepSize <= 0) stepSize = 5;
-                    int step = (pct / stepSize) * stepSize;
-                    if (step != a11yLastAnnouncedPercent) {
-                        a11yLastAnnouncedPercent = step;
-                        parent.announceForAccessibility(step + " percent");
+                    boolean focused = parent.isAccessibilityFocused();
+                    if (!focused) {
+                        android.view.View v = parent;
+                        while (v != null && !focused) {
+                            if (v.isAccessibilityFocused()) {
+                                focused = true;
+                                break;
+                            }
+                            android.view.ViewParent vp = v.getParent();
+                            v = (vp instanceof android.view.View) ? (android.view.View) vp : null;
+                        }
                     }
-                    if (pct == 0) a11yLastAnnouncedPercent = -1;
+                    if (focused) {
+                        int pct = Math.round(value * 100f);
+                        if (pct >= 100) pct = 100;
+                        if (pct < 0) pct = 0;
+                        int stepSize = 5;
+                        try { stepSize = org.telegram.messenger.A11yConfig.getProgressStep(); } catch (Throwable ignore2) {}
+                        if (stepSize <= 0) stepSize = 5;
+                        int step = (pct / stepSize) * stepSize;
+                        if (step != a11yLastAnnouncedPercent) {
+                            a11yLastAnnouncedPercent = step;
+                            parent.announceForAccessibility(step + " percent");
+                        }
+                        if (pct == 0) a11yLastAnnouncedPercent = -1;
+                    }
                 }
             } catch (Throwable ignore) {}
         }
@@ -115,7 +156,7 @@ def _inject_progress_announce(java_path: Path) -> None:
         return
     t = t[: m.end()] + inject + t[m.end() :]
     java_path.write_text(t, encoding="utf-8")
-    print(f"{java_path.name} progress announce OK")
+    print(f"{java_path.name} progress announce (focus-only) OK")
 
 
 def patch_radial_progress() -> None:
@@ -124,7 +165,6 @@ def patch_radial_progress() -> None:
 
 
 def patch_dialogcell_name_then_type() -> None:
-    """TalkBack: name first, then type — e.g. 'morteza. Channel' / bot name then Bot."""
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing")
@@ -336,8 +376,9 @@ def patch_settings_menu() -> None:
 
 def main() -> int:
     if not Path("telegram").is_dir():
-        print("ERROR: telegram/ not found", file=sys.stderr)
+        print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
         return 1
+    print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
     install_a11y_config()
     patch_radial_progress()
