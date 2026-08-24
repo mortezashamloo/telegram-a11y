@@ -34,6 +34,7 @@ OPTION_FORWARD_NO_QUOTE = 200
 OPTION_REACTIONS_MENU = 201
 OPTION_FORWARD_TO_SAVED = 202
 OPTION_SELECT_MESSAGE = 203
+OPTION_LEAVE_COMMENT = 204
 
 
 def _set_string(path: Path, name: str, value: str) -> None:
@@ -386,16 +387,13 @@ def patch_reactions_as_menu() -> None:
 
 
 def patch_longpress_message_menu() -> None:
-    """TalkBack: long-press opens message options (not multi-select).
-    Select first message via menu; after selection mode, long-press/tap selects more.
-    """
+    """TalkBack long-press -> message menu; Select starts action mode; Leave comment in menu."""
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing")
         return
     t = ca.read_text(encoding="utf-8")
 
-    # 1) Skip startMultiselect when accessibility is enabled and not already selecting
     old_ms = (
         "            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null && ((ChatMessageCell) view).getMessageObject().type != MessageObject.TYPE_JOINED_CHANNEL)) {\n"
         "                startMultiselect(position);\n"
@@ -423,7 +421,6 @@ def patch_longpress_message_menu() -> None:
         else:
             print("WARN: startMultiselect block in onItemLongClick not found")
 
-    # 2) ChatMessageCell.didLongPress also starts multiselect — gate it
     old_dlp = (
         "            createMenu(cell, false, false, x, y, false);\n"
         "            startMultiselect(chatListView.getChildAdapterPosition(cell));"
@@ -447,7 +444,6 @@ def patch_longpress_message_menu() -> None:
         else:
             print("WARN: didLongPress startMultiselect block not found")
 
-    # 3) Add "Select" at start of fillMessageMenu
     if "a11y-fork: OPTION_SELECT_MESSAGE menu" not in t:
         needle = "        if (message.isSponsored() && !getUserConfig().isPremium()"
         insert = (
@@ -455,15 +451,22 @@ def patch_longpress_message_menu() -> None:
             f"        if (!actionBar.isActionModeShowed() && message != null && message.contentType == 0 && !message.isSponsored()) {{\n"
             f"            items.add(LocaleController.getString(R.string.Select));\n"
             f"            options.add({OPTION_SELECT_MESSAGE});\n"
-            f"            icons.add(R.drawable.msg_select);\n"
+            f"            icons.add(R.drawable.msg_forward);\n"
+            f"        }}\n"
+            f"        // a11y-fork: Leave comment in menu (channel discussion)\n"
+            f"        if (!isThreadChat() && chatMode != MODE_SCHEDULED && currentChat != null && message != null && message.canViewThread() && (ChatObject.isChannel(currentChat) || currentChat.megagroup)) {{\n"
+            f"            if (!options.contains(OPTION_VIEW_REPLIES_OR_THREAD)) {{\n"
+            f"                items.add(LocaleController.getString(R.string.LeaveAComment));\n"
+            f"                options.add({OPTION_LEAVE_COMMENT});\n"
+            f"                icons.add(R.drawable.msg_msgbubble);\n"
+            f"            }}\n"
             f"        }}\n\n"
             f"        if (message.isSponsored() && !getUserConfig().isPremium()"
         )
         if needle in t:
             t = t.replace(needle, insert, 1)
-            print("Select menu item OK")
+            print("Select + Leave comment menu items OK")
         else:
-            # fallback: inject after allowChatActions block near start of options
             alt = "        if (message.isSponsored() && message.sponsoredCanReport) {"
             if alt in t:
                 t = t.replace(
@@ -473,24 +476,54 @@ def patch_longpress_message_menu() -> None:
                     f"            items.add(\"Select\");\n"
                     f"            options.add({OPTION_SELECT_MESSAGE});\n"
                     f"            icons.add(R.drawable.msg_forward);\n"
+                    f"        }}\n"
+                    f"        if (!isThreadChat() && currentChat != null && message != null && message.canViewThread()) {{\n"
+                    f"            items.add(\"Leave a comment\");\n"
+                    f"            options.add({OPTION_LEAVE_COMMENT});\n"
+                    f"            icons.add(R.drawable.msg_msgbubble);\n"
                     f"        }}\n\n"
                     + alt,
                     1,
                 )
-                print("Select menu item OK (fallback)")
+                print("Select + Leave comment menu items OK (fallback)")
             else:
                 print("WARN: fillMessageMenu inject point not found")
 
-    # 4) Handler for OPTION_SELECT_MESSAGE
+    # Replace weak Select handler with action-mode version if present, or inject
+    weak = "addToSelectedMessages(selectedObject, false);\n                        updateActionModeTitle();\n                        updateVisibleRows();"
+    strong = (
+        "createActionMode();\n"
+        "                        if (actionBar != null) {\n"
+        "                            actionBar.showActionMode(true, null, null, null, null, null, 0);\n"
+        "                        }\n"
+        "                        addToSelectedMessages(selectedObject, false);\n"
+        "                        updateActionModeTitle();\n"
+        "                        updateVisibleRows();\n"
+        "                        if (selectedMessagesCountTextView != null) {\n"
+        "                            selectedMessagesCountTextView.setText(LocaleController.formatPluralString(\"MessagesSelected\", selectedMessagesIds[0].size() + selectedMessagesIds[1].size()), false);\n"
+        "                        }"
+    )
+    if weak in t and "showActionMode(true, null, null, null, null, null, 0)" not in t.split("OPTION_SELECT_MESSAGE")[1][:800] if "OPTION_SELECT_MESSAGE" in t else True:
+        t = t.replace(weak, strong, 1)
+        print("Select handler upgraded to showActionMode")
+
     if "a11y-fork: OPTION_SELECT_MESSAGE handler" not in t:
         old_case = "            case OPTION_RETRY: {"
         new_case = (
             f"            case {OPTION_SELECT_MESSAGE}: {{ // a11y-fork: OPTION_SELECT_MESSAGE handler\n"
             f"                if (selectedObject != null) {{\n"
             f"                    try {{\n"
-            f"                        addToSelectedMessages(selectedObject, false);\n"
+            f"                        MessageObject toSelect = selectedObject;\n"
+            f"                        createActionMode();\n"
+            f"                        if (actionBar != null) {{\n"
+            f"                            actionBar.showActionMode(true, null, null, null, null, null, 0);\n"
+            f"                        }}\n"
+            f"                        addToSelectedMessages(toSelect, false);\n"
             f"                        updateActionModeTitle();\n"
             f"                        updateVisibleRows();\n"
+            f"                        if (selectedMessagesCountTextView != null) {{\n"
+            f"                            selectedMessagesCountTextView.setText(LocaleController.formatPluralString(\"MessagesSelected\", selectedMessagesIds[0].size() + selectedMessagesIds[1].size()), false);\n"
+            f"                        }}\n"
             f"                        try {{\n"
             f"                            if (getParentActivity() != null) {{\n"
             f"                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Selected\");\n"
@@ -505,13 +538,42 @@ def patch_longpress_message_menu() -> None:
             f"                selectedObjectGroup = null;\n"
             f"                break;\n"
             f"            }}\n"
+            f"            case {OPTION_LEAVE_COMMENT}: {{ // a11y-fork: leave comment / discussion\n"
+            f"                MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;\n"
+            f"                if (msg != null && currentChat != null) {{\n"
+            f"                    openDiscussionMessageChat(currentChat.id, null, msg.getId(), 0, -1, 0, null);\n"
+            f"                }}\n"
+            f"                selectedObject = null;\n"
+            f"                selectedObjectToEditCaption = null;\n"
+            f"                selectedObjectGroup = null;\n"
+            f"                break;\n"
+            f"            }}\n"
             f"            case OPTION_RETRY: {{"
         )
         if old_case in t:
             t = t.replace(old_case, new_case, 1)
-            print("Select option handler OK")
+            print("Select + Leave comment handlers OK")
         else:
-            print("WARN: OPTION_RETRY case not found for Select handler")
+            print("WARN: OPTION_RETRY case not found for handlers")
+    elif "OPTION_LEAVE_COMMENT" not in t or "a11y-fork: leave comment" not in t:
+        # only leave-comment handler missing
+        if "case OPTION_RETRY: {" in t and f"case {OPTION_LEAVE_COMMENT}:" not in t:
+            t = t.replace(
+                "            case OPTION_RETRY: {",
+                f"            case {OPTION_LEAVE_COMMENT}: {{ // a11y-fork: leave comment / discussion\n"
+                f"                MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;\n"
+                f"                if (msg != null && currentChat != null) {{\n"
+                f"                    openDiscussionMessageChat(currentChat.id, null, msg.getId(), 0, -1, 0, null);\n"
+                f"                }}\n"
+                f"                selectedObject = null;\n"
+                f"                selectedObjectToEditCaption = null;\n"
+                f"                selectedObjectGroup = null;\n"
+                f"                break;\n"
+                f"            }}\n"
+                f"            case OPTION_RETRY: {{",
+                1,
+            )
+            print("Leave comment handler added")
 
     ca.write_text(t, encoding="utf-8")
 
