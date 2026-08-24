@@ -2,36 +2,104 @@ name: Build APK
 
 on:
   workflow_dispatch:
-    inputs:
-      run_type:
-        description: 'نوع Run'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup JDK
-        uses: actions/setup-java@v7
+      - name: Checkout this repo
+        uses: actions/checkout@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          path: patches-repo
 
-      - name: Setup Android
-        uses: android-actions/setup-android@v4
-
-      - name: Build
+      - name: Clone Telegram with submodules
         run: |
-          if [ "${{ github.event.inputs.run_type }}" = "release" ]; then
-            ./gradlew assembleRelease
-          else
-            ./gradlew assembleDebug
+          set -e
+          git clone --recursive --depth 1 https://github.com/DrKLO/Telegram.git telegram
+          cd telegram
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth 1 || git submodule update --init --recursive
+          if [ ! -f TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle ] && [ ! -f TMessagesProj/lib/jlatexmath/build.gradle ]; then
+            rm -rf TMessagesProj/lib/jlatexmath
+            git clone --depth 1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
           fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK components
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Inject API credentials
+        env:
+          API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          set -e
+          if [ -z "$API_ID" ] || [ -z "$API_HASH" ]; then
+            echo "ERROR: Set secrets TELEGRAM_API_ID and TELEGRAM_API_HASH"
+            exit 1
+          fi
+          python3 patches-repo/scripts/inject-api.py
+
+      - name: Wire jlatexmath module
+        run: |
+          set -e
+          cd telegram
+          if [ -f TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle ]; then
+            JDIR="TMessagesProj/lib/jlatexmath/jlatexmath"
+          elif [ -f TMessagesProj/lib/jlatexmath/build.gradle ]; then
+            JDIR="TMessagesProj/lib/jlatexmath"
+          else
+            echo "ERROR: cannot locate jlatexmath build.gradle"
+            exit 1
+          fi
+          if ! grep -q "include ':jlatexmath'" settings.gradle; then
+            printf "\ninclude ':jlatexmath'\nproject(':jlatexmath').projectDir = new File(rootDir, '%s')\n" "$JDIR" >> settings.gradle
+          fi
+
+      - name: Apply a11y patches
+        run: |
+          set -e
+          shopt -s nullglob
+          for f in patches-repo/patches/*.patch; do
+            echo "Applying $f"
+            git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
+          done
+          python3 patches-repo/scripts/apply-a11y.py
+          python3 patches-repo/scripts/slim-arm64.py
+
+      # Official Telegram only allows debug builds for product flavor "afat".
+      # We still shrink size by forcing afat abiFilters to arm64-v8a only.
+      - name: Build debug APK (afat / arm64 libs)
+        working-directory: telegram
+        run: |
+          chmod +x gradlew
+          ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+
+      - name: Find APK
+        id: apk
+        run: |
+          APK=$(find telegram -path "*outputs/apk*" -name "*.apk" | head -n 1)
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-accessible-arm64-debug
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
