@@ -33,6 +33,7 @@ EN_NAME = "Telegram Accessible"
 OPTION_FORWARD_NO_QUOTE = 200
 OPTION_REACTIONS_MENU = 201
 OPTION_FORWARD_TO_SAVED = 202
+OPTION_SELECT_MESSAGE = 203
 
 
 def _set_string(path: Path, name: str, value: str) -> None:
@@ -384,6 +385,137 @@ def patch_reactions_as_menu() -> None:
         print("WARN: isReactionsAvailableFinal needle not found")
 
 
+def patch_longpress_message_menu() -> None:
+    """TalkBack: long-press opens message options (not multi-select).
+    Select first message via menu; after selection mode, long-press/tap selects more.
+    """
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity missing")
+        return
+    t = ca.read_text(encoding="utf-8")
+
+    # 1) Skip startMultiselect when accessibility is enabled and not already selecting
+    old_ms = (
+        "            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null && ((ChatMessageCell) view).getMessageObject().type != MessageObject.TYPE_JOINED_CHANNEL)) {\n"
+        "                startMultiselect(position);\n"
+        "                result = true;\n"
+        "            }"
+    )
+    new_ms = (
+        "            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null && ((ChatMessageCell) view).getMessageObject().type != MessageObject.TYPE_JOINED_CHANNEL)) {\n"
+        "                // a11y-fork: with TalkBack, long-press only opens menu; multi-select starts from Select option\n"
+        "                boolean a11yOn = false;\n"
+        "                try {\n"
+        "                    android.view.accessibility.AccessibilityManager am = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n"
+        "                    a11yOn = am != null && am.isEnabled();\n"
+        "                } catch (Throwable ignore) {}\n"
+        "                if (!a11yOn || actionBar.isActionModeShowed()) {\n"
+        "                    startMultiselect(position);\n"
+        "                }\n"
+        "                result = true;\n"
+        "            }"
+    )
+    if "a11y-fork: with TalkBack, long-press only opens menu" not in t:
+        if old_ms in t:
+            t = t.replace(old_ms, new_ms, 1)
+            print("Long-press skip startMultiselect OK")
+        else:
+            print("WARN: startMultiselect block in onItemLongClick not found")
+
+    # 2) ChatMessageCell.didLongPress also starts multiselect — gate it
+    old_dlp = (
+        "            createMenu(cell, false, false, x, y, false);\n"
+        "            startMultiselect(chatListView.getChildAdapterPosition(cell));"
+    )
+    new_dlp = (
+        "            createMenu(cell, false, false, x, y, false);\n"
+        "            // a11y-fork: do not auto-start multi-select under TalkBack\n"
+        "            boolean a11yOn2 = false;\n"
+        "            try {\n"
+        "                android.view.accessibility.AccessibilityManager am2 = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n"
+        "                a11yOn2 = am2 != null && am2.isEnabled();\n"
+        "            } catch (Throwable ignore) {}\n"
+        "            if (!a11yOn2 || actionBar.isActionModeShowed()) {\n"
+        "                startMultiselect(chatListView.getChildAdapterPosition(cell));\n"
+        "            }"
+    )
+    if "a11y-fork: do not auto-start multi-select under TalkBack" not in t:
+        if old_dlp in t:
+            t = t.replace(old_dlp, new_dlp, 1)
+            print("didLongPress skip startMultiselect OK")
+        else:
+            print("WARN: didLongPress startMultiselect block not found")
+
+    # 3) Add "Select" at start of fillMessageMenu
+    if "a11y-fork: OPTION_SELECT_MESSAGE menu" not in t:
+        needle = "        if (message.isSponsored() && !getUserConfig().isPremium()"
+        insert = (
+            f"        // a11y-fork: OPTION_SELECT_MESSAGE menu\n"
+            f"        if (!actionBar.isActionModeShowed() && message != null && message.contentType == 0 && !message.isSponsored()) {{\n"
+            f"            items.add(LocaleController.getString(R.string.Select));\n"
+            f"            options.add({OPTION_SELECT_MESSAGE});\n"
+            f"            icons.add(R.drawable.msg_select);\n"
+            f"        }}\n\n"
+            f"        if (message.isSponsored() && !getUserConfig().isPremium()"
+        )
+        if needle in t:
+            t = t.replace(needle, insert, 1)
+            print("Select menu item OK")
+        else:
+            # fallback: inject after allowChatActions block near start of options
+            alt = "        if (message.isSponsored() && message.sponsoredCanReport) {"
+            if alt in t:
+                t = t.replace(
+                    alt,
+                    f"        // a11y-fork: OPTION_SELECT_MESSAGE menu\n"
+                    f"        if (!actionBar.isActionModeShowed() && message != null && message.contentType == 0) {{\n"
+                    f"            items.add(\"Select\");\n"
+                    f"            options.add({OPTION_SELECT_MESSAGE});\n"
+                    f"            icons.add(R.drawable.msg_forward);\n"
+                    f"        }}\n\n"
+                    + alt,
+                    1,
+                )
+                print("Select menu item OK (fallback)")
+            else:
+                print("WARN: fillMessageMenu inject point not found")
+
+    # 4) Handler for OPTION_SELECT_MESSAGE
+    if "a11y-fork: OPTION_SELECT_MESSAGE handler" not in t:
+        old_case = "            case OPTION_RETRY: {"
+        new_case = (
+            f"            case {OPTION_SELECT_MESSAGE}: {{ // a11y-fork: OPTION_SELECT_MESSAGE handler\n"
+            f"                if (selectedObject != null) {{\n"
+            f"                    try {{\n"
+            f"                        addToSelectedMessages(selectedObject, false);\n"
+            f"                        updateActionModeTitle();\n"
+            f"                        updateVisibleRows();\n"
+            f"                        try {{\n"
+            f"                            if (getParentActivity() != null) {{\n"
+            f"                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Selected\");\n"
+            f"                            }}\n"
+            f"                        }} catch (Throwable ignore) {{}}\n"
+            f"                    }} catch (Throwable e) {{\n"
+            f"                        FileLog.e(e);\n"
+            f"                    }}\n"
+            f"                }}\n"
+            f"                selectedObject = null;\n"
+            f"                selectedObjectToEditCaption = null;\n"
+            f"                selectedObjectGroup = null;\n"
+            f"                break;\n"
+            f"            }}\n"
+            f"            case OPTION_RETRY: {{"
+        )
+        if old_case in t:
+            t = t.replace(old_case, new_case, 1)
+            print("Select option handler OK")
+        else:
+            print("WARN: OPTION_RETRY case not found for Select handler")
+
+    ca.write_text(t, encoding="utf-8")
+
+
 def patch_voice_bitrate() -> None:
     audio = ROOT / "jni/audio.c"
     if audio.exists():
@@ -484,6 +616,7 @@ def main() -> int:
     patch_hide_share_and_comment()
     patch_forward_menu_extras()
     patch_reactions_as_menu()
+    patch_longpress_message_menu()
     patch_voice_bitrate()
     patch_settings_menu()
     print("A11y REAL patches done")
