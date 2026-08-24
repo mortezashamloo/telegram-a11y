@@ -33,6 +33,7 @@ EN_NAME = "Telegram Accessible"
 # Custom menu option ids (must not collide with official OPTION_*)
 OPTION_FORWARD_NO_QUOTE = 200
 OPTION_REACTIONS_MENU = 201
+OPTION_FORWARD_TO_SAVED = 202
 
 
 def _set_string(path: Path, name: str, value: str) -> None:
@@ -262,8 +263,8 @@ def patch_hide_share_and_comment() -> None:
     cmc.write_text(t, encoding="utf-8")
 
 
-def patch_forward_no_quote() -> None:
-    """Flag + menu item 'Forward without quote' + processSelectedOption."""
+def patch_forward_menu_extras() -> None:
+    """Forward without quote + Forward to Saved Messages + processSelectedOption handlers."""
     smh = JAVA / "org/telegram/messenger/SendMessagesHelper.java"
     if smh.exists():
         t = smh.read_text(encoding="utf-8")
@@ -292,8 +293,8 @@ def patch_forward_no_quote() -> None:
             t = t2
             print("IS_FORWARD_NO_QUOTE field OK")
 
-    # Menu item next to Forward
-    if "a11y-fork: forward without quote menu" not in t:
+    # Menu items next to Forward
+    if "a11y-fork: forward menu extras" not in t:
         old = (
             "                if (canForward) {\n"
             "                    items.add(LocaleController.getString(R.string.Forward));\n"
@@ -306,30 +307,57 @@ def patch_forward_no_quote() -> None:
             "                    items.add(LocaleController.getString(R.string.Forward));\n"
             "                    options.add(OPTION_FORWARD);\n"
             "                    icons.add(R.drawable.msg_forward);\n"
-            "                    // a11y-fork: forward without quote menu\n"
+            "                    // a11y-fork: forward menu extras\n"
             "                    items.add(\"Forward without quote\");\n"
             f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
             "                    icons.add(R.drawable.msg_forward);\n"
+            "                    items.add(\"Forward to Saved Messages\");\n"
+            f"                    options.add({OPTION_FORWARD_TO_SAVED});\n"
+            "                    icons.add(R.drawable.msg_saved);\n"
             "                }"
         )
         if old in t:
             t = t.replace(old, new, 1)
-            print("Forward without quote menu item OK")
+            print("Forward menu extras OK")
         else:
             print("WARN: canForward menu block not found")
 
-    # processSelectedOption: set flag then same as forward
+    # processSelectedOption cases
     if "a11y-fork: OPTION_FORWARD_NO_QUOTE" not in t:
         old_case = "            case OPTION_FORWARD: {"
         new_case = (
             f"            case {OPTION_FORWARD_NO_QUOTE}: // a11y-fork: OPTION_FORWARD_NO_QUOTE\n"
             "                IS_FORWARD_NO_QUOTE = true;\n"
             "                // fall through to forward UI\n"
+            f"            case {OPTION_FORWARD_TO_SAVED}: // a11y-fork: forward to Saved Messages\n"
+            "                if (selectedObject != null) {{\n"
+            "                    try {{\n"
+            "                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n"
+            "                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {{\n"
+            "                            toSend.addAll(selectedObjectGroup.messages);\n"
+            "                        }} else {{\n"
+            "                            toSend.add(selectedObject);\n"
+            "                        }}\n"
+            "                        long savedId = getUserConfig().getClientUserId();\n"
+            "                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n"
+            "                        try {{\n"
+            "                            if (getParentActivity() != null) {{\n"
+            "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Forwarded to Saved Messages\");\n"
+            "                            }}\n"
+            "                        }} catch (Throwable ignore) {{}}\n"
+            "                    }} catch (Throwable e) {{\n"
+            "                        FileLog.e(e);\n"
+            "                    }}\n"
+            "                }}\n"
+            "                selectedObject = null;\n"
+            "                selectedObjectToEditCaption = null;\n"
+            "                selectedObjectGroup = null;\n"
+            "                break;\n"
             "            case OPTION_FORWARD: {"
         )
         if old_case in t:
             t = t.replace(old_case, new_case, 1)
-            print("OPTION_FORWARD_NO_QUOTE case OK")
+            print("Forward option handlers OK")
         else:
             print("WARN: OPTION_FORWARD case not found")
 
@@ -337,11 +365,7 @@ def patch_forward_no_quote() -> None:
 
 
 def patch_reactions_as_menu() -> None:
-    """Hide reaction strip on long-press; keep reactions usable via TalkBack on message reactions row.
-
-    Full grid-submenu like Blindgram needs more UI code; this reduces menu clutter first.
-    Leave-comment is already OPTION_VIEW_REPLIES_OR_THREAD when Telegram allows it.
-    """
+    """Hide reaction strip on long-press to reduce menu clutter."""
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         return
@@ -350,7 +374,6 @@ def patch_reactions_as_menu() -> None:
         print("Reactions strip patch already applied")
         return
 
-    # Force final flag false so strip is not shown above popup (TalkBack users use menu list)
     needle = "final boolean isReactionsAvailableFinal = !suggestEdit && isReactionsAvailable;"
     if needle in t:
         t = t.replace(
@@ -463,7 +486,7 @@ def main() -> int:
     patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
-    patch_forward_no_quote()
+    patch_forward_menu_extras()
     patch_reactions_as_menu()
     patch_voice_bitrate()
     patch_settings_menu()
