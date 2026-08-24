@@ -30,6 +30,10 @@ SCRIPTS = _find_scripts_dir()
 FA_NAME = "\u062a\u0644\u06af\u0631\u0627\u0645 \u062f\u0633\u062a\u0631\u0633\u200c\u067e\u0630\u06cc\u0631"
 EN_NAME = "Telegram Accessible"
 
+# Custom menu option ids (must not collide with official OPTION_*)
+OPTION_FORWARD_NO_QUOTE = 200
+OPTION_REACTIONS_MENU = 201
+
 
 def _set_string(path: Path, name: str, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,6 +263,7 @@ def patch_hide_share_and_comment() -> None:
 
 
 def patch_forward_no_quote() -> None:
+    """Flag + menu item 'Forward without quote' + processSelectedOption."""
     smh = JAVA / "org/telegram/messenger/SendMessagesHelper.java"
     if smh.exists():
         t = smh.read_text(encoding="utf-8")
@@ -270,19 +275,94 @@ def patch_forward_no_quote() -> None:
             )
             smh.write_text(t2, encoding="utf-8")
             print("drop_author OK")
+
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    if ca.exists():
-        t = ca.read_text(encoding="utf-8")
-        if "IS_FORWARD_NO_QUOTE" not in t:
-            t2, n = re.subn(
-                r"(protected TLRPC\.Chat currentChat;)",
-                r"public static boolean IS_FORWARD_NO_QUOTE = false;\n    \1",
-                t,
-                count=1,
-            )
-            if n:
-                ca.write_text(t2, encoding="utf-8")
-                print("IS_FORWARD_NO_QUOTE OK")
+    if not ca.exists():
+        return
+    t = ca.read_text(encoding="utf-8")
+
+    if "IS_FORWARD_NO_QUOTE" not in t:
+        t2, n = re.subn(
+            r"(protected TLRPC\.Chat currentChat;)",
+            r"public static boolean IS_FORWARD_NO_QUOTE = false;\n    \1",
+            t,
+            count=1,
+        )
+        if n:
+            t = t2
+            print("IS_FORWARD_NO_QUOTE field OK")
+
+    # Menu item next to Forward
+    if "a11y-fork: forward without quote menu" not in t:
+        old = (
+            "                if (canForward) {\n"
+            "                    items.add(LocaleController.getString(R.string.Forward));\n"
+            "                    options.add(OPTION_FORWARD);\n"
+            "                    icons.add(R.drawable.msg_forward);\n"
+            "                }"
+        )
+        new = (
+            "                if (canForward) {\n"
+            "                    items.add(LocaleController.getString(R.string.Forward));\n"
+            "                    options.add(OPTION_FORWARD);\n"
+            "                    icons.add(R.drawable.msg_forward);\n"
+            "                    // a11y-fork: forward without quote menu\n"
+            "                    items.add(\"Forward without quote\");\n"
+            f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
+            "                    icons.add(R.drawable.msg_forward);\n"
+            "                }"
+        )
+        if old in t:
+            t = t.replace(old, new, 1)
+            print("Forward without quote menu item OK")
+        else:
+            print("WARN: canForward menu block not found")
+
+    # processSelectedOption: set flag then same as forward
+    if "a11y-fork: OPTION_FORWARD_NO_QUOTE" not in t:
+        old_case = "            case OPTION_FORWARD: {"
+        new_case = (
+            f"            case {OPTION_FORWARD_NO_QUOTE}: // a11y-fork: OPTION_FORWARD_NO_QUOTE\n"
+            "                IS_FORWARD_NO_QUOTE = true;\n"
+            "                // fall through to forward UI\n"
+            "            case OPTION_FORWARD: {"
+        )
+        if old_case in t:
+            t = t.replace(old_case, new_case, 1)
+            print("OPTION_FORWARD_NO_QUOTE case OK")
+        else:
+            print("WARN: OPTION_FORWARD case not found")
+
+    ca.write_text(t, encoding="utf-8")
+
+
+def patch_reactions_as_menu() -> None:
+    """Hide reaction strip on long-press; keep reactions usable via TalkBack on message reactions row.
+
+    Full grid-submenu like Blindgram needs more UI code; this reduces menu clutter first.
+    Leave-comment is already OPTION_VIEW_REPLIES_OR_THREAD when Telegram allows it.
+    """
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        return
+    t = ca.read_text(encoding="utf-8")
+    if "a11y-fork: hide reaction strip" in t:
+        print("Reactions strip patch already applied")
+        return
+
+    # Force final flag false so strip is not shown above popup (TalkBack users use menu list)
+    needle = "final boolean isReactionsAvailableFinal = !suggestEdit && isReactionsAvailable;"
+    if needle in t:
+        t = t.replace(
+            needle,
+            "// a11y-fork: hide reaction strip on long-press (use message menu / existing reaction buttons)\n"
+            "            final boolean isReactionsAvailableFinal = false;",
+            1,
+        )
+        print("Hide reaction strip on long-press OK")
+        ca.write_text(t, encoding="utf-8")
+    else:
+        print("WARN: isReactionsAvailableFinal needle not found")
 
 
 def patch_voice_bitrate() -> None:
@@ -300,8 +380,6 @@ def patch_voice_bitrate() -> None:
                 "result = opus_encoder_ctl(_encoder, OPUS_SET_BITRATE(a11y_record_bitrate > 0 ? a11y_record_bitrate : bitrate));",
                 1,
             )
-            # Insert full JNI function BEFORE the entire startRecord declaration line
-            # (must not split "JNIEXPORT jint Java_..._startRecord")
             start_line = (
                 "JNIEXPORT jint Java_org_telegram_messenger_MediaController_startRecord"
             )
@@ -386,6 +464,7 @@ def main() -> int:
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
     patch_forward_no_quote()
+    patch_reactions_as_menu()
     patch_voice_bitrate()
     patch_settings_menu()
     print("A11y REAL patches done")
