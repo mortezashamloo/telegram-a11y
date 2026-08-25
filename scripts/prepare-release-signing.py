@@ -4,7 +4,8 @@
 - Changes APP_PACKAGE away from official org.telegram.messenger
 - Generates (or restores from env) a private release keystore
 - Points gradle signing at that keystore
-- Optionally strips debug applicationIdSuffix for cleaner installs
+- Disables R8 minify on release (a11y patches break with full minify)
+- Strips debug applicationIdSuffix .beta
 
 Env (optional GitHub Secrets):
   A11Y_KEYSTORE_BASE64  - base64 of .jks/.keystore (preferred for stable updates)
@@ -16,6 +17,7 @@ Env (optional GitHub Secrets):
 from pathlib import Path
 import base64
 import os
+import re
 import subprocess
 import sys
 
@@ -30,7 +32,6 @@ DEFAULT_PASS = "telegram-a11y-local"
 
 
 def set_prop(text: str, key: str, value: str) -> str:
-    import re
     if re.search(rf"(?m)^{re.escape(key)}=", text):
         return re.sub(rf"(?m)^{re.escape(key)}=.*$", f"{key}={value}", text, count=1)
     return text.rstrip() + f"\n{key}={value}\n"
@@ -85,15 +86,35 @@ def main() -> int:
         new = 'storeFile file("../TMessagesProj/config/a11y-release.keystore") // a11y-fork unique signing'
         if old in t:
             t = t.replace(old, new)
+            print("Signing path -> a11y-release.keystore OK")
+        else:
+            print("WARN: release.keystore path not found in App build.gradle")
+
+        if 'applicationIdSuffix ".beta"' in t:
             t = t.replace(
                 'applicationIdSuffix ".beta"',
                 '// a11y-fork: no beta suffix\n            // applicationIdSuffix ".beta"',
                 1,
             )
-            app_gradle.write_text(t, encoding="utf-8")
-            print("App build.gradle signing path + no .beta suffix OK")
-        else:
-            print("WARN: release.keystore path not found in App build.gradle")
+            print("Removed .beta applicationIdSuffix OK")
+
+        # Release minify often breaks patched a11y code; keep debuggable=false + own sign
+        if "a11y-fork: release no minify" not in t:
+            t2, n = re.subn(
+                r"(release\s*\{[\s\S]*?)minifyEnabled\s+true",
+                r"\1// a11y-fork: release no minify\n            minifyEnabled false",
+                t,
+                count=1,
+            )
+            if n:
+                t = t2
+                print("release minifyEnabled -> false OK")
+            else:
+                print("WARN: could not disable release minifyEnabled")
+
+        app_gradle.write_text(t, encoding="utf-8")
+    else:
+        print("WARN: TMessagesProj_App/build.gradle missing")
 
     print("prepare-release-signing done")
     return 0
