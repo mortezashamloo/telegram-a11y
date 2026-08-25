@@ -1,0 +1,97 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+@@ -1038,6 +1038,7 @@
+     private boolean scrimPopupWindowHideDimOnDismiss = true;
+     private int scrimPopupX, scrimPopupY;
+     private ActionBarMenuSubItem[] scrimPopupWindowItems;
++    private int accessibilityReactionsToggleIndex = -1; // Accessibility: index of the "Reactions" item in scrimPopupWindowItems, or -1
+     private ActionBarMenuSubItem menuDeleteItem;
+     private final Runnable updateDeleteItemRunnable = new Runnable() {
+         @Override
+@@ -1248,6 +1249,8 @@
+ 
+     public final static int OPTION_VIEW_STATISTICS = 115;
+     public final static int OPTION_WELCOME_REVERT = 116;
++    public final static int OPTION_LEAVE_COMMENT = 120; // Accessibility: moved from the on-bubble comment button
++    public final static int OPTION_TOGGLE_REACTIONS_ROW = 121; // Accessibility: reveals the reactions row instead of it always being focusable
+ 
+     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
+             NotificationCenter.messagesRead,
+@@ -31775,6 +31778,15 @@
+                         popupLayout.addView(new ActionBarPopupWindow.GapView(contentView.getContext(), themeDelegate), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
+                     }
+                 }
++                accessibilityReactionsToggleIndex = -1;
++                if (isReactionsAvailableFinal) {
++                    // Accessibility: put reactions behind a menu item instead of
++                    // an always-visible, always-focusable row above the menu.
++                    items.add(0, LocaleController.getString(R.string.Reactions));
++                    icons.add(0, R.drawable.msg_reactions2);
++                    options.add(0, OPTION_TOGGLE_REACTIONS_ROW);
++                    accessibilityReactionsToggleIndex = 0;
++                }
+                 scrimPopupWindowItems = new ActionBarMenuSubItem[items.size()];
+                 for (int a = 0, N = items.size(); a < N; a++) {
+                     final Integer option = options.get(a);
+@@ -32129,6 +32141,21 @@
+                     LinearLayout.LayoutParams params = LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, (int) (52 + reactionsLayout.getTopOffset() / AndroidUtilities.density + pad), Gravity.RIGHT, 0, 50, 0, -20);
+                     scrimPopupContainerLayout.addView(reactionsLayout, params);
+                     scrimPopupContainerLayout.setReactionsLayout(reactionsLayout);
++
++                    // Accessibility: hide the reactions row by default; the
++                    // "Reactions" menu item (added above, before this method
++                    // built scrimPopupWindowItems) reveals it on tap instead
++                    // of it always being a focusable row for TalkBack.
++                    reactionsLayout.setVisibility(View.GONE);
++                    if (accessibilityReactionsToggleIndex >= 0 && scrimPopupWindowItems != null
++                        && accessibilityReactionsToggleIndex < scrimPopupWindowItems.length
++                        && scrimPopupWindowItems[accessibilityReactionsToggleIndex] != null) {
++                        final ReactionsContainerLayout reactionsLayoutForToggle = reactionsLayout;
++                        scrimPopupWindowItems[accessibilityReactionsToggleIndex].setOnClickListener(reactionsToggleView -> {
++                            boolean show = reactionsLayoutForToggle.getVisibility() != View.VISIBLE;
++                            reactionsLayoutForToggle.setVisibility(show ? View.VISIBLE : View.GONE);
++                        });
++                    }
+                     scrimPopupContainerLayout.setClipChildren(false);
+                     MessageObject messageWithReactions = message;
+                     MessageObject.GroupedMessages group = getValidGroupedMessage(message);
+@@ -33472,6 +33499,20 @@
+                 }
+                 break;
+             }
++            case OPTION_LEAVE_COMMENT: {
++                MessageObject message = selectedObject;
++                int maxReadId;
++                long linkedChatId;
++                if (message.messageOwner.replies != null) {
++                    maxReadId = message.messageOwner.replies.read_max_id;
++                    linkedChatId = message.messageOwner.replies.channel_id;
++                } else {
++                    maxReadId = -1;
++                    linkedChatId = 0;
++                }
++                openDiscussionMessageChat(currentChat.id, message, message.getId(), linkedChatId, maxReadId, 0, null);
++                break;
++            }
+             case OPTION_SHARE: {
+                 String path = selectedObject.messageOwner.attachPath;
+                 if (path != null && path.length() > 0) {
+@@ -45645,6 +45686,18 @@
+         final boolean isEphemeral = message.isEphemeral();
+         final boolean isEphemeralFromBot = isEphemeral && !message.isOut();
+ 
++        // Accessibility: the on-bubble "Leave a Comment" button was disabled
++        // (ChatMessageCell.drawCommentButton) to reduce TalkBack clutter;
++        // offer the same action here in the message menu instead.
++        if (message.messageOwner != null && message.messageOwner.replies != null && !isEphemeral) {
++            int commentCount = message.getRepliesCount();
++            items.add(commentCount == 0
++                ? LocaleController.getString(R.string.LeaveAComment)
++                : LocaleController.formatPluralString("CommentsCount", commentCount));
++            icons.add(R.drawable.msg_viewreplies);
++            options.add(OPTION_LEAVE_COMMENT);
++        }
++
+ 
+         boolean allowChatActions = true;
+         boolean allowPin;
