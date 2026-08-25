@@ -97,20 +97,38 @@ jobs:
         run: |
           set -e
           python3 patches-repo/scripts/prepare-release-signing.py
+          echo "--- App build.gradle signing / release snippet ---"
+          grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
+          grep -n "^APP_PACKAGE\|^RELEASE_" telegram/gradle.properties || true
 
-      - name: Build release APK (afat / arm64, own package+sign)
+      - name: Build APK (release, fallback debug)
         working-directory: telegram
         run: |
+          set -e
           chmod +x gradlew
-          ./gradlew :TMessagesProj_App:assembleAfatRelease --stacktrace --no-daemon
+          # Release preferred (debuggable=false). If it fails, same unique package+keystore via debug.
+          if ./gradlew :TMessagesProj_App:assembleAfatRelease --stacktrace --no-daemon; then
+            echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
+          else
+            echo "Release failed — falling back to afatDebug with a11y package/keystore"
+            ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon
+            echo "BUILD_VARIANT=debug" >> "$GITHUB_ENV"
+          fi
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
       - name: Find APK
         id: apk
         run: |
+          set -e
           APK=$(find telegram -path "*outputs/apk*" -name "*.apk" | head -n 1)
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            echo "ERROR: no APK found"
+            find telegram -name "*.apk" 2>/dev/null | head -20 || true
+            exit 1
+          fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK (variant=${BUILD_VARIANT:-unknown})"
           ls -lh "$APK"
 
       - name: Upload keystore (save once as secret for updates)
@@ -125,7 +143,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-accessible-arm64-release
+          name: telegram-accessible-arm64
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 14
