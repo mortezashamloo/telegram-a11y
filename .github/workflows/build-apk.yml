@@ -71,7 +71,6 @@ jobs:
       - name: Apply a11y patches
         run: |
           set -e
-          # Restore apply-a11y.py if truncated/corrupted (known-good commit from build #31)
           A11Y="patches-repo/scripts/apply-a11y.py"
           if [ ! -f "$A11Y" ] || [ "$(wc -c < "$A11Y")" -lt 10000 ]; then
             echo "apply-a11y.py missing/truncated — restoring from commit 5119a983"
@@ -85,52 +84,7 @@ jobs:
             git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
           done
           python3 patches-repo/scripts/apply-a11y.py
-          # Move Select (option 203) to last menu item after all injects
-          python3 - <<'PY'
-from pathlib import Path
-ca = Path("telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java")
-t = ca.read_text(encoding="utf-8")
-if "a11y-fork: Select to end of menu" not in t:
-    old = "                scrimPopupWindowItems = new ActionBarMenuSubItem[items.size()];"
-    new = (
-        "                // a11y-fork: Select to end of menu\n"
-        "                try {\n"
-        "                    int selIdx = options.indexOf(203);\n"
-        "                    if (selIdx >= 0 and selIdx < items.size() - 1):\n"
-        "                        CharSequence selItem = items.remove(selIdx);\n"
-        "                        Integer selOpt = options.remove(selIdx);\n"
-        "                        Integer selIcon = icons.remove(selIdx);\n"
-        "                        items.add(selItem);\n"
-        "                        options.add(selOpt);\n"
-        "                        icons.add(selIcon);\n"
-        "                    }\n"
-        "                } catch (Throwable ignore) {}\n"
-        "                scrimPopupWindowItems = new ActionBarMenuSubItem[items.size()];"
-    )
-    # Fix: Java syntax not Python
-    new = (
-        "                // a11y-fork: Select to end of menu\n"
-        "                try {\n"
-        "                    int selIdx = options.indexOf(203);\n"
-        "                    if (selIdx >= 0 && selIdx < items.size() - 1) {\n"
-        "                        CharSequence selItem = items.remove(selIdx);\n"
-        "                        Integer selOpt = options.remove(selIdx);\n"
-        "                        Integer selIcon = icons.remove(selIdx);\n"
-        "                        items.add(selItem);\n"
-        "                        options.add(selOpt);\n"
-        "                        icons.add(selIcon);\n"
-        "                    }\n"
-        "                } catch (Throwable ignore) {}\n"
-        "                scrimPopupWindowItems = new ActionBarMenuSubItem[items.size()];"
-    )
-    if old in t:
-        ca.write_text(t.replace(old, new, 1), encoding="utf-8")
-        print("Select moved to end of menu OK")
-    else:
-        print("WARN: could not reorder Select (needle missing)")
-else:
-    print("Select reorder already present")
-PY
+          python3 patches-repo/scripts/post-a11y-menu.py
           python3 patches-repo/scripts/slim-arm64.py
 
       - name: Build debug APK (afat / arm64 libs)
