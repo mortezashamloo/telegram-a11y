@@ -35,6 +35,7 @@ OPTION_REACTIONS_MENU = 201
 OPTION_FORWARD_TO_SAVED = 202
 OPTION_SELECT_MESSAGE = 203
 OPTION_LEAVE_COMMENT = 204
+OPTION_BOT_BUTTONS = 205
 
 
 def _set_string(path: Path, name: str, value: str) -> None:
@@ -387,13 +388,14 @@ def patch_reactions_as_menu() -> None:
 
 
 def patch_longpress_message_menu() -> None:
-    """TalkBack long-press -> message menu; Select starts action mode; Leave comment in menu."""
+    """TalkBack long-press -> menu; Select/React/Bot buttons/Leave comment at END of menu."""
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing")
         return
     t = ca.read_text(encoding="utf-8")
 
+    # 1) Skip auto multi-select on long-press when a11y on
     old_ms = (
         "            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null && ((ChatMessageCell) view).getMessageObject().type != MessageObject.TYPE_JOINED_CHANNEL)) {\n"
         "                startMultiselect(position);\n"
@@ -444,136 +446,254 @@ def patch_longpress_message_menu() -> None:
         else:
             print("WARN: didLongPress startMultiselect block not found")
 
-    if "a11y-fork: OPTION_SELECT_MESSAGE menu" not in t:
-        needle = "        if (message.isSponsored() && !getUserConfig().isPremium()"
-        insert = (
-            f"        // a11y-fork: OPTION_SELECT_MESSAGE menu\n"
-            f"        if (!actionBar.isActionModeShowed() && message != null && message.contentType == 0 && !message.isSponsored()) {{\n"
-            f"            items.add(LocaleController.getString(R.string.Select));\n"
-            f"            options.add({OPTION_SELECT_MESSAGE});\n"
-            f"            icons.add(R.drawable.msg_forward);\n"
-            f"        }}\n"
-            f"        // a11y-fork: Leave comment in menu (channel discussion)\n"
-            f"        if (!isThreadChat() && chatMode != MODE_SCHEDULED && currentChat != null && message != null && message.canViewThread() && (ChatObject.isChannel(currentChat) || currentChat.megagroup)) {{\n"
-            f"            if (!options.contains(OPTION_VIEW_REPLIES_OR_THREAD)) {{\n"
+    # 2) Append Select / Leave comment / Bot buttons / React at END of fillMessageMenu
+    if "a11y-fork: end menu items" not in t:
+        end_marker = (
+            "        if (showWelcomeMessageRevertOption(primaryMessage)) {\n"
+            "            items.add(getString(R.string.WelcomeMessageRevert));\n"
+            "            options.add(OPTION_WELCOME_REVERT);\n"
+            "            icons.add(R.drawable.outline_revert_24);\n"
+            "        }\n"
+            "    }"
+        )
+        end_inject = (
+            "        if (showWelcomeMessageRevertOption(primaryMessage)) {\n"
+            "            items.add(getString(R.string.WelcomeMessageRevert));\n"
+            "            options.add(OPTION_WELCOME_REVERT);\n"
+            "            icons.add(R.drawable.outline_revert_24);\n"
+            "        }\n"
+            "        // a11y-fork: end menu items (Select, Leave comment, Bot buttons, React)\n"
+            "        try {\n"
+            f"            if (!isThreadChat() && chatMode != MODE_SCHEDULED && currentChat != null && primaryMessage != null && primaryMessage.canViewThread() && !options.contains(OPTION_VIEW_REPLIES_OR_THREAD)) {{\n"
             f"                items.add(LocaleController.getString(R.string.LeaveAComment));\n"
             f"                options.add({OPTION_LEAVE_COMMENT});\n"
             f"                icons.add(R.drawable.msg_msgbubble);\n"
             f"            }}\n"
-            f"        }}\n\n"
-            f"        if (message.isSponsored() && !getUserConfig().isPremium()"
+            f"            if (primaryMessage != null && primaryMessage.messageOwner != null && primaryMessage.messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup) {{\n"
+            f"                items.add(\"Bot buttons\");\n"
+            f"                options.add({OPTION_BOT_BUTTONS});\n"
+            f"                icons.add(R.drawable.msg_bot);\n"
+            f"            }}\n"
+            f"            if (primaryMessage != null && primaryMessage.isReactionsAvailable()) {{\n"
+            f"                items.add(\"React\");\n"
+            f"                options.add({OPTION_REACTIONS_MENU});\n"
+            f"                icons.add(R.drawable.msg_reactions);\n"
+            f"            }}\n"
+            f"            if (!actionBar.isActionModeShowed() && primaryMessage != null && primaryMessage.contentType == 0 && !primaryMessage.isSponsored()) {{\n"
+            f"                items.add(LocaleController.getString(R.string.Select));\n"
+            f"                options.add({OPTION_SELECT_MESSAGE});\n"
+            f"                icons.add(R.drawable.msg_select);\n"
+            f"            }}\n"
+            f"        }} catch (Throwable ignore) {{}}\n"
+            f"    }}"
         )
-        if needle in t:
-            t = t.replace(needle, insert, 1)
-            print("Select + Leave comment menu items OK")
+        # safer drawables if some missing
+        end_inject = end_inject.replace("R.drawable.msg_bot", "R.drawable.msg_botwebapp").replace(
+            "R.drawable.msg_reactions", "R.drawable.msg_reactions2"
+        ).replace("R.drawable.msg_select", "R.drawable.msg_forward").replace(
+            "R.drawable.msg_botwebapp", "R.drawable.msg_bot"
+        )
+        # use only known-safe drawables
+        end_inject = (
+            "        if (showWelcomeMessageRevertOption(primaryMessage)) {\n"
+            "            items.add(getString(R.string.WelcomeMessageRevert));\n"
+            "            options.add(OPTION_WELCOME_REVERT);\n"
+            "            icons.add(R.drawable.outline_revert_24);\n"
+            "        }\n"
+            "        // a11y-fork: end menu items (Select, Leave comment, Bot buttons, React)\n"
+            "        try {\n"
+            f"            if (!isThreadChat() && chatMode != MODE_SCHEDULED && currentChat != null && primaryMessage != null && primaryMessage.canViewThread() && !options.contains(OPTION_VIEW_REPLIES_OR_THREAD)) {{\n"
+            f"                items.add(LocaleController.getString(R.string.LeaveAComment));\n"
+            f"                options.add({OPTION_LEAVE_COMMENT});\n"
+            f"                icons.add(R.drawable.msg_msgbubble);\n"
+            f"            }}\n"
+            f"            if (primaryMessage != null && primaryMessage.messageOwner != null && primaryMessage.messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup) {{\n"
+            f"                items.add(\"Bot buttons\");\n"
+            f"                options.add({OPTION_BOT_BUTTONS});\n"
+            f"                icons.add(R.drawable.msg_forward);\n"
+            f"            }}\n"
+            f"            if (primaryMessage != null && primaryMessage.isReactionsAvailable()) {{\n"
+            f"                items.add(\"React\");\n"
+            f"                options.add({OPTION_REACTIONS_MENU});\n"
+            f"                icons.add(R.drawable.msg_forward);\n"
+            f"            }}\n"
+            f"            if (!actionBar.isActionModeShowed() && primaryMessage != null && primaryMessage.contentType == 0 && !primaryMessage.isSponsored()) {{\n"
+            f"                items.add(LocaleController.getString(R.string.Select));\n"
+            f"                options.add({OPTION_SELECT_MESSAGE});\n"
+            f"                icons.add(R.drawable.msg_forward);\n"
+            f"            }}\n"
+            f"        }} catch (Throwable ignore) {{}}\n"
+            f"    }}"
+        )
+        if end_marker in t:
+            t = t.replace(end_marker, end_inject, 1)
+            print("End menu items (Select/Leave/Bot/React) OK")
         else:
-            alt = "        if (message.isSponsored() && message.sponsoredCanReport) {"
-            if alt in t:
-                t = t.replace(
-                    alt,
-                    f"        // a11y-fork: OPTION_SELECT_MESSAGE menu\n"
-                    f"        if (!actionBar.isActionModeShowed() && message != null && message.contentType == 0) {{\n"
-                    f"            items.add(\"Select\");\n"
-                    f"            options.add({OPTION_SELECT_MESSAGE});\n"
-                    f"            icons.add(R.drawable.msg_forward);\n"
-                    f"        }}\n"
-                    f"        if (!isThreadChat() && currentChat != null && message != null && message.canViewThread()) {{\n"
-                    f"            items.add(\"Leave a comment\");\n"
-                    f"            options.add({OPTION_LEAVE_COMMENT});\n"
-                    f"            icons.add(R.drawable.msg_msgbubble);\n"
-                    f"        }}\n\n"
-                    + alt,
-                    1,
-                )
-                print("Select + Leave comment menu items OK (fallback)")
-            else:
-                print("WARN: fillMessageMenu inject point not found")
+            print("WARN: fillMessageMenu end marker not found")
 
-    # Replace weak Select handler with action-mode version if present, or inject
-    weak = "addToSelectedMessages(selectedObject, false);\n                        updateActionModeTitle();\n                        updateVisibleRows();"
-    strong = (
-        "createActionMode();\n"
-        "                        if (actionBar != null) {\n"
-        "                            actionBar.showActionMode(true, null, null, null, null, null, 0);\n"
-        "                        }\n"
-        "                        addToSelectedMessages(selectedObject, false);\n"
-        "                        updateActionModeTitle();\n"
-        "                        updateVisibleRows();\n"
-        "                        if (selectedMessagesCountTextView != null) {\n"
-        "                            selectedMessagesCountTextView.setText(LocaleController.formatPluralString(\"MessagesSelected\", selectedMessagesIds[0].size() + selectedMessagesIds[1].size()), false);\n"
-        "                        }"
-    )
-    if weak in t and "showActionMode(true, null, null, null, null, null, 0)" not in t.split("OPTION_SELECT_MESSAGE")[1][:800] if "OPTION_SELECT_MESSAGE" in t else True:
-        t = t.replace(weak, strong, 1)
-        print("Select handler upgraded to showActionMode")
-
-    if "a11y-fork: OPTION_SELECT_MESSAGE handler" not in t:
+    # 3) Handlers — inject before case OPTION_RETRY
+    if "a11y-fork: OPTION_SELECT_MESSAGE handler v2" not in t:
         old_case = "            case OPTION_RETRY: {"
-        new_case = (
-            f"            case {OPTION_SELECT_MESSAGE}: {{ // a11y-fork: OPTION_SELECT_MESSAGE handler\n"
-            f"                if (selectedObject != null) {{\n"
-            f"                    try {{\n"
-            f"                        MessageObject toSelect = selectedObject;\n"
-            f"                        createActionMode();\n"
-            f"                        if (actionBar != null) {{\n"
-            f"                            actionBar.showActionMode(true, null, null, null, null, null, 0);\n"
-            f"                        }}\n"
-            f"                        addToSelectedMessages(toSelect, false);\n"
-            f"                        updateActionModeTitle();\n"
-            f"                        updateVisibleRows();\n"
-            f"                        if (selectedMessagesCountTextView != null) {{\n"
-            f"                            selectedMessagesCountTextView.setText(LocaleController.formatPluralString(\"MessagesSelected\", selectedMessagesIds[0].size() + selectedMessagesIds[1].size()), false);\n"
-            f"                        }}\n"
-            f"                        try {{\n"
-            f"                            if (getParentActivity() != null) {{\n"
-            f"                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Selected\");\n"
-            f"                            }}\n"
-            f"                        }} catch (Throwable ignore) {{}}\n"
-            f"                    }} catch (Throwable e) {{\n"
-            f"                        FileLog.e(e);\n"
-            f"                    }}\n"
-            f"                }}\n"
-            f"                selectedObject = null;\n"
-            f"                selectedObjectToEditCaption = null;\n"
-            f"                selectedObjectGroup = null;\n"
-            f"                break;\n"
-            f"            }}\n"
-            f"            case {OPTION_LEAVE_COMMENT}: {{ // a11y-fork: leave comment / discussion\n"
-            f"                MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;\n"
-            f"                if (msg != null && currentChat != null) {{\n"
-            f"                    openDiscussionMessageChat(currentChat.id, null, msg.getId(), 0, -1, 0, null);\n"
-            f"                }}\n"
-            f"                selectedObject = null;\n"
-            f"                selectedObjectToEditCaption = null;\n"
-            f"                selectedObjectGroup = null;\n"
-            f"                break;\n"
-            f"            }}\n"
-            f"            case OPTION_RETRY: {{"
-        )
+        new_case = f"""            case {OPTION_SELECT_MESSAGE}: {{ // a11y-fork: OPTION_SELECT_MESSAGE handler v2
+                if (selectedObject != null) {{
+                    try {{
+                        MessageObject toSelect = selectedObject;
+                        closeMenu();
+                        createActionMode();
+                        final ActionBarMenu actionMode = actionBar.createActionMode();
+                        if (actionMode != null) {{
+                            try {{ actionMode.setItemVisibility(delete, View.VISIBLE); }} catch (Throwable ignore) {{}}
+                        }}
+                        try {{
+                            if (actionsButtonsLayout != null) actionsButtonsLayout.bringToFront();
+                        }} catch (Throwable ignore) {{}}
+                        try {{
+                            if (bottomViewsVisibilityController != null) {{
+                                bottomViewsVisibilityController.setViewVisible(MESSAGE_ACTION_CONTAINER, true, true);
+                            }}
+                        }} catch (Throwable ignore) {{}}
+                        if (chatActivityEnterView != null && chatActivityEnterView.getVisibility() == View.VISIBLE) {{
+                            java.util.ArrayList<View> views = new java.util.ArrayList<>();
+                            if (mentionContainer != null && mentionContainer.getVisibility() == View.VISIBLE) views.add(mentionContainer);
+                            if (suggestEmojiPanel != null && suggestEmojiPanel.getVisibility() == View.VISIBLE) views.add(suggestEmojiPanel);
+                            actionBar.showActionMode(true, null, null, views.toArray(new View[0]), new boolean[]{{false, true, true}}, null, 0);
+                        }} else {{
+                            actionBar.showActionMode(true, null, null, null, null, null, 0);
+                        }}
+                        addToSelectedMessages(toSelect, false);
+                        updateActionModeTitle();
+                        updateVisibleRows();
+                        if (chatActivityEnterView != null) {{
+                            chatActivityEnterView.preventInput = true;
+                        }}
+                        if (selectedMessagesCountTextView != null) {{
+                            selectedMessagesCountTextView.setText(LocaleController.formatPluralString("MessagesSelected", selectedMessagesIds[0].size() + selectedMessagesIds[1].size()), false);
+                        }}
+                        try {{
+                            if (getParentActivity() != null) {{
+                                getParentActivity().getWindow().getDecorView().announceForAccessibility("Selected");
+                            }}
+                        }} catch (Throwable ignore) {{}}
+                    }} catch (Throwable e) {{
+                        FileLog.e(e);
+                    }}
+                }}
+                selectedObject = null;
+                selectedObjectToEditCaption = null;
+                selectedObjectGroup = null;
+                break;
+            }}
+            case {OPTION_LEAVE_COMMENT}: {{ // a11y-fork: leave comment
+                MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;
+                if (msg != null && currentChat != null) {{
+                    openDiscussionMessageChat(currentChat.id, null, msg.getId(), 0, -1, 0, null);
+                }}
+                selectedObject = null;
+                selectedObjectToEditCaption = null;
+                selectedObjectGroup = null;
+                break;
+            }}
+            case {OPTION_BOT_BUTTONS}: {{ // a11y-fork: bot buttons submenu
+                try {{
+                    MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;
+                    if (msg != null && msg.messageOwner != null && msg.messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup) {{
+                        TLRPC.TL_replyInlineMarkup markup = (TLRPC.TL_replyInlineMarkup) msg.messageOwner.reply_markup;
+                        java.util.ArrayList<CharSequence> labels = new java.util.ArrayList<>();
+                        java.util.ArrayList<TL_keyboard.KeyboardButtonProto> btns = new java.util.ArrayList<>();
+                        if (markup.rows != null) {{
+                            for (int ri = 0; ri < markup.rows.size(); ri++) {{
+                                TL_keyboard.KeyboardInlineButtonRow row = markup.rows.get(ri);
+                                if (row == null || row.buttons == null) continue;
+                                for (int bi = 0; bi < row.buttons.size(); bi++) {{
+                                    TL_keyboard.KeyboardButtonProto b = row.buttons.get(bi);
+                                    if (b == null) continue;
+                                    String label = b.text != null ? b.text : ("Button " + (labels.size() + 1));
+                                    labels.add(label);
+                                    btns.add(b);
+                                }}
+                            }}
+                        }}
+                        if (!labels.isEmpty() && getParentActivity() != null) {{
+                            final MessageObject msgFinal = msg;
+                            final java.util.ArrayList<TL_keyboard.KeyboardButtonProto> btnsFinal = btns;
+                            new android.app.AlertDialog.Builder(getParentActivity())
+                                .setTitle("Bot buttons")
+                                .setItems(labels.toArray(new CharSequence[0]), (dialog, which) -> {{
+                                    try {{
+                                        if (which >= 0 && which < btnsFinal.size() && chatActivityEnterView != null) {{
+                                            chatActivityEnterView.didPressedBotButton(btnsFinal.get(which), msgFinal, msgFinal, null);
+                                        }}
+                                    }} catch (Throwable e2) {{
+                                        FileLog.e(e2);
+                                    }}
+                                }})
+                                .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+                                .show();
+                        }}
+                    }}
+                }} catch (Throwable e) {{
+                    FileLog.e(e);
+                }}
+                selectedObject = null;
+                selectedObjectToEditCaption = null;
+                selectedObjectGroup = null;
+                break;
+            }}
+            case {OPTION_REACTIONS_MENU}: {{ // a11y-fork: react submenu
+                try {{
+                    MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;
+                    if (msg != null && getParentActivity() != null) {{
+                        java.util.List<TLRPC.TL_availableReaction> available = getMediaDataController().getEnabledReactionsList();
+                        java.util.ArrayList<CharSequence> labels = new java.util.ArrayList<>();
+                        java.util.ArrayList<String> emojis = new java.util.ArrayList<>();
+                        if (available != null) {{
+                            for (int i = 0; i < available.size() && i < 24; i++) {{
+                                TLRPC.TL_availableReaction ar = available.get(i);
+                                if (ar == null || ar.reaction == null) continue;
+                                labels.add(ar.reaction);
+                                emojis.add(ar.reaction);
+                            }}
+                        }}
+                        if (labels.isEmpty()) {{
+                            String[] defaults = new String[]{{"\u2764", "\uD83D\uDC4D", "\uD83D\uDC4E", "\uD83D\uDE02", "\uD83D\uDE2E", "\uD83D\uDE22"}};
+                            for (String e : defaults) {{ labels.add(e); emojis.add(e); }}
+                        }}
+                        final MessageObject msgFinal = msg;
+                        final java.util.ArrayList<String> emojisFinal = emojis;
+                        new android.app.AlertDialog.Builder(getParentActivity())
+                            .setTitle("React")
+                            .setItems(labels.toArray(new CharSequence[0]), (dialog, which) -> {{
+                                try {{
+                                    if (which >= 0 && which < emojisFinal.size()) {{
+                                        String emoji = emojisFinal.get(which);
+                                        getSendMessagesHelper().sendReaction(msgFinal, emoji, null, false, false, ChatActivity.this, null);
+                                    }}
+                                }} catch (Throwable e2) {{
+                                    try {{
+                                        // fallback older signature
+                                        getSendMessagesHelper().sendReaction(msgFinal, emojisFinal.get(which), null, false, ChatActivity.this);
+                                    }} catch (Throwable e3) {{
+                                        FileLog.e(e3);
+                                    }}
+                                }}
+                            }})
+                            .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+                            .show();
+                    }}
+                }} catch (Throwable e) {{
+                    FileLog.e(e);
+                }}
+                selectedObject = null;
+                selectedObjectToEditCaption = null;
+                selectedObjectGroup = null;
+                break;
+            }}
+            case OPTION_RETRY: {{"""
         if old_case in t:
             t = t.replace(old_case, new_case, 1)
-            print("Select + Leave comment handlers OK")
+            print("Select/Leave/Bot/React handlers v2 OK")
         else:
             print("WARN: OPTION_RETRY case not found for handlers")
-    elif "OPTION_LEAVE_COMMENT" not in t or "a11y-fork: leave comment" not in t:
-        # only leave-comment handler missing
-        if "case OPTION_RETRY: {" in t and f"case {OPTION_LEAVE_COMMENT}:" not in t:
-            t = t.replace(
-                "            case OPTION_RETRY: {",
-                f"            case {OPTION_LEAVE_COMMENT}: {{ // a11y-fork: leave comment / discussion\n"
-                f"                MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;\n"
-                f"                if (msg != null && currentChat != null) {{\n"
-                f"                    openDiscussionMessageChat(currentChat.id, null, msg.getId(), 0, -1, 0, null);\n"
-                f"                }}\n"
-                f"                selectedObject = null;\n"
-                f"                selectedObjectToEditCaption = null;\n"
-                f"                selectedObjectGroup = null;\n"
-                f"                break;\n"
-                f"            }}\n"
-                f"            case OPTION_RETRY: {{",
-                1,
-            )
-            print("Leave comment handler added")
 
     ca.write_text(t, encoding="utf-8")
 
