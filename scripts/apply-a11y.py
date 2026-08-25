@@ -395,7 +395,6 @@ def patch_longpress_message_menu() -> None:
         return
     t = ca.read_text(encoding="utf-8")
 
-    # 1) Skip auto multi-select on long-press when a11y on
     old_ms = (
         "            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null && ((ChatMessageCell) view).getMessageObject().type != MessageObject.TYPE_JOINED_CHANNEL)) {\n"
         "                startMultiselect(position);\n"
@@ -446,7 +445,6 @@ def patch_longpress_message_menu() -> None:
         else:
             print("WARN: didLongPress startMultiselect block not found")
 
-    # 2) Append Select / Leave comment / Bot buttons / React at END of fillMessageMenu
     if "a11y-fork: end menu items" not in t:
         end_marker = (
             "        if (showWelcomeMessageRevertOption(primaryMessage)) {\n"
@@ -456,44 +454,6 @@ def patch_longpress_message_menu() -> None:
             "        }\n"
             "    }"
         )
-        end_inject = (
-            "        if (showWelcomeMessageRevertOption(primaryMessage)) {\n"
-            "            items.add(getString(R.string.WelcomeMessageRevert));\n"
-            "            options.add(OPTION_WELCOME_REVERT);\n"
-            "            icons.add(R.drawable.outline_revert_24);\n"
-            "        }\n"
-            "        // a11y-fork: end menu items (Select, Leave comment, Bot buttons, React)\n"
-            "        try {\n"
-            f"            if (!isThreadChat() && chatMode != MODE_SCHEDULED && currentChat != null && primaryMessage != null && primaryMessage.canViewThread() && !options.contains(OPTION_VIEW_REPLIES_OR_THREAD)) {{\n"
-            f"                items.add(LocaleController.getString(R.string.LeaveAComment));\n"
-            f"                options.add({OPTION_LEAVE_COMMENT});\n"
-            f"                icons.add(R.drawable.msg_msgbubble);\n"
-            f"            }}\n"
-            f"            if (primaryMessage != null && primaryMessage.messageOwner != null && primaryMessage.messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup) {{\n"
-            f"                items.add(\"Bot buttons\");\n"
-            f"                options.add({OPTION_BOT_BUTTONS});\n"
-            f"                icons.add(R.drawable.msg_bot);\n"
-            f"            }}\n"
-            f"            if (primaryMessage != null && primaryMessage.isReactionsAvailable()) {{\n"
-            f"                items.add(\"React\");\n"
-            f"                options.add({OPTION_REACTIONS_MENU});\n"
-            f"                icons.add(R.drawable.msg_reactions);\n"
-            f"            }}\n"
-            f"            if (!actionBar.isActionModeShowed() && primaryMessage != null && primaryMessage.contentType == 0 && !primaryMessage.isSponsored()) {{\n"
-            f"                items.add(LocaleController.getString(R.string.Select));\n"
-            f"                options.add({OPTION_SELECT_MESSAGE});\n"
-            f"                icons.add(R.drawable.msg_select);\n"
-            f"            }}\n"
-            f"        }} catch (Throwable ignore) {{}}\n"
-            f"    }}"
-        )
-        # safer drawables if some missing
-        end_inject = end_inject.replace("R.drawable.msg_bot", "R.drawable.msg_botwebapp").replace(
-            "R.drawable.msg_reactions", "R.drawable.msg_reactions2"
-        ).replace("R.drawable.msg_select", "R.drawable.msg_forward").replace(
-            "R.drawable.msg_botwebapp", "R.drawable.msg_bot"
-        )
-        # use only known-safe drawables
         end_inject = (
             "        if (showWelcomeMessageRevertOption(primaryMessage)) {\n"
             "            items.add(getString(R.string.WelcomeMessageRevert));\n"
@@ -531,9 +491,9 @@ def patch_longpress_message_menu() -> None:
         else:
             print("WARN: fillMessageMenu end marker not found")
 
-    # 3) Handlers — inject before case OPTION_RETRY
     if "a11y-fork: OPTION_SELECT_MESSAGE handler v2" not in t:
         old_case = "            case OPTION_RETRY: {"
+        # NOTE: no emoji surrogates in this inject (UTF-8 write fails on lone surrogates)
         new_case = f"""            case {OPTION_SELECT_MESSAGE}: {{ // a11y-fork: OPTION_SELECT_MESSAGE handler v2
                 if (selectedObject != null) {{
                     try {{
@@ -655,30 +615,29 @@ def patch_longpress_message_menu() -> None:
                             }}
                         }}
                         if (labels.isEmpty()) {{
-                            String[] defaults = new String[]{{"\u2764", "\uD83D\uDC4D", "\uD83D\uDC4E", "\uD83D\uDE02", "\uD83D\uDE2E", "\uD83D\uDE22"}};
-                            for (String e : defaults) {{ labels.add(e); emojis.add(e); }}
-                        }}
-                        final MessageObject msgFinal = msg;
-                        final java.util.ArrayList<String> emojisFinal = emojis;
-                        new android.app.AlertDialog.Builder(getParentActivity())
-                            .setTitle("React")
-                            .setItems(labels.toArray(new CharSequence[0]), (dialog, which) -> {{
-                                try {{
-                                    if (which >= 0 && which < emojisFinal.size()) {{
-                                        String emoji = emojisFinal.get(which);
-                                        getSendMessagesHelper().sendReaction(msgFinal, emoji, null, false, false, ChatActivity.this, null);
-                                    }}
-                                }} catch (Throwable e2) {{
+                            // no hardcoded emoji fallback (patch must stay BMP/UTF-8 safe)
+                        }} else {{
+                            final MessageObject msgFinal = msg;
+                            final java.util.ArrayList<String> emojisFinal = emojis;
+                            new android.app.AlertDialog.Builder(getParentActivity())
+                                .setTitle("React")
+                                .setItems(labels.toArray(new CharSequence[0]), (dialog, which) -> {{
                                     try {{
-                                        // fallback older signature
-                                        getSendMessagesHelper().sendReaction(msgFinal, emojisFinal.get(which), null, false, ChatActivity.this);
-                                    }} catch (Throwable e3) {{
-                                        FileLog.e(e3);
+                                        if (which >= 0 && which < emojisFinal.size()) {{
+                                            String emoji = emojisFinal.get(which);
+                                            getSendMessagesHelper().sendReaction(msgFinal, emoji, null, false, false, ChatActivity.this, null);
+                                        }}
+                                    }} catch (Throwable e2) {{
+                                        try {{
+                                            getSendMessagesHelper().sendReaction(msgFinal, emojisFinal.get(which), null, false, ChatActivity.this);
+                                        }} catch (Throwable e3) {{
+                                            FileLog.e(e3);
+                                        }}
                                     }}
-                                }}
-                            }})
-                            .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
-                            .show();
+                                }})
+                                .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+                                .show();
+                        }}
                     }}
                 }} catch (Throwable e) {{
                     FileLog.e(e);
