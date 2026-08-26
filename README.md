@@ -13,7 +13,7 @@ TalkBack-friendly patches for official [Telegram Android](https://github.com/DrK
 
 | Feature | Description |
 |--------|-------------|
-| Chat list order | **Name first, then type** (e.g. “Grok, channel”) |
+| Chat list order | **Name first, then type** (e.g. “Shamloo, channel”) |
 | Less clutter between messages | Hide **Share** and on-bubble **Leave comment**; comment stays in the message menu |
 | Progress | Announce **upload/download percent** |
 | Long-press | Opens the **single-message menu** (not multi-select by default under TalkBack) |
@@ -128,7 +128,7 @@ Not affiliated with Telegram FZ-LLC. Use at your own risk.
 
 ## قابلیت‌ها (TalkBack)
 
-- لیست چت: **اول نام، بعد نوع** (مثلاً «گراک، کانال»)
+- لیست چت: **اول نام، بعد نوع** (مثلاً «Shamloo، کانال»)
 - بین پیام‌ها: مخفی **Share** و دکمهٔ روی حباب **Leave comment** (کامنت در منوی پیام)
 - اعلام **درصد** آپلود/دانلود
 - long-press: منوی **تک‌پیام** (نه multi-select پیش‌فرض زیر TalkBack)
