@@ -15,6 +15,7 @@ public class A11yConfig {
     public static final String PREF_ANNOUNCE_MUTED = "a11y_announce_muted";
     public static final String PREF_SHOW_PROXY_NEAR_CHATS = "a11y_show_proxy_near_chats";
     public static final String PREF_GHOST_MODE = "a11y_ghost_mode";
+    public static final String PREF_ANNOUNCE_USER_STATUS = "a11y_announce_user_status";
 
     public static int getProgressStep() {
         try {
@@ -81,7 +82,6 @@ public class A11yConfig {
         return "High";
     }
 
-    /** Hide proxy-sponsored channel from the chat list (default: true). */
     public static boolean isHideProxySponsor() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_HIDE_PROXY_SPONSOR, true);
@@ -100,7 +100,6 @@ public class A11yConfig {
         }
     }
 
-    /** If false (default), TalkBack does not say "muted" on chat rows. */
     public static boolean isAnnounceMuted() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_ANNOUNCE_MUTED, false);
@@ -116,7 +115,6 @@ public class A11yConfig {
         }
     }
 
-    /** Always show Proxy entry near chat list menu (default: true). */
     public static boolean isShowProxyNearChats() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_SHOW_PROXY_NEAR_CHATS, true);
@@ -132,10 +130,6 @@ public class A11yConfig {
         }
     }
 
-    /**
-     * Ghost mode: no read receipts to server, no typing indicator.
-     * Local unread badges still clear when you open a chat.
-     */
     public static boolean isGhostMode() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_GHOST_MODE, false);
@@ -147,6 +141,22 @@ public class A11yConfig {
     public static void setGhostMode(boolean on) {
         try {
             MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_GHOST_MODE, on).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /** Announce online / last seen on private chats before message preview (default: true). */
+    public static boolean isAnnounceUserStatus() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_ANNOUNCE_USER_STATUS, true);
+        } catch (Throwable ignore) {
+            return true;
+        }
+    }
+
+    public static void setAnnounceUserStatus(boolean on) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_ANNOUNCE_USER_STATUS, on).apply();
         } catch (Throwable ignore) {
         }
     }
@@ -178,6 +188,7 @@ public class A11yConfig {
                     "Announce muted: " + (isAnnounceMuted() ? "On" : "Off"),
                     "Show proxy near chats: " + (isShowProxyNearChats() ? "On" : "Off"),
                     "Ghost mode: " + (isGhostMode() ? "On" : "Off"),
+                    "Announce online / last seen: " + (isAnnounceUserStatus() ? "On" : "Off"),
                     "Open proxy settings"
             };
             new AlertDialog.Builder(activity)
@@ -204,6 +215,10 @@ public class A11yConfig {
                             setGhostMode(next);
                             announce(activity, next ? "Ghost mode on" : "Ghost mode off");
                         } else if (which == 6) {
+                            boolean next = !isAnnounceUserStatus();
+                            setAnnounceUserStatus(next);
+                            announce(activity, next ? "Announce online last seen on" : "Announce online last seen off");
+                        } else if (which == 7) {
                             openProxySettings(activity);
                         }
                     })
