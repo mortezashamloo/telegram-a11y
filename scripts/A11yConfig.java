@@ -13,6 +13,8 @@ public class A11yConfig {
     public static final String PREF_VOICE_QUALITY = "a11y_voice_quality";
     public static final String PREF_HIDE_PROXY_SPONSOR = "a11y_hide_proxy_sponsor";
     public static final String PREF_ANNOUNCE_MUTED = "a11y_announce_muted";
+    public static final String PREF_SHOW_PROXY_NEAR_CHATS = "a11y_show_proxy_near_chats";
+    public static final String PREF_GHOST_MODE = "a11y_ghost_mode";
 
     public static int getProgressStep() {
         try {
@@ -114,6 +116,41 @@ public class A11yConfig {
         }
     }
 
+    /** Always show Proxy entry near chat list menu (default: true). */
+    public static boolean isShowProxyNearChats() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_SHOW_PROXY_NEAR_CHATS, true);
+        } catch (Throwable ignore) {
+            return true;
+        }
+    }
+
+    public static void setShowProxyNearChats(boolean show) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_SHOW_PROXY_NEAR_CHATS, show).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /**
+     * Ghost mode: no read receipts to server, no typing indicator.
+     * Local unread badges still clear when you open a chat.
+     */
+    public static boolean isGhostMode() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_GHOST_MODE, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setGhostMode(boolean on) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_GHOST_MODE, on).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static void tryHideCurrentProxyPromo() {
         try {
             for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
@@ -138,7 +175,10 @@ public class A11yConfig {
                     "Progress announce: " + progressStepLabel(),
                     "Voice quality: " + voiceQualityLabel(),
                     "Hide proxy channel sponsor: " + (isHideProxySponsor() ? "On" : "Off"),
-                    "Announce muted: " + (isAnnounceMuted() ? "On" : "Off")
+                    "Announce muted: " + (isAnnounceMuted() ? "On" : "Off"),
+                    "Show proxy near chats: " + (isShowProxyNearChats() ? "On" : "Off"),
+                    "Ghost mode: " + (isGhostMode() ? "On" : "Off"),
+                    "Open proxy settings"
             };
             new AlertDialog.Builder(activity)
                     .setTitle("Accessible settings")
@@ -150,25 +190,45 @@ public class A11yConfig {
                         } else if (which == 2) {
                             boolean next = !isHideProxySponsor();
                             setHideProxySponsor(next);
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        next ? "Hide proxy channel sponsor on" : "Hide proxy channel sponsor off");
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, next ? "Hide proxy channel sponsor on" : "Hide proxy channel sponsor off");
                         } else if (which == 3) {
                             boolean next = !isAnnounceMuted();
                             setAnnounceMuted(next);
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        next ? "Announce muted on" : "Announce muted off");
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, next ? "Announce muted on" : "Announce muted off");
+                        } else if (which == 4) {
+                            boolean next = !isShowProxyNearChats();
+                            setShowProxyNearChats(next);
+                            announce(activity, next ? "Show proxy near chats on" : "Show proxy near chats off");
+                        } else if (which == 5) {
+                            boolean next = !isGhostMode();
+                            setGhostMode(next);
+                            announce(activity, next ? "Ghost mode on" : "Ghost mode off");
+                        } else if (which == 6) {
+                            openProxySettings(activity);
                         }
                     })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
         } catch (Throwable ignore) {
         }
+    }
+
+    private static void announce(Activity activity, String msg) {
+        try {
+            activity.getWindow().getDecorView().announceForAccessibility(msg);
+        } catch (Throwable ignore) {
+        }
+    }
+
+    private static void openProxySettings(Activity activity) {
+        try {
+            if (activity instanceof org.telegram.ui.LaunchActivity) {
+                ((org.telegram.ui.LaunchActivity) activity).presentFragment(new org.telegram.ui.ProxyListActivity());
+                return;
+            }
+        } catch (Throwable ignore) {
+        }
+        announce(activity, "Open proxy from the chat list menu");
     }
 
     private static void showProgressStepPicker(Activity activity) {
@@ -184,10 +244,7 @@ public class A11yConfig {
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     setProgressStep(steps[which]);
                     d.dismiss();
-                    try {
-                        activity.getWindow().getDecorView().announceForAccessibility("Progress step " + steps[which] + " percent");
-                    } catch (Throwable ignore) {
-                    }
+                    announce(activity, "Progress step " + steps[which] + " percent");
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
@@ -202,10 +259,7 @@ public class A11yConfig {
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     setVoiceQuality(which);
                     d.dismiss();
-                    try {
-                        activity.getWindow().getDecorView().announceForAccessibility("Voice quality " + labels[which]);
-                    } catch (Throwable ignore) {
-                    }
+                    announce(activity, "Voice quality " + labels[which]);
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
