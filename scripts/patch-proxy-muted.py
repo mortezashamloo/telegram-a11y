@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Extra a11y patches: skip muted in TalkBack (default), hide proxy sponsor channel."""
+"""Extra a11y patches: skip muted in TalkBack, hide proxy sponsor, longer message preview."""
 from pathlib import Path
 import re
 import sys
 
 ROOT = Path("telegram/TMessagesProj")
 JAVA = ROOT / "src/main/java"
+
+# Official Telegram truncates dialog message preview at 150 characters.
+PREVIEW_CHARS = 300
 
 
 def patch_dialogcell_muted() -> None:
@@ -16,25 +19,78 @@ def patch_dialogcell_muted() -> None:
     t = dc.read_text(encoding="utf-8")
     if "a11y-fork: optional muted" in t:
         print("DialogCell muted already patched")
-        return
-    old = (
-        "        if (dialogMuted) {\n"
-        "            sb.append(getString(R.string.AccDescrNotificationsMuted));\n"
-        '            sb.append(". ");\n'
-        "        }"
-    )
-    new = (
-        "        // a11y-fork: optional muted announcement (default off)\n"
-        "        if (dialogMuted && org.telegram.messenger.A11yConfig.isAnnounceMuted()) {\n"
-        "            sb.append(getString(R.string.AccDescrNotificationsMuted));\n"
-        '            sb.append(". ");\n'
-        "        }"
-    )
-    if old in t:
-        dc.write_text(t.replace(old, new, 1), encoding="utf-8")
-        print("DialogCell skip muted (default) OK")
     else:
-        print("WARN: DialogCell muted block not found")
+        old = (
+            "        if (dialogMuted) {\n"
+            "            sb.append(getString(R.string.AccDescrNotificationsMuted));\n"
+            '            sb.append(". ");\n'
+            "        }"
+        )
+        new = (
+            "        // a11y-fork: optional muted announcement (default off)\n"
+            "        if (dialogMuted && org.telegram.messenger.A11yConfig.isAnnounceMuted()) {\n"
+            "            sb.append(getString(R.string.AccDescrNotificationsMuted));\n"
+            '            sb.append(". ");\n'
+            "        }"
+        )
+        if old in t:
+            t = t.replace(old, new, 1)
+            print("DialogCell skip muted (default) OK")
+        else:
+            print("WARN: DialogCell muted block not found")
+
+    # Longer message preview for sighted + TalkBack (only text-truncation sites, not animations)
+    if "a11y-fork: longer preview" in t:
+        print("DialogCell preview length already patched")
+    else:
+        n = 0
+        # builder.length() > 150  (two sites)
+        t2, c = re.subn(
+            r"if \(builder\.length\(\) > 150\)",
+            f"if (builder.length() > {PREVIEW_CHARS}) /* a11y-fork: longer preview */",
+            t,
+        )
+        t, n = t2, n + c
+        # mess.length() > 150 + substring/subSequence(0, 150)
+        t2, c = re.subn(
+            r"if \(mess\.length\(\) > 150\) \{\s*mess = mess\.(substring|subSequence)\(0, 150\);",
+            f"if (mess.length() > {PREVIEW_CHARS}) {{\n                mess = mess.\1(0, {PREVIEW_CHARS});",
+            t,
+            flags=re.S,
+        )
+        t, n = t2, n + c
+        # messageString.length() > 150
+        t2, c = re.subn(
+            r"if \(messageString\.length\(\) > 150\) \{\s*messageString = messageString\.subSequence\(0, 150\);",
+            f"if (messageString.length() > {PREVIEW_CHARS}) {{\n                                            messageString = messageString.subSequence(0, {PREVIEW_CHARS});",
+            t,
+            flags=re.S,
+        )
+        t, n = t2, n + c
+        # formatRichMessage(..., 150)
+        t2, c = re.subn(
+            r"(formatRichMessage\([^\)]*?),\s*150\)",
+            rf"\1, {PREVIEW_CHARS}) /* a11y-fork: longer preview */",
+            t,
+        )
+        t, n = t2, n + c
+        if n:
+            if "a11y-fork: longer preview" not in t:
+                # ensure marker exists for idempotency
+                t = t.replace(
+                    f"if (builder.length() > {PREVIEW_CHARS}) /* a11y-fork: longer preview */",
+                    f"if (builder.length() > {PREVIEW_CHARS}) /* a11y-fork: longer preview */",
+                    1,
+                )
+            dc.write_text(t, encoding="utf-8")
+            print(f"DialogCell preview length 150->{PREVIEW_CHARS} OK ({n} replacements)")
+        else:
+            dc.write_text(t, encoding="utf-8")
+            print("WARN: DialogCell preview length needles not found")
+            return
+
+    if "a11y-fork: optional muted" in t or "a11y-fork: longer preview" in t:
+        dc.write_text(t, encoding="utf-8")
 
 
 def patch_proxy_sponsor_hide() -> None:
