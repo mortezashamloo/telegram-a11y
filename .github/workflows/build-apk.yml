@@ -1,1 +1,31 @@
-No files were found with the provided path: telegram/TMessagesProj/config/a11y-release.keystore. No artifacts will be uploaded.
+# .github/workflows/build-apk.yml
+name: Build APK
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Apply a11y patches
+        run: |
+          python3 scripts/apply-a11y.py
+
+      - name: Post-process menu
+        run: |
+          python3 scripts/post-a11y-menu.py
+
+      - name: Build APK
+        run: |
+          ./gradlew assembleAfatDebug
