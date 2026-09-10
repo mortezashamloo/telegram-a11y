@@ -1,25 +1,19 @@
 ﻿# -*- coding: utf-8 -*-
 import re
 import os
-import shutil
 
 def remove_hidden_char(text):
-    """حذف کاراکتر مخفی کنترل ('\u0001') که باعث خطای illegal character می‌شود"""
     return text.replace('\x01', '').replace('\u0001', '')
 
 def process_text_file(file_path):
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        cleaned = remove_hidden_char(content)
-        if cleaned != content:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(cleaned)
-            return True
-        return False
-    except Exception as e:
-        print(f"خطا در فایل {file_path}: {e}")
-        return False
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    cleaned = remove_hidden_char(content)
+    if cleaned != content:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(cleaned)
+        return True
+    return False
 
 def main():
     base_dir = os.path.dirname(os.path.abspath(__file__))
