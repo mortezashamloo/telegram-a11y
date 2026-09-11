@@ -35,6 +35,7 @@ OPTION_REACTIONS_MENU = 201
 OPTION_FORWARD_TO_SAVED = 202
 OPTION_SELECT_MESSAGE = 203
 OPTION_LEAVE_COMMENT = 204
+OPTION_BOT_BUTTONS_MENU = 205
 
 
 def _set_string(path: Path, name: str, value: str) -> None:
@@ -353,9 +354,87 @@ def patch_forward_menu_extras() -> None:
 
 
 def patch_reactions_as_menu() -> None:
-    # Reactions row toggle is applied via patches/04-comment-and-reactions.patch
-    # Do NOT force isReactionsAvailableFinal=false (that patch needs it true).
-    print("Reactions: deferred to 04-comment-and-reactions.patch")
+    """
+    Accessibility-fork: put the emoji reactions row behind a "Reactions"
+    menu item (hidden/collapsed by default, revealed on tap) instead of it
+    always being a focusable row above the message menu -- keeps TalkBack
+    navigation from being cluttered by a rarely-used control. Inserted at
+    the SAME anchor Bot Buttons/Select use, and this function is called
+    before those two in main(), so the final order is:
+    Reactions, Bot Buttons, Select (last).
+    """
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity missing (reactions menu)")
+        return
+    t = ca.read_text(encoding="utf-8")
+    if "a11y-fork: reactions menu item" in t:
+        print("ChatActivity reactions-menu already patched")
+        return
+
+    old_item = (
+        "        if (message.isSponsored() && !getUserConfig().isPremium() "
+        "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
+    )
+    new_item = (
+        "        // a11y-fork: reactions menu item\n"
+        "        accessibilityReactionsToggleIndex = -1;\n"
+        "        if (isReactionsAvailableFinal) {\n"
+        "            items.add(LocaleController.getString(R.string.Reactions));\n"
+        "            icons.add(R.drawable.msg_reactions2);\n"
+        f"            options.add({OPTION_REACTIONS_MENU});\n"
+        "            accessibilityReactionsToggleIndex = items.size() - 1;\n"
+        "        }\n"
+        "\n"
+        "        if (message.isSponsored() && !getUserConfig().isPremium() "
+        "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
+    )
+    if old_item not in t:
+        print("WARN: ChatActivity sponsored-item anchor not found (reactions menu item)")
+        return
+    t = t.replace(old_item, new_item, 1)
+
+    if "accessibilityReactionsToggleIndex" not in t.split("a11y-fork: reactions menu item")[0]:
+        # add the field declaration once, right before the class body's first field-like anchor
+        field_anchor = "public class ChatActivity"
+        idx = t.find(field_anchor)
+        if idx != -1:
+            brace_idx = t.find("{", idx)
+            if brace_idx != -1:
+                t = (
+                    t[: brace_idx + 1]
+                    + "\n    private int accessibilityReactionsToggleIndex = -1; // a11y-fork: reactions menu item\n"
+                    + t[brace_idx + 1 :]
+                )
+
+    old_toggle = (
+        "                    scrimPopupContainerLayout.addView(reactionsLayout, params);\n"
+        "                    scrimPopupContainerLayout.setReactionsLayout(reactionsLayout);\n"
+    )
+    new_toggle = (
+        "                    scrimPopupContainerLayout.addView(reactionsLayout, params);\n"
+        "                    scrimPopupContainerLayout.setReactionsLayout(reactionsLayout);\n"
+        "\n"
+        "                    // a11y-fork: reactions menu item -- hide the reactions row\n"
+        "                    // by default; the \"Reactions\" menu item reveals it on tap.\n"
+        "                    reactionsLayout.setVisibility(View.GONE);\n"
+        "                    if (accessibilityReactionsToggleIndex >= 0 && scrimPopupWindowItems != null\n"
+        "                        && accessibilityReactionsToggleIndex < scrimPopupWindowItems.length\n"
+        "                        && scrimPopupWindowItems[accessibilityReactionsToggleIndex] != null) {\n"
+        "                        final ReactionsContainerLayout reactionsLayoutForToggle = reactionsLayout;\n"
+        "                        scrimPopupWindowItems[accessibilityReactionsToggleIndex].setOnClickListener(reactionsToggleView -> {\n"
+        "                            boolean show = reactionsLayoutForToggle.getVisibility() != View.VISIBLE;\n"
+        "                            reactionsLayoutForToggle.setVisibility(show ? View.VISIBLE : View.GONE);\n"
+        "                        });\n"
+        "                    }\n"
+    )
+    if old_toggle not in t:
+        print("WARN: ChatActivity reactionsLayout anchor not found (visibility toggle)")
+    else:
+        t = t.replace(old_toggle, new_toggle, 1)
+
+    ca.write_text(t, encoding="utf-8")
+    print("ChatActivity reactions-menu item+toggle OK")
 
 
 def patch_longpress_message_menu() -> None:
@@ -765,6 +844,124 @@ def patch_ghost_mode() -> None:
     print(f"ChatActivity ghost-mode OK ({n} call sites guarded)")
 
 
+
+def patch_bot_buttons_menu() -> None:
+    """
+    Accessibility-fork: fold scattered inline bot buttons (Connect/Close/
+    Open etc.) under each message bubble into a single "Bot Buttons" item
+    in the message options menu, opening a picker dialog instead.
+    """
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not cmc.exists() or not ca.exists():
+        print("WARN: ChatMessageCell/ChatActivity missing (bot buttons menu)")
+        return
+
+    # 1) Hide the inline bot-button row under the bubble.
+    t = cmc.read_text(encoding="utf-8")
+    if "a11y-fork: bot buttons menu" in t:
+        print("ChatMessageCell bot-buttons-menu already patched")
+    else:
+        old = (
+            "            final int separatorHeight = dp(4 + 4);\n"
+            "            if (!messageObject.isRestrictedMessage && !messageObject.isRepostPreview "
+            "&& (currentPosition == null || currentMessagesGroup != null && currentMessagesGroup.isDocuments "
+            "&& currentPosition.last) && (inlineButtons != null) && !messageObject.hasExtendedMedia()) {\n"
+        )
+        new = (
+            "            final int separatorHeight = dp(4 + 4);\n"
+            "            // a11y-fork: bot buttons menu -- inline bot buttons under\n"
+            "            // the bubble are hidden from TalkBack; use the \"Bot Buttons\"\n"
+            "            // message menu item instead.\n"
+            "            if (false && !messageObject.isRestrictedMessage && !messageObject.isRepostPreview "
+            "&& (currentPosition == null || currentMessagesGroup != null && currentMessagesGroup.isDocuments "
+            "&& currentPosition.last) && (inlineButtons != null) && !messageObject.hasExtendedMedia()) {\n"
+        )
+        if old not in t:
+            print("WARN: ChatMessageCell inline-bot-buttons anchor not found")
+        else:
+            t = t.replace(old, new, 1)
+            cmc.write_text(t, encoding="utf-8")
+            print("ChatMessageCell bot-buttons-menu hide OK")
+
+    # 2) Add the "Bot Buttons" menu item + its click handler in ChatActivity.
+    t2 = ca.read_text(encoding="utf-8")
+    if "a11y-fork: bot buttons menu" in t2:
+        print("ChatActivity bot-buttons-menu already patched")
+        return
+
+    old_item = (
+        "        if (message.isSponsored() && !getUserConfig().isPremium() "
+        "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
+    )
+    new_item = (
+        "        // a11y-fork: bot buttons menu\n"
+        "        if (message != null && message.hasInlineBotButtons()) {\n"
+        "            items.add(\"Bot Buttons\");\n"
+        "            options.add(OPTION_BOT_BUTTONS_MENU);\n"
+        "            icons.add(R.drawable.msg_viewreplies);\n"
+        "        }\n"
+        "\n"
+        "        if (message.isSponsored() && !getUserConfig().isPremium() "
+        "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
+    )
+    if old_item not in t2:
+        print("WARN: ChatActivity sponsored-item anchor not found (bot buttons menu item)")
+        return
+    t2 = t2.replace(old_item, new_item, 1)
+
+    old_case = "            case OPTION_RETRY: {\n"
+    new_case = (
+        "            case OPTION_BOT_BUTTONS_MENU: {\n"
+        "                try {\n"
+        "                    MessageObject msg = selectedObject;\n"
+        "                    ArrayList<CharSequence> labels = new ArrayList<>();\n"
+        "                    ArrayList<TL_keyboard.KeyboardInlineButton> btns = new ArrayList<>();\n"
+        "                    if (msg != null && msg.messageOwner != null && msg.messageOwner.reply_markup "
+        "instanceof TLRPC.TL_replyInlineMarkup) {\n"
+        "                        TLRPC.TL_replyInlineMarkup markup = (TLRPC.TL_replyInlineMarkup) msg.messageOwner.reply_markup;\n"
+        "                        for (int b = 0; b < markup.rows.size(); b++) {\n"
+        "                            TL_keyboard.KeyboardInlineButtonRow row = markup.rows.get(b);\n"
+        "                            for (int c = 0; c < row.buttons.size(); c++) {\n"
+        "                                TL_keyboard.KeyboardInlineButton btn = row.buttons.get(c);\n"
+        "                                CharSequence label = !TextUtils.isEmpty(btn.text) ? btn.text : (\"Bot \" + (labels.size() + 1));\n"
+        "                                labels.add(label);\n"
+        "                                btns.add(btn);\n"
+        "                            }\n"
+        "                        }\n"
+        "                    }\n"
+        "                    if (!labels.isEmpty() && getParentActivity() != null) {\n"
+        "                        CharSequence[] itemsArr = labels.toArray(new CharSequence[0]);\n"
+        "                        final MessageObject msgFinal = msg;\n"
+        "                        final ArrayList<TL_keyboard.KeyboardInlineButton> btnsFinal = btns;\n"
+        "                        AlertDialog.Builder botBtnBuilder = new AlertDialog.Builder(getParentActivity());\n"
+        "                        botBtnBuilder.setTitle(\"Bot Buttons\");\n"
+        "                        botBtnBuilder.setItems(itemsArr, (dialog, which) -> {\n"
+        "                            if (which >= 0 && which < btnsFinal.size() && chatActivityEnterView != null) {\n"
+        "                                chatActivityEnterView.didPressedBotButton(btnsFinal.get(which), msgFinal, msgFinal);\n"
+        "                            }\n"
+        "                        });\n"
+        "                        botBtnBuilder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);\n"
+        "                        showDialog(botBtnBuilder.create());\n"
+        "                    }\n"
+        "                } catch (Throwable e) {\n"
+        "                    FileLog.e(e);\n"
+        "                }\n"
+        "                selectedObject = null;\n"
+        "                selectedObjectGroup = null;\n"
+        "                break;\n"
+        "            }\n"
+        "            case OPTION_RETRY: {\n"
+    )
+    if old_case not in t2:
+        print("WARN: ChatActivity OPTION_RETRY case anchor not found (bot buttons menu handler)")
+        return
+    t2 = t2.replace(old_case, new_case, 1)
+
+    ca.write_text(t2, encoding="utf-8")
+    print("ChatActivity bot-buttons-menu item+handler OK")
+
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -777,12 +974,13 @@ def main() -> int:
     patch_hide_share_and_comment()
     patch_forward_menu_extras()
     patch_reactions_as_menu()
-    patch_longpress_message_menu()
     patch_voice_bitrate()
     patch_settings_menu()
     patch_dialogcell_preview_muted_status()
     patch_hide_sponsor_channel()
     patch_ghost_mode()
+    patch_bot_buttons_menu()
+    patch_longpress_message_menu()
     print("A11y REAL patches done")
     return 0
 
