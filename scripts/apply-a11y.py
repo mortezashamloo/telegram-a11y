@@ -372,6 +372,27 @@ def patch_reactions_as_menu() -> None:
         print("ChatActivity reactions-menu already patched")
         return
 
+    # patch_reactions_as_menu injects into fillMessageMenu(), where the
+    # createMenu() local variable named isReactionsAvailableFinal does not
+    # exist.  Define an equivalent local value here, based on Telegram's
+    # current MessageObject API, before the menu item is inserted.
+    if "a11y-fork: reactions availability for menu" not in t:
+        reactions_availability_anchor = (
+            "        final MessageObject.GroupedMessages groupedMessages = selectedObjectGroup;\n"
+            "        final int type = getMessageType(message);\n"
+        )
+        reactions_availability_insert = (
+            "        final MessageObject.GroupedMessages groupedMessages = selectedObjectGroup;\n"
+            "        final int type = getMessageType(message);\n"
+            "        // a11y-fork: reactions availability for menu\n"
+            "        final boolean isReactionsAvailableFinal = message != null && message.isReactionsAvailable();\n"
+        )
+        if reactions_availability_anchor in t:
+            t = t.replace(reactions_availability_anchor, reactions_availability_insert, 1)
+            print("ChatActivity reactions availability declaration OK")
+        else:
+            print("WARN: fillMessageMenu anchor not found (reactions availability)")
+
     old_item = (
         "        if (message.isSponsored() && !getUserConfig().isPremium() "
         "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
@@ -886,8 +907,28 @@ def patch_bot_buttons_menu() -> None:
 
     # 2) Add the "Bot Buttons" menu item + its click handler in ChatActivity.
     t2 = ca.read_text(encoding="utf-8")
+    # a11y-fork: OPTION_BOT_BUTTONS_MENU must be a Java field, not only a
+    # Python-side constant.  The menu item and handler below both reference it.
+    if "a11y-fork: OPTION_BOT_BUTTONS_MENU declaration" not in t2:
+        class_anchor = "public class ChatActivity"
+        class_idx = t2.find(class_anchor)
+        if class_idx != -1:
+            brace_idx = t2.find("{", class_idx)
+            if brace_idx != -1:
+                t2 = (
+                    t2[:brace_idx + 1]
+                    + "\n    private static final int OPTION_BOT_BUTTONS_MENU = 205; // a11y-fork: OPTION_BOT_BUTTONS_MENU declaration\n"
+                    + t2[brace_idx + 1:]
+                )
+                print("ChatActivity OPTION_BOT_BUTTONS_MENU declaration OK")
+            else:
+                print("WARN: ChatActivity class opening brace not found (bot buttons menu)")
+        else:
+            print("WARN: ChatActivity class declaration not found (bot buttons menu)")
+
     if "a11y-fork: bot buttons menu" in t2:
         print("ChatActivity bot-buttons-menu already patched")
+        ca.write_text(t2, encoding="utf-8")
         return
 
     old_item = (
