@@ -79,6 +79,124 @@ def patch_app_name() -> None:
     print("AppName OK")
 
 
+
+def _patch_a11y_string_resources() -> None:
+    """Install English/Persian resources for all accessibility-fork UI text."""
+    en = {
+        "A11yAccessibleSettings": "Accessible settings",
+        "A11yProgressAnnounce": "Progress announce",
+        "A11yVoiceQuality": "Voice quality",
+        "A11yProgressAnnounceSummary": "Progress & voice quality",
+        "A11yProgressAnnounceStep": "Progress announce step",
+        "A11yVoiceMessageQuality": "Voice message quality",
+        "A11yLow": "Low",
+        "A11yMedium": "Medium",
+        "A11yHigh": "High",
+        "A11yProgressStep": "Progress step %1$d percent",
+        "A11yVoiceQualitySelected": "Voice quality %1$s",
+        "A11yForwardWithoutQuote": "Forward without quote",
+        "A11yForwardToSaved": "Forward to Saved Messages",
+        "A11yForwardedToSaved": "Forwarded to Saved Messages",
+        "A11ySelected": "Selected",
+        "A11yReceiveAt": "receive @%1$s",
+        "A11ySentAt": "sent @%1$s",
+        "A11yBotButtons": "Bot Buttons",
+        "A11yBotNumber": "Bot %1$d",
+        "A11yPercent": "%1$d percent",
+    }
+    fa = {
+        "A11yAccessibleSettings": "تنظیمات دسترسپذیری",
+        "A11yProgressAnnounce": "اعلام پیشرفت",
+        "A11yVoiceQuality": "کیفیت صدا",
+        "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
+        "A11yProgressAnnounceStep": "گام اعلام پیشرفت",
+        "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
+        "A11yLow": "پایین",
+        "A11yMedium": "متوسط",
+        "A11yHigh": "بالا",
+        "A11yProgressStep": "گام پیشرفت %1$d درصد",
+        "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
+        "A11yForwardWithoutQuote": "ارسال بدون نقلقول",
+        "A11yForwardToSaved": "ارسال به پیامهای ذخیرهشده",
+        "A11yForwardedToSaved": "به پیامهای ذخیرهشده ارسال شد",
+        "A11ySelected": "انتخاب شد",
+        "A11yReceiveAt": "دریافت در ساعت %1$s",
+        "A11ySentAt": "ارسال در ساعت %1$s",
+        "A11yBotButtons": "دکمههای ربات",
+        "A11yBotNumber": "ربات %1$d",
+        "A11yPercent": "%1$d درصد",
+    }
+    # Remove the zero-width separator accidentally introduced by source editing;
+    # keep normal Persian spacing in Android resources.
+    fa = {k: v.replace("\u000b", " ") for k, v in fa.items()}
+    for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
+        path = RES / rel
+        for name, value in values.items():
+            _set_string(path, name, value)
+
+
+def patch_a11y_localization() -> None:
+    """Replace accessibility-fork hard-coded runtime text with localized resources."""
+    _patch_a11y_string_resources()
+
+    # A11yConfig.java is copied from the user's repository. Localize its labels
+    # without replacing or removing any of the existing settings/features.
+    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
+    if cfg.exists():
+        t = cfg.read_text(encoding="utf-8")
+        replacements = {
+            'return "Low";': 'return LocaleController.getString(R.string.A11yLow);',
+            'return "Medium";': 'return LocaleController.getString(R.string.A11yMedium);',
+            'return "High";': 'return LocaleController.getString(R.string.A11yHigh);',
+            '"Progress announce: " + progressStepLabel()': 'LocaleController.getString(R.string.A11yProgressAnnounce) + ": " + progressStepLabel()',
+            '"Voice quality: " + voiceQualityLabel()': 'LocaleController.getString(R.string.A11yVoiceQuality) + ": " + voiceQualityLabel()',
+            '"Accessible settings"': 'LocaleController.getString(R.string.A11yAccessibleSettings)',
+            '"Progress announce step"': 'LocaleController.getString(R.string.A11yProgressAnnounceStep)',
+            '"Voice message quality"': 'LocaleController.getString(R.string.A11yVoiceMessageQuality)',
+            '"Progress step " + steps[which] + " percent"': 'LocaleController.formatString("A11yProgressStep", R.string.A11yProgressStep, steps[which])',
+            '"Voice quality " + labels[which]': 'LocaleController.formatString("A11yVoiceQualitySelected", R.string.A11yVoiceQualitySelected, labels[which])',
+        }
+        changed = False
+        for old, new in replacements.items():
+            if old in t:
+                t = t.replace(old, new)
+                changed = True
+        if changed:
+            cfg.write_text(t, encoding="utf-8")
+            print("A11yConfig localization OK")
+
+    targets = [
+        JAVA / "org/telegram/ui/ChatActivity.java",
+        JAVA / "org/telegram/ui/Cells/DialogCell.java",
+        JAVA / "org/telegram/ui/Components/RadialProgress.java",
+        JAVA / "org/telegram/ui/Components/RadialProgress2.java",
+        JAVA / "org/telegram/ui/SettingsActivity.java",
+    ]
+    for path in targets:
+        if not path.exists():
+            continue
+        t = path.read_text(encoding="utf-8")
+        original = t
+        replacements = {
+            'items.add("Forward without quote");': 'items.add(LocaleController.getString(R.string.A11yForwardWithoutQuote));',
+            'items.add("Forward to Saved Messages");': 'items.add(LocaleController.getString(R.string.A11yForwardToSaved));',
+            'announceForAccessibility("Forwarded to Saved Messages");': 'announceForAccessibility(LocaleController.getString(R.string.A11yForwardedToSaved));',
+            'announceForAccessibility("Selected");': 'announceForAccessibility(LocaleController.getString(R.string.A11ySelected));',
+            'sb.append(message.isOut() ? "sent @" : "receive @");': 'sb.append(LocaleController.formatString(message.isOut() ? "A11ySentAt" : "A11yReceiveAt", message.isOut() ? R.string.A11ySentAt : R.string.A11yReceiveAt, a11yClockTime));',
+            'items.add("Bot Buttons");': 'items.add(LocaleController.getString(R.string.A11yBotButtons));',
+            'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
+            '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
+            '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
+            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
+        }
+        for old, new in replacements.items():
+            t = t.replace(old, new)
+        if t != original:
+            path.write_text(t, encoding="utf-8")
+            print(f"{path.name} localization OK")
+
+    print("A11y English/Persian localization OK")
+
 def install_a11y_config() -> None:
     src = SCRIPTS / "A11yConfig.java"
     dst = JAVA / "org/telegram/messenger/A11yConfig.java"
@@ -1010,6 +1128,7 @@ def main() -> int:
     print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
     install_a11y_config()
+    patch_a11y_localization()
     patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
