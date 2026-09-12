@@ -6,6 +6,7 @@ When DrKLO/Telegram updates, re-run this script on a fresh clone.
 """
 from pathlib import Path
 import re
+import html
 import shutil
 import sys
 
@@ -39,6 +40,10 @@ OPTION_BOT_BUTTONS_MENU = 205
 
 
 def _set_string(path: Path, name: str, value: str) -> None:
+    # Android string resources are XML. Escape XML text characters before
+    # writing/updating a <string> element. In particular, "&" in labels such
+    # as "Progress & voice quality" must be written as "&amp;".
+    value = html.escape(value, quote=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         path.write_text(
