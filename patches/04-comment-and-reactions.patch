@@ -1,0 +1,42 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+@@ -33472,6 +33499,20 @@
+                 }
+                 break;
+             }
++            case OPTION_LEAVE_COMMENT: {
++                MessageObject message = selectedObject;
++                int maxReadId;
++                long linkedChatId;
++                if (message.messageOwner.replies != null) {
++                    maxReadId = message.messageOwner.replies.read_max_id;
++                    linkedChatId = message.messageOwner.replies.channel_id;
++                } else {
++                    maxReadId = -1;
++                    linkedChatId = 0;
++                }
++                openDiscussionMessageChat(currentChat.id, message, message.getId(), linkedChatId, maxReadId, 0, null);
++                break;
++            }
+             case OPTION_SHARE: {
+                 String path = selectedObject.messageOwner.attachPath;
+                 if (path != null && path.length() > 0) {
+@@ -45645,6 +45686,18 @@
+         final boolean isEphemeral = message.isEphemeral();
+         final boolean isEphemeralFromBot = isEphemeral && !message.isOut();
+ 
++        // Accessibility: the on-bubble "Leave a Comment" button was disabled
++        // (ChatMessageCell.drawCommentButton) to reduce TalkBack clutter;
++        // offer the same action here in the message menu instead.
++        if (message.messageOwner != null && message.messageOwner.replies != null && !isEphemeral) {
++            int commentCount = message.getRepliesCount();
++            items.add(commentCount == 0
++                ? LocaleController.getString(R.string.LeaveAComment)
++                : LocaleController.formatPluralString("CommentsCount", commentCount));
++            icons.add(R.drawable.msg_viewreplies);
++            options.add(OPTION_LEAVE_COMMENT);
++        }
++
+ 
+         boolean allowChatActions = true;
+         boolean allowPin;
