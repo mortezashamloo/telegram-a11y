@@ -6,6 +6,8 @@ import android.content.SharedPreferences;
 
 /**
  * Accessibility-fork user preferences + simple settings dialog.
+ * All user-facing strings are Android string resources (values/strings.xml,
+ * values-fa/strings.xml) so they follow the device/app language automatically.
  */
 public class A11yConfig {
 
@@ -70,7 +72,7 @@ public class A11yConfig {
     }
 
     public static String progressStepLabel() {
-        return getProgressStep() + "%";
+        return LocaleController.formatString(R.string.A11yProgressStepLabel, getProgressStep());
     }
 
     // Accessibility-fork: hide the proxy sponsor/promo channel from the chat list
@@ -127,9 +129,13 @@ public class A11yConfig {
 
     public static String voiceQualityLabel() {
         int q = getVoiceQuality();
-        if (q <= 0) return "Low";
-        if (q == 1) return "Medium";
-        return "High";
+        if (q <= 0) return LocaleController.getString(R.string.A11yVoiceLow);
+        if (q == 1) return LocaleController.getString(R.string.A11yVoiceMedium);
+        return LocaleController.getString(R.string.A11yVoiceHigh);
+    }
+
+    private static String onOff(boolean value) {
+        return LocaleController.getString(value ? R.string.A11yOn : R.string.A11yOff);
     }
 
     public static void showSettingsDialog(Activity activity) {
@@ -138,14 +144,14 @@ public class A11yConfig {
         }
         try {
             final String[] items = new String[]{
-                    "Progress announce: " + progressStepLabel(),
-                    "Voice quality: " + voiceQualityLabel(),
-                    "Hide sponsor channel: " + (getHideSponsorChannel() ? "On" : "Off"),
-                    "Ghost mode (hide read receipts): " + (getGhostMode() ? "On" : "Off"),
-                    "Announce contact status in chat list: " + (getShowStatusInPreview() ? "On" : "Off")
+                    LocaleController.formatString(R.string.A11yProgressAnnounceLabel, progressStepLabel()),
+                    LocaleController.formatString(R.string.A11yVoiceQualityLabel, voiceQualityLabel()),
+                    LocaleController.formatString(R.string.A11yHideSponsorLabel, onOff(getHideSponsorChannel())),
+                    LocaleController.formatString(R.string.A11yGhostModeLabel, onOff(getGhostMode())),
+                    LocaleController.formatString(R.string.A11yStatusPreviewLabel, onOff(getShowStatusInPreview()))
             };
             new AlertDialog.Builder(activity)
-                    .setTitle("Accessible settings")
+                    .setTitle(LocaleController.getString(R.string.A11yAccessibleSettingsTitle))
                     .setItems(items, (dialog, which) -> {
                         if (which == 0) {
                             showProgressStepPicker(activity);
@@ -155,26 +161,26 @@ public class A11yConfig {
                             setHideSponsorChannel(!getHideSponsorChannel());
                             try {
                                 activity.getWindow().getDecorView().announceForAccessibility(
-                                        getHideSponsorChannel() ? "Sponsor channel hidden" : "Sponsor channel shown");
+                                        LocaleController.getString(getHideSponsorChannel() ? R.string.A11ySponsorHidden : R.string.A11ySponsorShown));
                             } catch (Throwable ignore) {
                             }
                         } else if (which == 3) {
                             setGhostMode(!getGhostMode());
                             try {
                                 activity.getWindow().getDecorView().announceForAccessibility(
-                                        getGhostMode() ? "Ghost mode on" : "Ghost mode off");
+                                        LocaleController.getString(getGhostMode() ? R.string.A11yGhostOn : R.string.A11yGhostOff));
                             } catch (Throwable ignore) {
                             }
                         } else if (which == 4) {
                             setShowStatusInPreview(!getShowStatusInPreview());
                             try {
                                 activity.getWindow().getDecorView().announceForAccessibility(
-                                        getShowStatusInPreview() ? "Contact status announcements on" : "Contact status announcements off");
+                                        LocaleController.getString(getShowStatusInPreview() ? R.string.A11yStatusOn : R.string.A11yStatusOff));
                             } catch (Throwable ignore) {
                             }
                         }
                     })
-                    .setNegativeButton(android.R.string.cancel, null)
+                    .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
                     .show();
         } catch (Throwable ignore) {
         }
@@ -182,41 +188,48 @@ public class A11yConfig {
 
     private static void showProgressStepPicker(Activity activity) {
         final int[] steps = new int[]{1, 5, 10, 20};
-        final String[] labels = new String[]{"1%", "5%", "10%", "20%"};
+        final String[] labels = new String[steps.length];
+        for (int i = 0; i < steps.length; i++) {
+            labels[i] = LocaleController.formatString(R.string.A11yProgressStepLabel, steps[i]);
+        }
         int cur = getProgressStep();
         int checked = 1;
         for (int i = 0; i < steps.length; i++) {
             if (steps[i] == cur) checked = i;
         }
         new AlertDialog.Builder(activity)
-                .setTitle("Progress announce step")
+                .setTitle(LocaleController.getString(R.string.A11yProgressStepPickerTitle))
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     setProgressStep(steps[which]);
                     d.dismiss();
                     try {
-                        activity.getWindow().getDecorView().announceForAccessibility("Progress step " + steps[which] + " percent");
+                        activity.getWindow().getDecorView().announceForAccessibility(labels[which]);
                     } catch (Throwable ignore) {
                     }
                 })
-                .setNegativeButton(android.R.string.cancel, null)
+                .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
                 .show();
     }
 
     private static void showVoiceQualityPicker(Activity activity) {
-        final String[] labels = new String[]{"Low", "Medium", "High"};
+        final String[] labels = new String[]{
+                LocaleController.getString(R.string.A11yVoiceLow),
+                LocaleController.getString(R.string.A11yVoiceMedium),
+                LocaleController.getString(R.string.A11yVoiceHigh)
+        };
         int checked = getVoiceQuality();
         if (checked < 0 || checked > 2) checked = 1;
         new AlertDialog.Builder(activity)
-                .setTitle("Voice message quality")
+                .setTitle(LocaleController.getString(R.string.A11yVoiceQualityPickerTitle))
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     setVoiceQuality(which);
                     d.dismiss();
                     try {
-                        activity.getWindow().getDecorView().announceForAccessibility("Voice quality " + labels[which]);
+                        activity.getWindow().getDecorView().announceForAccessibility(labels[which]);
                     } catch (Throwable ignore) {
                     }
                 })
-                .setNegativeButton(android.R.string.cancel, null)
+                .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
                 .show();
     }
 }

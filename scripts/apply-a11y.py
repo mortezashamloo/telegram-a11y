@@ -79,124 +79,6 @@ def patch_app_name() -> None:
     print("AppName OK")
 
 
-
-def _patch_a11y_string_resources() -> None:
-    """Install English/Persian resources for all accessibility-fork UI text."""
-    en = {
-        "A11yAccessibleSettings": "Accessible settings",
-        "A11yProgressAnnounce": "Progress announce",
-        "A11yVoiceQuality": "Voice quality",
-        "A11yProgressAnnounceSummary": "Progress & voice quality",
-        "A11yProgressAnnounceStep": "Progress announce step",
-        "A11yVoiceMessageQuality": "Voice message quality",
-        "A11yLow": "Low",
-        "A11yMedium": "Medium",
-        "A11yHigh": "High",
-        "A11yProgressStep": "Progress step %1$d percent",
-        "A11yVoiceQualitySelected": "Voice quality %1$s",
-        "A11yForwardWithoutQuote": "Forward without quote",
-        "A11yForwardToSaved": "Forward to Saved Messages",
-        "A11yForwardedToSaved": "Forwarded to Saved Messages",
-        "A11ySelected": "Selected",
-        "A11yReceiveAt": "receive @%1$s",
-        "A11ySentAt": "sent @%1$s",
-        "A11yBotButtons": "Bot Buttons",
-        "A11yBotNumber": "Bot %1$d",
-        "A11yPercent": "%1$d percent",
-    }
-    fa = {
-        "A11yAccessibleSettings": "تنظیمات دسترسپذیری",
-        "A11yProgressAnnounce": "اعلام پیشرفت",
-        "A11yVoiceQuality": "کیفیت صدا",
-        "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
-        "A11yProgressAnnounceStep": "گام اعلام پیشرفت",
-        "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
-        "A11yLow": "پایین",
-        "A11yMedium": "متوسط",
-        "A11yHigh": "بالا",
-        "A11yProgressStep": "گام پیشرفت %1$d درصد",
-        "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
-        "A11yForwardWithoutQuote": "ارسال بدون نقلقول",
-        "A11yForwardToSaved": "ارسال به پیامهای ذخیرهشده",
-        "A11yForwardedToSaved": "به پیامهای ذخیرهشده ارسال شد",
-        "A11ySelected": "انتخاب شد",
-        "A11yReceiveAt": "دریافت در ساعت %1$s",
-        "A11ySentAt": "ارسال در ساعت %1$s",
-        "A11yBotButtons": "دکمههای ربات",
-        "A11yBotNumber": "ربات %1$d",
-        "A11yPercent": "%1$d درصد",
-    }
-    # Remove the zero-width separator accidentally introduced by source editing;
-    # keep normal Persian spacing in Android resources.
-    fa = {k: v.replace("\u000b", " ") for k, v in fa.items()}
-    for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
-        path = RES / rel
-        for name, value in values.items():
-            _set_string(path, name, value)
-
-
-def patch_a11y_localization() -> None:
-    """Replace accessibility-fork hard-coded runtime text with localized resources."""
-    _patch_a11y_string_resources()
-
-    # A11yConfig.java is copied from the user's repository. Localize its labels
-    # without replacing or removing any of the existing settings/features.
-    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
-    if cfg.exists():
-        t = cfg.read_text(encoding="utf-8")
-        replacements = {
-            'return "Low";': 'return LocaleController.getString(R.string.A11yLow);',
-            'return "Medium";': 'return LocaleController.getString(R.string.A11yMedium);',
-            'return "High";': 'return LocaleController.getString(R.string.A11yHigh);',
-            '"Progress announce: " + progressStepLabel()': 'LocaleController.getString(R.string.A11yProgressAnnounce) + ": " + progressStepLabel()',
-            '"Voice quality: " + voiceQualityLabel()': 'LocaleController.getString(R.string.A11yVoiceQuality) + ": " + voiceQualityLabel()',
-            '"Accessible settings"': 'LocaleController.getString(R.string.A11yAccessibleSettings)',
-            '"Progress announce step"': 'LocaleController.getString(R.string.A11yProgressAnnounceStep)',
-            '"Voice message quality"': 'LocaleController.getString(R.string.A11yVoiceMessageQuality)',
-            '"Progress step " + steps[which] + " percent"': 'LocaleController.formatString("A11yProgressStep", R.string.A11yProgressStep, steps[which])',
-            '"Voice quality " + labels[which]': 'LocaleController.formatString("A11yVoiceQualitySelected", R.string.A11yVoiceQualitySelected, labels[which])',
-        }
-        changed = False
-        for old, new in replacements.items():
-            if old in t:
-                t = t.replace(old, new)
-                changed = True
-        if changed:
-            cfg.write_text(t, encoding="utf-8")
-            print("A11yConfig localization OK")
-
-    targets = [
-        JAVA / "org/telegram/ui/ChatActivity.java",
-        JAVA / "org/telegram/ui/Cells/DialogCell.java",
-        JAVA / "org/telegram/ui/Components/RadialProgress.java",
-        JAVA / "org/telegram/ui/Components/RadialProgress2.java",
-        JAVA / "org/telegram/ui/SettingsActivity.java",
-    ]
-    for path in targets:
-        if not path.exists():
-            continue
-        t = path.read_text(encoding="utf-8")
-        original = t
-        replacements = {
-            'items.add("Forward without quote");': 'items.add(LocaleController.getString(R.string.A11yForwardWithoutQuote));',
-            'items.add("Forward to Saved Messages");': 'items.add(LocaleController.getString(R.string.A11yForwardToSaved));',
-            'announceForAccessibility("Forwarded to Saved Messages");': 'announceForAccessibility(LocaleController.getString(R.string.A11yForwardedToSaved));',
-            'announceForAccessibility("Selected");': 'announceForAccessibility(LocaleController.getString(R.string.A11ySelected));',
-            'sb.append(message.isOut() ? "sent @" : "receive @");': 'sb.append(LocaleController.formatString(message.isOut() ? "A11ySentAt" : "A11yReceiveAt", message.isOut() ? R.string.A11ySentAt : R.string.A11yReceiveAt, a11yClockTime));',
-            'items.add("Bot Buttons");': 'items.add(LocaleController.getString(R.string.A11yBotButtons));',
-            'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
-            '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
-            '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
-            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
-        }
-        for old, new in replacements.items():
-            t = t.replace(old, new)
-        if t != original:
-            path.write_text(t, encoding="utf-8")
-            print(f"{path.name} localization OK")
-
-    print("A11y English/Persian localization OK")
-
 def install_a11y_config() -> None:
     src = SCRIPTS / "A11yConfig.java"
     dst = JAVA / "org/telegram/messenger/A11yConfig.java"
@@ -418,10 +300,10 @@ def patch_forward_menu_extras() -> None:
             "                    options.add(OPTION_FORWARD);\n"
             "                    icons.add(R.drawable.msg_forward);\n"
             "                    // a11y-fork: forward menu extras\n"
-            "                    items.add(\"Forward without quote\");\n"
+            "                    items.add(LocaleController.getString(R.string.A11yForwardNoQuote));\n"
             f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
             "                    icons.add(R.drawable.msg_forward);\n"
-            "                    items.add(\"Forward to Saved Messages\");\n"
+            "                    items.add(LocaleController.getString(R.string.A11yForwardToSaved));\n"
             f"                    options.add({OPTION_FORWARD_TO_SAVED});\n"
             "                    icons.add(R.drawable.msg_forward);\n"
             "                }"
@@ -450,7 +332,7 @@ def patch_forward_menu_extras() -> None:
             "                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n"
             "                        try {{\n"
             "                            if (getParentActivity() != null) {{\n"
-            "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Forwarded to Saved Messages\");\n"
+            "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11yForwardedToSaved));\n"
             "                            }}\n"
             "                        }} catch (Throwable ignore) {{}}\n"
             "                    }} catch (Throwable e) {{\n"
@@ -490,27 +372,6 @@ def patch_reactions_as_menu() -> None:
         print("ChatActivity reactions-menu already patched")
         return
 
-    # patch_reactions_as_menu injects into fillMessageMenu(), where the
-    # createMenu() local variable named isReactionsAvailableFinal does not
-    # exist.  Define an equivalent local value here, based on Telegram's
-    # current MessageObject API, before the menu item is inserted.
-    if "a11y-fork: reactions availability for menu" not in t:
-        reactions_availability_anchor = (
-            "        final MessageObject.GroupedMessages groupedMessages = selectedObjectGroup;\n"
-            "        final int type = getMessageType(message);\n"
-        )
-        reactions_availability_insert = (
-            "        final MessageObject.GroupedMessages groupedMessages = selectedObjectGroup;\n"
-            "        final int type = getMessageType(message);\n"
-            "        // a11y-fork: reactions availability for menu\n"
-            "        final boolean isReactionsAvailableFinal = message != null && message.isReactionsAvailable();\n"
-        )
-        if reactions_availability_anchor in t:
-            t = t.replace(reactions_availability_anchor, reactions_availability_insert, 1)
-            print("ChatActivity reactions availability declaration OK")
-        else:
-            print("WARN: fillMessageMenu anchor not found (reactions availability)")
-
     old_item = (
         "        if (message.isSponsored() && !getUserConfig().isPremium() "
         "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
@@ -518,7 +379,7 @@ def patch_reactions_as_menu() -> None:
     new_item = (
         "        // a11y-fork: reactions menu item\n"
         "        accessibilityReactionsToggleIndex = -1;\n"
-        "        if (isReactionsAvailableFinal) {\n"
+        "        if (message != null && message.canSetReaction()) {\n"
         "            items.add(LocaleController.getString(R.string.Reactions));\n"
         "            icons.add(R.drawable.msg_reactions2);\n"
         f"            options.add({OPTION_REACTIONS_MENU});\n"
@@ -699,7 +560,7 @@ def patch_longpress_message_menu() -> None:
             f"                        }}\n"
             f"                        try {{\n"
             f"                            if (getParentActivity() != null) {{\n"
-            f"                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Selected\");\n"
+            f"                                getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11ySelectedAnnounce));\n"
             f"                            }}\n"
             f"                        }} catch (Throwable ignore) {{}}\n"
             f"                    }} catch (Throwable e) {{\n"
@@ -779,7 +640,7 @@ def patch_settings_menu() -> None:
         return
     t = sa.read_text(encoding="utf-8")
     needle = 'items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));'
-    insert = needle + "\n        // a11y-fork: Accessible settings entry\n        items.add(SettingCell.Factory.of(100, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, \"Accessible settings\", \"Progress & voice quality\"));"
+    insert = needle + "\n        // a11y-fork: Accessible settings entry\n        items.add(SettingCell.Factory.of(100, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.A11yAccessibleSettingsTitle), getString(R.string.A11yAccessibleSettingsSubtitle)));"
     if "a11y-fork: Accessible settings entry" not in t:
         if needle in t:
             t = t.replace(needle, insert, 1)
@@ -891,7 +752,7 @@ def patch_dialogcell_preview_muted_status() -> None:
         new_tail = (
             "        // a11y-fork: sent/received time read last\n"
             "        String a11yClockTime = LocaleController.formatDateAudio(lastDate, true);\n"
-            "        sb.append(message.isOut() ? \"sent @\" : \"receive @\");\n"
+            "        sb.append(message.isOut() ? LocaleController.getString(R.string.A11ySentPrefix) : LocaleController.getString(R.string.A11yReceivePrefix));\n"
             "        sb.append(a11yClockTime);\n"
             "        sb.append(\". \");\n"
             "        event.setContentDescription(sb);\n"
@@ -1025,28 +886,8 @@ def patch_bot_buttons_menu() -> None:
 
     # 2) Add the "Bot Buttons" menu item + its click handler in ChatActivity.
     t2 = ca.read_text(encoding="utf-8")
-    # a11y-fork: OPTION_BOT_BUTTONS_MENU must be a Java field, not only a
-    # Python-side constant.  The menu item and handler below both reference it.
-    if "a11y-fork: OPTION_BOT_BUTTONS_MENU declaration" not in t2:
-        class_anchor = "public class ChatActivity"
-        class_idx = t2.find(class_anchor)
-        if class_idx != -1:
-            brace_idx = t2.find("{", class_idx)
-            if brace_idx != -1:
-                t2 = (
-                    t2[:brace_idx + 1]
-                    + "\n    private static final int OPTION_BOT_BUTTONS_MENU = 205; // a11y-fork: OPTION_BOT_BUTTONS_MENU declaration\n"
-                    + t2[brace_idx + 1:]
-                )
-                print("ChatActivity OPTION_BOT_BUTTONS_MENU declaration OK")
-            else:
-                print("WARN: ChatActivity class opening brace not found (bot buttons menu)")
-        else:
-            print("WARN: ChatActivity class declaration not found (bot buttons menu)")
-
     if "a11y-fork: bot buttons menu" in t2:
         print("ChatActivity bot-buttons-menu already patched")
-        ca.write_text(t2, encoding="utf-8")
         return
 
     old_item = (
@@ -1056,8 +897,8 @@ def patch_bot_buttons_menu() -> None:
     new_item = (
         "        // a11y-fork: bot buttons menu\n"
         "        if (message != null && message.hasInlineBotButtons()) {\n"
-        "            items.add(\"Bot Buttons\");\n"
-        "            options.add(OPTION_BOT_BUTTONS_MENU);\n"
+        "            items.add(LocaleController.getString(R.string.A11yBotButtons));\n"
+        f"            options.add({OPTION_BOT_BUTTONS_MENU});\n"
         "            icons.add(R.drawable.msg_viewreplies);\n"
         "        }\n"
         "\n"
@@ -1071,7 +912,7 @@ def patch_bot_buttons_menu() -> None:
 
     old_case = "            case OPTION_RETRY: {\n"
     new_case = (
-        "            case OPTION_BOT_BUTTONS_MENU: {\n"
+        f"            case {OPTION_BOT_BUTTONS_MENU}: {{ // a11y-fork: OPTION_BOT_BUTTONS_MENU\n"
         "                try {\n"
         "                    MessageObject msg = selectedObject;\n"
         "                    ArrayList<CharSequence> labels = new ArrayList<>();\n"
@@ -1083,7 +924,7 @@ def patch_bot_buttons_menu() -> None:
         "                            TL_keyboard.KeyboardInlineButtonRow row = markup.rows.get(b);\n"
         "                            for (int c = 0; c < row.buttons.size(); c++) {\n"
         "                                TL_keyboard.KeyboardInlineButton btn = row.buttons.get(c);\n"
-        "                                CharSequence label = !TextUtils.isEmpty(btn.text) ? btn.text : (\"Bot \" + (labels.size() + 1));\n"
+        "                                CharSequence label = !TextUtils.isEmpty(btn.text) ? btn.text : (LocaleController.getString(R.string.A11yBotButtons) + \" \" + (labels.size() + 1));\n"
         "                                labels.add(label);\n"
         "                                btns.add(btn);\n"
         "                            }\n"
@@ -1094,7 +935,7 @@ def patch_bot_buttons_menu() -> None:
         "                        final MessageObject msgFinal = msg;\n"
         "                        final ArrayList<TL_keyboard.KeyboardInlineButton> btnsFinal = btns;\n"
         "                        AlertDialog.Builder botBtnBuilder = new AlertDialog.Builder(getParentActivity());\n"
-        "                        botBtnBuilder.setTitle(\"Bot Buttons\");\n"
+        "                        botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));\n"
         "                        botBtnBuilder.setItems(itemsArr, (dialog, which) -> {\n"
         "                            if (which >= 0 && which < btnsFinal.size() && chatActivityEnterView != null) {\n"
         "                                chatActivityEnterView.didPressedBotButton(btnsFinal.get(which), msgFinal, msgFinal);\n"
@@ -1121,14 +962,84 @@ def patch_bot_buttons_menu() -> None:
     print("ChatActivity bot-buttons-menu item+handler OK")
 
 
+def patch_add_a11y_strings() -> None:
+    """
+    Accessibility-fork: define every custom UI string used by our patches
+    as a proper Android string resource, in both English (values/strings.xml,
+    already exists) and Persian (values-fa/strings.xml, created here --
+    upstream DrKLO/Telegram doesn't bundle a Persian resource file, since
+    most non-core languages are downloaded as "cloud strings" instead; our
+    custom keys will never be in that cloud data, so LocaleController.getString
+    falls back to this local resource file, and Android's normal locale
+    resolution picks values-fa/ when the device/app language is Persian).
+    """
+    strings = {
+        "A11yBotButtons": ("Bot Buttons", "دکمه‌های ربات"),
+        "A11yForwardNoQuote": ("Forward without quote", "فوروارد بدون نقل‌قول"),
+        "A11yForwardToSaved": ("Forward to Saved Messages", "فوروارد به پیام‌های ذخیره‌شده"),
+        "A11yForwardedToSaved": ("Forwarded to Saved Messages", "به پیام‌های ذخیره‌شده فوروارد شد"),
+        "A11ySelectedAnnounce": ("Selected", "انتخاب شد"),
+        "A11ySentPrefix": ("sent @", "ارسال در @"),
+        "A11yReceivePrefix": ("receive @", "دریافت در @"),
+        "A11yAccessibleSettingsTitle": ("Accessible settings", "تنظیمات دسترس‌پذیری"),
+        "A11yAccessibleSettingsSubtitle": ("Progress & voice quality", "پیشرفت و کیفیت صدا"),
+        "A11yProgressAnnounceLabel": ("Progress announce: %1$s", "اعلام پیشرفت: %1$s"),
+        "A11yProgressStepPickerTitle": ("Progress announce step", "فاصلهٔ اعلام پیشرفت"),
+        "A11yVoiceQualityLabel": ("Voice quality: %1$s", "کیفیت صدا: %1$s"),
+        "A11yVoiceQualityPickerTitle": ("Voice message quality", "کیفیت پیام صوتی"),
+        "A11yHideSponsorLabel": ("Hide sponsor channel: %1$s", "مخفی‌کردن کانال اسپانسر: %1$s"),
+        "A11yGhostModeLabel": ("Ghost mode (hide read receipts): %1$s", "حالت روح (مخفی‌کردن دیده‌شدن پیام): %1$s"),
+        "A11yStatusPreviewLabel": ("Announce contact status in chat list: %1$s", "اعلام وضعیت مخاطب در فهرست گفتگوها: %1$s"),
+        "A11yOn": ("On", "روشن"),
+        "A11yOff": ("Off", "خاموش"),
+        "A11ySponsorHidden": ("Sponsor channel hidden", "کانال اسپانسر مخفی شد"),
+        "A11ySponsorShown": ("Sponsor channel shown", "کانال اسپانسر نمایش داده شد"),
+        "A11yGhostOn": ("Ghost mode on", "حالت روح روشن شد"),
+        "A11yGhostOff": ("Ghost mode off", "حالت روح خاموش شد"),
+        "A11yStatusOn": ("Contact status announcements on", "اعلام وضعیت مخاطب روشن شد"),
+        "A11yStatusOff": ("Contact status announcements off", "اعلام وضعیت مخاطب خاموش شد"),
+        "A11yVoiceLow": ("Low", "کم"),
+        "A11yVoiceMedium": ("Medium", "متوسط"),
+        "A11yVoiceHigh": ("High", "زیاد"),
+        "A11yProgressStepLabel": ("%1$d%%", "%1$d٪"),
+        "A11yCancel": ("Cancel", "لغو"),
+    }
+
+    def ensure_in_file(path: Path, lang_index: int) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            t = path.read_text(encoding="utf-8")
+        else:
+            t = '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n'
+        added = 0
+        for name, values in strings.items():
+            marker = f'name="{name}"'
+            if marker in t:
+                continue
+            value = values[lang_index].replace("&", "&amp;").replace("'", "\\'").replace('"', "&quot;")
+            entry = f'    <string name="{name}">{value}</string>\n'
+            t = t.replace("</resources>", entry + "</resources>", 1)
+            added += 1
+        path.write_text(t, encoding="utf-8")
+        print(f"{path}: {added} string(s) added")
+
+    en_path = ROOT / "src/main/res/values/strings.xml"
+    fa_path = ROOT / "src/main/res/values-fa/strings.xml"
+    if not en_path.exists():
+        print("WARN: values/strings.xml missing")
+        return
+    ensure_in_file(en_path, 0)
+    ensure_in_file(fa_path, 1)
+
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
         return 1
     print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
+    patch_add_a11y_strings()
     install_a11y_config()
-    patch_a11y_localization()
     patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
