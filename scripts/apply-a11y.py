@@ -147,7 +147,10 @@ def _inject_progress_announce(java_path: Path) -> None:
                         int step = (pct / stepSize) * stepSize;
                         if (step != a11yLastAnnouncedPercent) {
                             a11yLastAnnouncedPercent = step;
-                            parent.announceForAccessibility(step + " percent");
+                            try {
+                                parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString(org.telegram.messenger.R.string.A11yPercentAnnounce, step));
+                            } catch (Throwable ignore3) {
+                            }
                         }
                         if (pct == 0) a11yLastAnnouncedPercent = -1;
                     }
@@ -1016,6 +1019,7 @@ def patch_add_a11y_strings() -> None:
         "A11yProgressStepLabel": ("%1$d%%", "%1$d٪"),
         "A11yCancel": ("Cancel", "لغو"),
         "A11yGoToFirstMessage": ("Go to first message", "رفتن به اولین پیام"),
+        "A11yPercentAnnounce": ("%1$d percent", "%1$d درصد"),
     }
 
     def ensure_in_file(path: Path, lang_index: int) -> None:
