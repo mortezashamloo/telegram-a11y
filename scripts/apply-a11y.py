@@ -1104,6 +1104,87 @@ def patch_go_to_first_message() -> None:
     print("ChatActivity go-to-first-message OK")
 
 
+def patch_leave_comment_menu() -> None:
+    """
+    Accessibility-fork: add a "Leave a Comment" / comment-count item to the
+    message options menu, using the exact same openDiscussionMessageChat
+    call the stock on-bubble comment button already uses (didPressCommentButton).
+    """
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity missing (leave comment menu)")
+        return
+    t = ca.read_text(encoding="utf-8")
+    if "a11y-fork: leave comment menu" in t:
+        print("ChatActivity leave-comment-menu already patched")
+        return
+
+    old_const = "    private final static int a11y_go_to_first_message = 210; // a11y-fork: go to first message\n"
+    new_const = (
+        "    private final static int a11y_go_to_first_message = 210; // a11y-fork: go to first message\n"
+        f"    private final static int OPTION_LEAVE_COMMENT = {OPTION_LEAVE_COMMENT}; // a11y-fork: leave comment menu\n"
+    )
+    if old_const not in t:
+        print("WARN: ChatActivity const anchor not found (leave comment menu)")
+        return
+    t = t.replace(old_const, new_const, 1)
+
+    old_item = (
+        "        // a11y-fork: reactions menu item\n"
+        "        accessibilityReactionsToggleIndex = -1;\n"
+    )
+    new_item = (
+        "        // a11y-fork: leave comment menu\n"
+        "        if (message != null && message.messageOwner != null && message.messageOwner.replies != null) {\n"
+        "            int a11yRepliesCount = message.getRepliesCount();\n"
+        "            items.add(a11yRepliesCount > 0 ? LocaleController.formatPluralString(\"ViewReplies\", a11yRepliesCount) : LocaleController.getString(R.string.LeaveAComment));\n"
+        "            icons.add(R.drawable.msg_viewreplies);\n"
+        f"            options.add({OPTION_LEAVE_COMMENT});\n"
+        "        }\n"
+        "\n"
+        "        // a11y-fork: reactions menu item\n"
+        "        accessibilityReactionsToggleIndex = -1;\n"
+    )
+    if old_item not in t:
+        print("WARN: ChatActivity reactions-item anchor not found (leave comment menu)")
+        return
+    t = t.replace(old_item, new_item, 1)
+
+    old_case = f"            case {OPTION_BOT_BUTTONS_MENU}: {{ // a11y-fork: OPTION_BOT_BUTTONS_MENU\n"
+    new_case = (
+        "            case OPTION_LEAVE_COMMENT: { // a11y-fork: leave comment menu\n"
+        "                try {\n"
+        "                    MessageObject a11yLcMsg = selectedObject;\n"
+        "                    if (a11yLcMsg != null) {\n"
+        "                        int a11yLcMaxReadId;\n"
+        "                        long a11yLcLinkedChatId;\n"
+        "                        if (a11yLcMsg.messageOwner.replies != null) {\n"
+        "                            a11yLcMaxReadId = a11yLcMsg.messageOwner.replies.read_max_id;\n"
+        "                            a11yLcLinkedChatId = a11yLcMsg.messageOwner.replies.channel_id;\n"
+        "                        } else {\n"
+        "                            a11yLcMaxReadId = -1;\n"
+        "                            a11yLcLinkedChatId = 0;\n"
+        "                        }\n"
+        "                        openDiscussionMessageChat(currentChat.id, a11yLcMsg, a11yLcMsg.getId(), a11yLcLinkedChatId, a11yLcMaxReadId, 0, null);\n"
+        "                    }\n"
+        "                } catch (Throwable e) {\n"
+        "                    FileLog.e(e);\n"
+        "                }\n"
+        "                selectedObject = null;\n"
+        "                selectedObjectGroup = null;\n"
+        "                break;\n"
+        "            }\n"
+        f"            case {OPTION_BOT_BUTTONS_MENU}: {{ // a11y-fork: OPTION_BOT_BUTTONS_MENU\n"
+    )
+    if old_case not in t:
+        print("WARN: ChatActivity bot-buttons-case anchor not found (leave comment menu)")
+        return
+    t = t.replace(old_case, new_case, 1)
+
+    ca.write_text(t, encoding="utf-8")
+    print("ChatActivity leave-comment-menu OK")
+
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -1125,6 +1206,7 @@ def main() -> int:
     patch_bot_buttons_menu()
     patch_longpress_message_menu()
     patch_go_to_first_message()
+    patch_leave_comment_menu()
     print("A11y REAL patches done")
     return 0
 
