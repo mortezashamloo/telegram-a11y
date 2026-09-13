@@ -6,7 +6,6 @@ When DrKLO/Telegram updates, re-run this script on a fresh clone.
 """
 from pathlib import Path
 import re
-import html
 import shutil
 import sys
 
@@ -40,10 +39,6 @@ OPTION_BOT_BUTTONS_MENU = 205
 
 
 def _set_string(path: Path, name: str, value: str) -> None:
-    # Android string resources are XML. Escape XML text characters before
-    # writing/updating a <string> element. In particular, "&" in labels such
-    # as "Progress & voice quality" must be written as "&amp;".
-    value = html.escape(value, quote=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         path.write_text(
@@ -83,126 +78,6 @@ def patch_app_name() -> None:
         _set_string(RES / rel, "AppNameBeta", FA_NAME)
     print("AppName OK")
 
-
-
-def _patch_a11y_string_resources() -> None:
-    """Install English/Persian resources for all accessibility-fork UI text."""
-    en = {
-        "A11yAccessibleSettings": "Accessible settings",
-        "A11yProgressAnnounce": "Progress announce",
-        "A11yVoiceQuality": "Voice quality",
-        "A11yProgressAnnounceSummary": "Progress & voice quality",
-        "A11yProgressAnnounceStep": "Progress announce step",
-        "A11yVoiceMessageQuality": "Voice message quality",
-        "A11yLow": "Low",
-        "A11yMedium": "Medium",
-        "A11yHigh": "High",
-        "A11yProgressStep": "Progress step %1$d percent",
-        "A11yVoiceQualitySelected": "Voice quality %1$s",
-        "A11yForwardWithoutQuote": "Forward without quote",
-        "A11yForwardToSaved": "Forward to Saved Messages",
-        "A11yForwardedToSaved": "Forwarded to Saved Messages",
-        "A11ySelected": "Selected",
-        "A11yReceiveAt": "receive @%1$s",
-        "A11ySentAt": "sent @%1$s",
-        "A11yBotButtons": "Bot Buttons",
-        "A11yGoToFirstMessage": "Go to first message",
-        "A11yBotNumber": "Bot %1$d",
-        "A11yPercent": "%1$d percent",
-    }
-    fa = {
-        "A11yAccessibleSettings": "تنظیمات دسترسپذیری",
-        "A11yProgressAnnounce": "اعلام پیشرفت",
-        "A11yVoiceQuality": "کیفیت صدا",
-        "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
-        "A11yProgressAnnounceStep": "گام اعلام پیشرفت",
-        "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
-        "A11yLow": "پایین",
-        "A11yMedium": "متوسط",
-        "A11yHigh": "بالا",
-        "A11yProgressStep": "گام پیشرفت %1$d درصد",
-        "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
-        "A11yForwardWithoutQuote": "ارسال بدون نقلقول",
-        "A11yForwardToSaved": "ارسال به پیامهای ذخیرهشده",
-        "A11yForwardedToSaved": "به پیامهای ذخیرهشده ارسال شد",
-        "A11ySelected": "انتخاب شد",
-        "A11yReceiveAt": "دریافت در ساعت %1$s",
-        "A11ySentAt": "ارسال در ساعت %1$s",
-        "A11yBotButtons": "دکمههای ربات",
-        "A11yGoToFirstMessage": "رفتن به اولین پیام",
-        "A11yBotNumber": "ربات %1$d",
-        "A11yPercent": "%1$d درصد",
-    }
-    # Remove the zero-width separator accidentally introduced by source editing;
-    # keep normal Persian spacing in Android resources.
-    fa = {k: v.replace("\u000b", " ") for k, v in fa.items()}
-    for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
-        path = RES / rel
-        for name, value in values.items():
-            _set_string(path, name, value)
-
-
-def patch_a11y_localization() -> None:
-    """Replace accessibility-fork hard-coded runtime text with localized resources."""
-    _patch_a11y_string_resources()
-
-    # A11yConfig.java is copied from the user's repository. Localize its labels
-    # without replacing or removing any of the existing settings/features.
-    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
-    if cfg.exists():
-        t = cfg.read_text(encoding="utf-8")
-        replacements = {
-            'return "Low";': 'return LocaleController.getString(R.string.A11yLow);',
-            'return "Medium";': 'return LocaleController.getString(R.string.A11yMedium);',
-            'return "High";': 'return LocaleController.getString(R.string.A11yHigh);',
-            '"Progress announce: " + progressStepLabel()': 'LocaleController.getString(R.string.A11yProgressAnnounce) + ": " + progressStepLabel()',
-            '"Voice quality: " + voiceQualityLabel()': 'LocaleController.getString(R.string.A11yVoiceQuality) + ": " + voiceQualityLabel()',
-            '"Accessible settings"': 'LocaleController.getString(R.string.A11yAccessibleSettings)',
-            '"Progress announce step"': 'LocaleController.getString(R.string.A11yProgressAnnounceStep)',
-            '"Voice message quality"': 'LocaleController.getString(R.string.A11yVoiceMessageQuality)',
-            '"Progress step " + steps[which] + " percent"': 'LocaleController.formatString("A11yProgressStep", R.string.A11yProgressStep, steps[which])',
-            '"Voice quality " + labels[which]': 'LocaleController.formatString("A11yVoiceQualitySelected", R.string.A11yVoiceQualitySelected, labels[which])',
-        }
-        changed = False
-        for old, new in replacements.items():
-            if old in t:
-                t = t.replace(old, new)
-                changed = True
-        if changed:
-            cfg.write_text(t, encoding="utf-8")
-            print("A11yConfig localization OK")
-
-    targets = [
-        JAVA / "org/telegram/ui/ChatActivity.java",
-        JAVA / "org/telegram/ui/Cells/DialogCell.java",
-        JAVA / "org/telegram/ui/Components/RadialProgress.java",
-        JAVA / "org/telegram/ui/Components/RadialProgress2.java",
-        JAVA / "org/telegram/ui/SettingsActivity.java",
-    ]
-    for path in targets:
-        if not path.exists():
-            continue
-        t = path.read_text(encoding="utf-8")
-        original = t
-        replacements = {
-            'items.add("Forward without quote");': 'items.add(LocaleController.getString(R.string.A11yForwardWithoutQuote));',
-            'items.add("Forward to Saved Messages");': 'items.add(LocaleController.getString(R.string.A11yForwardToSaved));',
-            'announceForAccessibility("Forwarded to Saved Messages");': 'announceForAccessibility(LocaleController.getString(R.string.A11yForwardedToSaved));',
-            'announceForAccessibility("Selected");': 'announceForAccessibility(LocaleController.getString(R.string.A11ySelected));',
-            'sb.append(message.isOut() ? "sent @" : "receive @");': 'sb.append(LocaleController.formatString(message.isOut() ? "A11ySentAt" : "A11yReceiveAt", message.isOut() ? R.string.A11ySentAt : R.string.A11yReceiveAt, a11yClockTime));',
-            'items.add("Bot Buttons");': 'items.add(LocaleController.getString(R.string.A11yBotButtons));',
-            'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
-            '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
-            '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
-            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
-        }
-        for old, new in replacements.items():
-            t = t.replace(old, new)
-        if t != original:
-            path.write_text(t, encoding="utf-8")
-            print(f"{path.name} localization OK")
-
-    print("A11y English/Persian localization OK")
 
 def install_a11y_config() -> None:
     src = SCRIPTS / "A11yConfig.java"
@@ -425,10 +300,10 @@ def patch_forward_menu_extras() -> None:
             "                    options.add(OPTION_FORWARD);\n"
             "                    icons.add(R.drawable.msg_forward);\n"
             "                    // a11y-fork: forward menu extras\n"
-            "                    items.add(\"Forward without quote\");\n"
+            "                    items.add(LocaleController.getString(R.string.A11yForwardNoQuote));\n"
             f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
             "                    icons.add(R.drawable.msg_forward);\n"
-            "                    items.add(\"Forward to Saved Messages\");\n"
+            "                    items.add(LocaleController.getString(R.string.A11yForwardToSaved));\n"
             f"                    options.add({OPTION_FORWARD_TO_SAVED});\n"
             "                    icons.add(R.drawable.msg_forward);\n"
             "                }"
@@ -457,7 +332,7 @@ def patch_forward_menu_extras() -> None:
             "                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n"
             "                        try {{\n"
             "                            if (getParentActivity() != null) {{\n"
-            "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Forwarded to Saved Messages\");\n"
+            "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11yForwardedToSaved));\n"
             "                            }}\n"
             "                        }} catch (Throwable ignore) {{}}\n"
             "                    }} catch (Throwable e) {{\n"
@@ -493,36 +368,9 @@ def patch_reactions_as_menu() -> None:
         print("WARN: ChatActivity missing (reactions menu)")
         return
     t = ca.read_text(encoding="utf-8")
-    # The workflow already applies patches/04-comment-and-reactions.patch,
-    # which implements the Reactions menu item using OPTION_TOGGLE_REACTIONS_ROW.
-    # Do not add a second item with OPTION_REACTIONS_MENU.
-    if "OPTION_TOGGLE_REACTIONS_ROW" in t and "Accessibility: put reactions behind" in t:
-        print("ChatActivity Reactions menu already provided by 04-comment-and-reactions.patch")
-        return
     if "a11y-fork: reactions menu item" in t:
         print("ChatActivity reactions-menu already patched")
         return
-
-    # patch_reactions_as_menu injects into fillMessageMenu(), where the
-    # createMenu() local variable named isReactionsAvailableFinal does not
-    # exist.  Define an equivalent local value here, based on Telegram's
-    # current MessageObject API, before the menu item is inserted.
-    if "a11y-fork: reactions availability for menu" not in t:
-        reactions_availability_anchor = (
-            "        final MessageObject.GroupedMessages groupedMessages = selectedObjectGroup;\n"
-            "        final int type = getMessageType(message);\n"
-        )
-        reactions_availability_insert = (
-            "        final MessageObject.GroupedMessages groupedMessages = selectedObjectGroup;\n"
-            "        final int type = getMessageType(message);\n"
-            "        // a11y-fork: reactions availability for menu\n"
-            "        final boolean isReactionsAvailableFinal = message != null && message.isReactionsAvailable();\n"
-        )
-        if reactions_availability_anchor in t:
-            t = t.replace(reactions_availability_anchor, reactions_availability_insert, 1)
-            print("ChatActivity reactions availability declaration OK")
-        else:
-            print("WARN: fillMessageMenu anchor not found (reactions availability)")
 
     old_item = (
         "        if (message.isSponsored() && !getUserConfig().isPremium() "
@@ -531,7 +379,7 @@ def patch_reactions_as_menu() -> None:
     new_item = (
         "        // a11y-fork: reactions menu item\n"
         "        accessibilityReactionsToggleIndex = -1;\n"
-        "        if (isReactionsAvailableFinal) {\n"
+        "        if (message != null && message.canSetReaction() && !items.contains(LocaleController.getString(R.string.Reactions))) {\n"
         "            items.add(LocaleController.getString(R.string.Reactions));\n"
         "            icons.add(R.drawable.msg_reactions2);\n"
         f"            options.add({OPTION_REACTIONS_MENU});\n"
@@ -569,15 +417,24 @@ def patch_reactions_as_menu() -> None:
         "\n"
         "                    // a11y-fork: reactions menu item -- hide the reactions row\n"
         "                    // by default; the \"Reactions\" menu item reveals it on tap.\n"
+        "                    // Wired by matching label text rather than a single fixed\n"
+        "                    // index, so it stays correct even if the item list gets\n"
+        "                    // built more than once for the same menu.\n"
         "                    reactionsLayout.setVisibility(View.GONE);\n"
-        "                    if (accessibilityReactionsToggleIndex >= 0 && scrimPopupWindowItems != null\n"
-        "                        && accessibilityReactionsToggleIndex < scrimPopupWindowItems.length\n"
-        "                        && scrimPopupWindowItems[accessibilityReactionsToggleIndex] != null) {\n"
+        "                    if (scrimPopupWindowItems != null) {\n"
         "                        final ReactionsContainerLayout reactionsLayoutForToggle = reactionsLayout;\n"
-        "                        scrimPopupWindowItems[accessibilityReactionsToggleIndex].setOnClickListener(reactionsToggleView -> {\n"
-        "                            boolean show = reactionsLayoutForToggle.getVisibility() != View.VISIBLE;\n"
-        "                            reactionsLayoutForToggle.setVisibility(show ? View.VISIBLE : View.GONE);\n"
-        "                        });\n"
+        "                        final String reactionsLabel = LocaleController.getString(R.string.Reactions);\n"
+        "                        for (int a11yRi = 0; a11yRi < scrimPopupWindowItems.length; a11yRi++) {\n"
+        "                            final ActionBarMenuSubItem a11yRItem = scrimPopupWindowItems[a11yRi];\n"
+        "                            if (a11yRItem == null || a11yRItem.getTextView() == null) continue;\n"
+        "                            CharSequence a11yRText = a11yRItem.getTextView().getText();\n"
+        "                            if (a11yRText != null && reactionsLabel.contentEquals(a11yRText)) {\n"
+        "                                a11yRItem.setOnClickListener(reactionsToggleView -> {\n"
+        "                                    boolean show = reactionsLayoutForToggle.getVisibility() != View.VISIBLE;\n"
+        "                                    reactionsLayoutForToggle.setVisibility(show ? View.VISIBLE : View.GONE);\n"
+        "                                });\n"
+        "                            }\n"
+        "                        }\n"
         "                    }\n"
     )
     if old_toggle not in t:
@@ -712,7 +569,7 @@ def patch_longpress_message_menu() -> None:
             f"                        }}\n"
             f"                        try {{\n"
             f"                            if (getParentActivity() != null) {{\n"
-            f"                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Selected\");\n"
+            f"                                getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11ySelectedAnnounce));\n"
             f"                            }}\n"
             f"                        }} catch (Throwable ignore) {{}}\n"
             f"                    }} catch (Throwable e) {{\n"
@@ -792,7 +649,7 @@ def patch_settings_menu() -> None:
         return
     t = sa.read_text(encoding="utf-8")
     needle = 'items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));'
-    insert = needle + "\n        // a11y-fork: Accessible settings entry\n        items.add(SettingCell.Factory.of(100, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, \"Accessible settings\", \"Progress & voice quality\"));"
+    insert = needle + "\n        // a11y-fork: Accessible settings entry\n        items.add(SettingCell.Factory.of(100, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.A11yAccessibleSettingsTitle), getString(R.string.A11yAccessibleSettingsSubtitle)));"
     if "a11y-fork: Accessible settings entry" not in t:
         if needle in t:
             t = t.replace(needle, insert, 1)
@@ -904,7 +761,7 @@ def patch_dialogcell_preview_muted_status() -> None:
         new_tail = (
             "        // a11y-fork: sent/received time read last\n"
             "        String a11yClockTime = LocaleController.formatDateAudio(lastDate, true);\n"
-            "        sb.append(message.isOut() ? \"sent @\" : \"receive @\");\n"
+            "        sb.append(message.isOut() ? LocaleController.getString(R.string.A11ySentPrefix) : LocaleController.getString(R.string.A11yReceivePrefix));\n"
             "        sb.append(a11yClockTime);\n"
             "        sb.append(\". \");\n"
             "        event.setContentDescription(sb);\n"
@@ -1038,28 +895,8 @@ def patch_bot_buttons_menu() -> None:
 
     # 2) Add the "Bot Buttons" menu item + its click handler in ChatActivity.
     t2 = ca.read_text(encoding="utf-8")
-    # a11y-fork: OPTION_BOT_BUTTONS_MENU must be a Java field, not only a
-    # Python-side constant.  The menu item and handler below both reference it.
-    if "a11y-fork: OPTION_BOT_BUTTONS_MENU declaration" not in t2:
-        class_anchor = "public class ChatActivity"
-        class_idx = t2.find(class_anchor)
-        if class_idx != -1:
-            brace_idx = t2.find("{", class_idx)
-            if brace_idx != -1:
-                t2 = (
-                    t2[:brace_idx + 1]
-                    + "\n    private static final int OPTION_BOT_BUTTONS_MENU = 205; // a11y-fork: OPTION_BOT_BUTTONS_MENU declaration\n"
-                    + t2[brace_idx + 1:]
-                )
-                print("ChatActivity OPTION_BOT_BUTTONS_MENU declaration OK")
-            else:
-                print("WARN: ChatActivity class opening brace not found (bot buttons menu)")
-        else:
-            print("WARN: ChatActivity class declaration not found (bot buttons menu)")
-
     if "a11y-fork: bot buttons menu" in t2:
         print("ChatActivity bot-buttons-menu already patched")
-        ca.write_text(t2, encoding="utf-8")
         return
 
     old_item = (
@@ -1069,8 +906,8 @@ def patch_bot_buttons_menu() -> None:
     new_item = (
         "        // a11y-fork: bot buttons menu\n"
         "        if (message != null && message.hasInlineBotButtons()) {\n"
-        "            items.add(\"Bot Buttons\");\n"
-        "            options.add(OPTION_BOT_BUTTONS_MENU);\n"
+        "            items.add(LocaleController.getString(R.string.A11yBotButtons));\n"
+        f"            options.add({OPTION_BOT_BUTTONS_MENU});\n"
         "            icons.add(R.drawable.msg_viewreplies);\n"
         "        }\n"
         "\n"
@@ -1084,7 +921,7 @@ def patch_bot_buttons_menu() -> None:
 
     old_case = "            case OPTION_RETRY: {\n"
     new_case = (
-        "            case OPTION_BOT_BUTTONS_MENU: {\n"
+        f"            case {OPTION_BOT_BUTTONS_MENU}: {{ // a11y-fork: OPTION_BOT_BUTTONS_MENU\n"
         "                try {\n"
         "                    MessageObject msg = selectedObject;\n"
         "                    ArrayList<CharSequence> labels = new ArrayList<>();\n"
@@ -1096,7 +933,7 @@ def patch_bot_buttons_menu() -> None:
         "                            TL_keyboard.KeyboardInlineButtonRow row = markup.rows.get(b);\n"
         "                            for (int c = 0; c < row.buttons.size(); c++) {\n"
         "                                TL_keyboard.KeyboardInlineButton btn = row.buttons.get(c);\n"
-        "                                CharSequence label = !TextUtils.isEmpty(btn.text) ? btn.text : (\"Bot \" + (labels.size() + 1));\n"
+        "                                CharSequence label = !TextUtils.isEmpty(btn.text) ? btn.text : (LocaleController.getString(R.string.A11yBotButtons) + \" \" + (labels.size() + 1));\n"
         "                                labels.add(label);\n"
         "                                btns.add(btn);\n"
         "                            }\n"
@@ -1107,7 +944,7 @@ def patch_bot_buttons_menu() -> None:
         "                        final MessageObject msgFinal = msg;\n"
         "                        final ArrayList<TL_keyboard.KeyboardInlineButton> btnsFinal = btns;\n"
         "                        AlertDialog.Builder botBtnBuilder = new AlertDialog.Builder(getParentActivity());\n"
-        "                        botBtnBuilder.setTitle(\"Bot Buttons\");\n"
+        "                        botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));\n"
         "                        botBtnBuilder.setItems(itemsArr, (dialog, which) -> {\n"
         "                            if (which >= 0 && which < btnsFinal.size() && chatActivityEnterView != null) {\n"
         "                                chatActivityEnterView.didPressedBotButton(btnsFinal.get(which), msgFinal, msgFinal);\n"
@@ -1134,109 +971,138 @@ def patch_bot_buttons_menu() -> None:
     print("ChatActivity bot-buttons-menu item+handler OK")
 
 
+def patch_add_a11y_strings() -> None:
+    """
+    Accessibility-fork: define every custom UI string used by our patches
+    as a proper Android string resource, in both English (values/strings.xml,
+    already exists) and Persian (values-fa/strings.xml, created here --
+    upstream DrKLO/Telegram doesn't bundle a Persian resource file, since
+    most non-core languages are downloaded as "cloud strings" instead; our
+    custom keys will never be in that cloud data, so LocaleController.getString
+    falls back to this local resource file, and Android's normal locale
+    resolution picks values-fa/ when the device/app language is Persian).
+    """
+    strings = {
+        "A11yBotButtons": ("Bot Buttons", "دکمه‌های ربات"),
+        "A11yForwardNoQuote": ("Forward without quote", "فوروارد بدون نقل‌قول"),
+        "A11yForwardToSaved": ("Forward to Saved Messages", "فوروارد به پیام‌های ذخیره‌شده"),
+        "A11yForwardedToSaved": ("Forwarded to Saved Messages", "به پیام‌های ذخیره‌شده فوروارد شد"),
+        "A11ySelectedAnnounce": ("Selected", "انتخاب شد"),
+        "A11ySentPrefix": ("sent @", "ارسال در @"),
+        "A11yReceivePrefix": ("receive @", "دریافت در @"),
+        "A11yAccessibleSettingsTitle": ("Accessible settings", "تنظیمات دسترس‌پذیری"),
+        "A11yAccessibleSettingsSubtitle": ("Progress & voice quality", "پیشرفت و کیفیت صدا"),
+        "A11yProgressAnnounceLabel": ("Progress announce: %1$s", "اعلام پیشرفت: %1$s"),
+        "A11yProgressStepPickerTitle": ("Progress announce step", "فاصلهٔ اعلام پیشرفت"),
+        "A11yVoiceQualityLabel": ("Voice quality: %1$s", "کیفیت صدا: %1$s"),
+        "A11yVoiceQualityPickerTitle": ("Voice message quality", "کیفیت پیام صوتی"),
+        "A11yHideSponsorLabel": ("Hide sponsor channel: %1$s", "مخفی‌کردن کانال اسپانسر: %1$s"),
+        "A11yGhostModeLabel": ("Ghost mode (hide read receipts): %1$s", "حالت روح (مخفی‌کردن دیده‌شدن پیام): %1$s"),
+        "A11yStatusPreviewLabel": ("Announce contact status in chat list: %1$s", "اعلام وضعیت مخاطب در فهرست گفتگوها: %1$s"),
+        "A11yOn": ("On", "روشن"),
+        "A11yOff": ("Off", "خاموش"),
+        "A11ySponsorHidden": ("Sponsor channel hidden", "کانال اسپانسر مخفی شد"),
+        "A11ySponsorShown": ("Sponsor channel shown", "کانال اسپانسر نمایش داده شد"),
+        "A11yGhostOn": ("Ghost mode on", "حالت روح روشن شد"),
+        "A11yGhostOff": ("Ghost mode off", "حالت روح خاموش شد"),
+        "A11yStatusOn": ("Contact status announcements on", "اعلام وضعیت مخاطب روشن شد"),
+        "A11yStatusOff": ("Contact status announcements off", "اعلام وضعیت مخاطب خاموش شد"),
+        "A11yVoiceLow": ("Low", "کم"),
+        "A11yVoiceMedium": ("Medium", "متوسط"),
+        "A11yVoiceHigh": ("High", "زیاد"),
+        "A11yProgressStepLabel": ("%1$d%%", "%1$d٪"),
+        "A11yCancel": ("Cancel", "لغو"),
+        "A11yGoToFirstMessage": ("Go to first message", "رفتن به اولین پیام"),
+    }
+
+    def ensure_in_file(path: Path, lang_index: int) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            t = path.read_text(encoding="utf-8")
+        else:
+            t = '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n'
+        added = 0
+        for name, values in strings.items():
+            marker = f'name="{name}"'
+            if marker in t:
+                continue
+            value = values[lang_index].replace("&", "&amp;").replace("'", "\\'").replace('"', "&quot;")
+            entry = f'    <string name="{name}">{value}</string>\n'
+            t = t.replace("</resources>", entry + "</resources>", 1)
+            added += 1
+        path.write_text(t, encoding="utf-8")
+        print(f"{path}: {added} string(s) added")
+
+    en_path = ROOT / "src/main/res/values/strings.xml"
+    fa_path = ROOT / "src/main/res/values-fa/strings.xml"
+    if not en_path.exists():
+        print("WARN: values/strings.xml missing")
+        return
+    ensure_in_file(en_path, 0)
+    ensure_in_file(fa_path, 1)
+
 
 def patch_go_to_first_message() -> None:
-    """Add a localized Go to first message action to group/channel More Options."""
+    """
+    Accessibility-fork: add a "Go to first message" item to the chat's
+    top-right "more options" (three-dot) menu, for group/channel chats,
+    that jumps straight to the very first message in the history.
+    """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing (go to first message)")
         return
     t = ca.read_text(encoding="utf-8")
+    if "a11y-fork: go to first message" in t:
+        print("ChatActivity go-to-first-message already patched")
+        return
 
-    if "a11y-fork: OPTION_GO_TO_FIRST_MESSAGE declaration" not in t:
-        anchor = "    private final static int id_chat_compose_panel = 1000;"
-        if anchor in t:
-            t = t.replace(anchor, anchor + "\n    private final static int OPTION_GO_TO_FIRST_MESSAGE = 75; // a11y-fork: OPTION_GO_TO_FIRST_MESSAGE declaration", 1)
+    old_const = "    private final static int translate = 62;\n"
+    new_const = (
+        "    private final static int translate = 62;\n"
+        "    private final static int a11y_go_to_first_message = 210; // a11y-fork: go to first message\n"
+    )
+    if old_const not in t:
+        print("WARN: ChatActivity translate-const anchor not found (go to first message)")
+        return
+    t = t.replace(old_const, new_const, 1)
 
-    if "a11y-fork: go-to-first-message state" not in t:
-        anchor = "    private boolean loadingForward;"
-        if anchor in t:
-            t = t.replace(anchor, anchor + "\n    private boolean a11yGoToFirstMessageRequested; // a11y-fork: go-to-first-message state", 1)
+    old_add = (
+        "                headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));\n"
+    )
+    new_add = (
+        "                headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));\n"
+        "                // a11y-fork: go to first message\n"
+        "                headerItem.lazilyAddSubItem(a11y_go_to_first_message, R.drawable.msg_go_up, LocaleController.getString(R.string.A11yGoToFirstMessage));\n"
+    )
+    if old_add not in t:
+        print("WARN: ChatActivity search-subitem anchor not found (go to first message)")
+        return
+    t = t.replace(old_add, new_add, 1)
 
-    if "a11y-fork: go-to-first-message helper" not in t:
-        anchor = "    public void firstLoadMessages() {"
-        helper = """    // a11y-fork: go-to-first-message helper
-    private void accessibilityGoToFirstMessage() {
-        if (currentChat == null || (!ChatObject.isChannel(currentChat) && !currentChat.megagroup)) {
-            return;
-        }
-        wasManualScroll = true;
-        a11yGoToFirstMessageRequested = true;
-        if (forwardEndReached[0]) {
-            a11yScrollToOldestLoadedMessage();
-            return;
-        }
-        if (loadingForward) {
-            return;
-        }
-        loadingForward = true;
-        waitingForLoad.add(lastLoadIndex);
-        getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, minMessageId[0], 0, true, maxDate[0], classGuid, 1, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
-    }
-
-    private void a11yScrollToOldestLoadedMessage() {
-        if (!a11yGoToFirstMessageRequested || chatAdapter == null || chatLayoutManager == null || messages.isEmpty()) {
-            return;
-        }
-        MessageObject oldest = null;
-        for (int i = 0; i < messages.size(); i++) {
-            MessageObject object = messages.get(i);
-            if (object == null || object.getId() <= 0 || object.isDateObject || object.isSponsored()) {
-                continue;
-            }
-            if (oldest == null || object.getId() < oldest.getId()) {
-                oldest = object;
-            }
-        }
-        if (oldest != null) {
-            int position = messages.indexOf(oldest);
-            if (position >= 0) {
-                chatAdapter.updateRowsSafe();
-                chatLayoutManager.scrollToPositionWithOffset(chatAdapter.messagesStartRow + position, AndroidUtilities.dp(8), false);
-            }
-        }
-        a11yGoToFirstMessageRequested = false;
-    }
-
-"""
-        if anchor in t: t=t.replace(anchor, helper+anchor,1)
-
-    if "a11y-fork: go-to-first-message menu" not in t:
-        anchor = """            if (currentChat != null && !isTopic) {
-                viewAsTopics = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.TopicViewAsTopics));
-            }"""
-        insert = anchor + """
-            if (currentChat != null && (ChatObject.isChannel(currentChat) || currentChat.megagroup) && !isTopic) {
-                // a11y-fork: go-to-first-message menu
-                headerItem.lazilyAddSubItem(OPTION_GO_TO_FIRST_MESSAGE, R.drawable.msg_search, LocaleController.getString(R.string.A11yGoToFirstMessage));
-            }"""
-        if anchor in t: t=t.replace(anchor,insert,1)
-
-    if "a11y-fork: go-to-first-message handler" not in t:
-        anchor = "                } else if (id == view_as_topics) {"
-        branch = "                } else if (id == OPTION_GO_TO_FIRST_MESSAGE) { // a11y-fork: go-to-first-message handler\n                    accessibilityGoToFirstMessage();\n                } else if (id == view_as_topics) {"
-        # branch currently contains literal backslash-n; convert after assignment
-        branch=branch.replace('\\n','\n')
-        if anchor in t: t=t.replace(anchor,branch,1)
-
-    if "a11y-fork: continue go-to-first-message" not in t:
-        anchor = "            loadingForward = false;\n        } else {"
-        replacement = """            loadingForward = false;
-            // a11y-fork: continue go-to-first-message
-            if (a11yGoToFirstMessageRequested) {
-                if (forwardEndReached[loadIndex]) {
-                    a11yScrollToOldestLoadedMessage();
-                } else {
-                    loadingForward = true;
-                    waitingForLoad.add(lastLoadIndex);
-                    getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, minMessageId[loadIndex], 0, true, maxDate[loadIndex], classGuid, 1, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
-                }
-            }
-        } else {"""
-        if anchor in t: t=t.replace(anchor,replacement,1)
+    old_click = (
+        "                } else if (id == search) {\n"
+        "                    openSearchWithText(isSupportedTags() ? \"\" : null);\n"
+    )
+    new_click = (
+        "                } else if (id == search) {\n"
+        "                    openSearchWithText(isSupportedTags() ? \"\" : null);\n"
+        "                } else if (id == a11y_go_to_first_message) {\n"
+        "                    // a11y-fork: go to first message\n"
+        "                    try {\n"
+        "                        scrollToMessageId(1, 0, false, 0, true, 0);\n"
+        "                    } catch (Throwable e) {\n"
+        "                        FileLog.e(e);\n"
+        "                    }\n"
+    )
+    if old_click not in t:
+        print("WARN: ChatActivity search-click anchor not found (go to first message)")
+        return
+    t = t.replace(old_click, new_click, 1)
 
     ca.write_text(t, encoding="utf-8")
     print("ChatActivity go-to-first-message OK")
+
 
 def main() -> int:
     if not Path("telegram").is_dir():
@@ -1244,14 +1110,12 @@ def main() -> int:
         return 1
     print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
+    patch_add_a11y_strings()
     install_a11y_config()
-    patch_a11y_localization()
     patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
     patch_forward_menu_extras()
-    # Shared end-anchor order: Bot Buttons -> Reactions -> Select (Select last).
-    patch_longpress_message_menu()
     patch_reactions_as_menu()
     patch_voice_bitrate()
     patch_settings_menu()
@@ -1259,6 +1123,7 @@ def main() -> int:
     patch_hide_sponsor_channel()
     patch_ghost_mode()
     patch_bot_buttons_menu()
+    patch_longpress_message_menu()
     patch_go_to_first_message()
     print("A11y REAL patches done")
     return 0
