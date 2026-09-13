@@ -760,6 +760,9 @@ def patch_dialogcell_preview_muted_status() -> None:
         )
         new_tail = (
             "        // a11y-fork: sent/received time read last\n"
+            "        if (sb.length() > 0 && sb.charAt(sb.length() - 1) != ' ') {\n"
+            "            sb.append(\". \");\n"
+            "        }\n"
             "        String a11yClockTime = LocaleController.formatDateAudio(lastDate, true);\n"
             "        sb.append(message.isOut() ? LocaleController.getString(R.string.A11ySentPrefix) : LocaleController.getString(R.string.A11yReceivePrefix));\n"
             "        sb.append(a11yClockTime);\n"
@@ -1068,17 +1071,19 @@ def patch_go_to_first_message() -> None:
     t = t.replace(old_const, new_const, 1)
 
     old_add = (
-        "                headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));\n"
+        "            headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));\n"
     )
     new_add = (
-        "                headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));\n"
-        "                // a11y-fork: go to first message\n"
-        "                headerItem.lazilyAddSubItem(a11y_go_to_first_message, R.drawable.msg_go_up, LocaleController.getString(R.string.A11yGoToFirstMessage));\n"
+        "            headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));\n"
+        "\n"
+        "            // a11y-fork: go to first message -- inserted right after headerItem's\n"
+        "            // own setup so it's always the first item, before any conditional ones.\n"
+        "            headerItem.lazilyAddSubItem(a11y_go_to_first_message, R.drawable.msg_go_up, LocaleController.getString(R.string.A11yGoToFirstMessage));\n"
     )
     if old_add not in t:
-        print("WARN: ChatActivity search-subitem anchor not found (go to first message)")
+        print("WARN: ChatActivity headerItem-setup anchor not found (go to first message)")
         return
-    t = t.replace(old_add, new_add, 1)
+    t = t.replace(old_add, new_add)
 
     old_click = (
         "                } else if (id == search) {\n"
@@ -1197,13 +1202,13 @@ def main() -> int:
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
     patch_forward_menu_extras()
-    patch_reactions_as_menu()
     patch_voice_bitrate()
     patch_settings_menu()
     patch_dialogcell_preview_muted_status()
     patch_hide_sponsor_channel()
     patch_ghost_mode()
     patch_bot_buttons_menu()
+    patch_reactions_as_menu()
     patch_longpress_message_menu()
     patch_go_to_first_message()
     patch_leave_comment_menu()
