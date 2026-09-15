@@ -319,33 +319,57 @@ def patch_forward_menu_extras() -> None:
     if "a11y-fork: OPTION_FORWARD_NO_QUOTE" not in t:
         old_case = "            case OPTION_FORWARD: {"
         new_case = (
-            f"            case {OPTION_FORWARD_NO_QUOTE}: // a11y-fork: OPTION_FORWARD_NO_QUOTE\n"
+            f"            case {OPTION_FORWARD_NO_QUOTE}: {{ // a11y-fork: OPTION_FORWARD_NO_QUOTE\n"
+            "                if (getMessagesController().isFrozen()) {\n"
+            "                    AccountFrozenAlert.show(currentAccount);\n"
+            "                    selectedObject = null;\n"
+            "                    selectedObjectToEditCaption = null;\n"
+            "                    selectedObjectGroup = null;\n"
+            "                    return;\n"
+            "                }\n"
             "                IS_FORWARD_NO_QUOTE = true;\n"
-            "                // fall through to forward UI\n"
-            f"            case {OPTION_FORWARD_TO_SAVED}: // a11y-fork: forward to Saved Messages\n"
-            "                if (selectedObject != null) {{\n"
-            "                    try {{\n"
+            "                forwardingMessage = selectedObject;\n"
+            "                forwardingMessageGroup = selectedObjectGroup;\n"
+            "                Bundle a11yFnqArgs = new Bundle();\n"
+            "                a11yFnqArgs.putBoolean(\"onlySelect\", true);\n"
+            "                a11yFnqArgs.putInt(\"dialogsType\", DialogsActivity.DIALOGS_TYPE_FORWARD);\n"
+            "                a11yFnqArgs.putInt(\"messagesCount\", 1);\n"
+            "                a11yFnqArgs.putInt(\"hasPoll\", forwardingMessage.isTodo() ? 3 : forwardingMessage.isPoll() ? (forwardingMessage.isPublicPoll() ? 2 : 1) : 0);\n"
+            "                if (ChatObject.isMonoForum(currentChat) && ChatObject.canManageMonoForum(currentAccount, currentChat) && currentChat.linked_monoforum_id != 0) {\n"
+            "                    a11yFnqArgs.putLong(\"forward_into_channel\", -currentChat.linked_monoforum_id);\n"
+            "                }\n"
+            "                a11yFnqArgs.putBoolean(\"hasInvoice\", forwardingMessage.isInvoice());\n"
+            "                a11yFnqArgs.putBoolean(\"canSelectTopics\", true);\n"
+            "                DialogsActivity a11yFnqFragment = new DialogsActivity(a11yFnqArgs);\n"
+            "                a11yFnqFragment.setDelegate(this);\n"
+            "                presentFragment(a11yFnqFragment);\n"
+            "                break;\n"
+            "            }\n"
+            f"            case {OPTION_FORWARD_TO_SAVED}: {{ // a11y-fork: forward to Saved Messages\n"
+            "                if (selectedObject != null) {\n"
+            "                    try {\n"
             "                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n"
-            "                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {{\n"
+            "                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {\n"
             "                            toSend.addAll(selectedObjectGroup.messages);\n"
-            "                        }} else {{\n"
+            "                        } else {\n"
             "                            toSend.add(selectedObject);\n"
-            "                        }}\n"
+            "                        }\n"
             "                        long savedId = getUserConfig().getClientUserId();\n"
             "                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n"
-            "                        try {{\n"
-            "                            if (getParentActivity() != null) {{\n"
+            "                        try {\n"
+            "                            if (getParentActivity() != null) {\n"
             "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11yForwardedToSaved));\n"
-            "                            }}\n"
-            "                        }} catch (Throwable ignore) {{}}\n"
-            "                    }} catch (Throwable e) {{\n"
+            "                            }\n"
+            "                        } catch (Throwable ignore) {}\n"
+            "                    } catch (Throwable e) {\n"
             "                        FileLog.e(e);\n"
-            "                    }}\n"
-            "                }}\n"
+            "                    }\n"
+            "                }\n"
             "                selectedObject = null;\n"
             "                selectedObjectToEditCaption = null;\n"
             "                selectedObjectGroup = null;\n"
             "                break;\n"
+            "            }\n"
             "            case OPTION_FORWARD: {"
         )
         if old_case in t:
@@ -382,11 +406,15 @@ def patch_reactions_as_menu() -> None:
     new_item = (
         "        // a11y-fork: reactions menu item\n"
         "        accessibilityReactionsToggleIndex = -1;\n"
-        "        if (message != null && message.canSetReaction() && !items.contains(LocaleController.getString(R.string.Reactions))) {\n"
-        "            items.add(LocaleController.getString(R.string.Reactions));\n"
-        "            icons.add(R.drawable.msg_reactions2);\n"
-        f"            options.add({OPTION_REACTIONS_MENU});\n"
-        "            accessibilityReactionsToggleIndex = items.size() - 1;\n"
+        "        try {\n"
+        "            if (message != null && message.canSetReaction() && !items.contains(LocaleController.getString(R.string.Reactions))) {\n"
+        "                items.add(LocaleController.getString(R.string.Reactions));\n"
+        "                icons.add(R.drawable.msg_reactions2);\n"
+        f"                options.add({OPTION_REACTIONS_MENU});\n"
+        "                accessibilityReactionsToggleIndex = items.size() - 1;\n"
+        "            }\n"
+        "        } catch (Throwable a11yReactErr) {\n"
+        "            FileLog.e(a11yReactErr);\n"
         "        }\n"
         "\n"
         "        if (message.isSponsored() && !getUserConfig().isPremium() "
@@ -538,10 +566,14 @@ def patch_longpress_message_menu() -> None:
         needle = "        if (message.isSponsored() && !getUserConfig().isPremium()"
         insert = (
             f"        // a11y-fork: OPTION_SELECT_MESSAGE menu\n"
-            f"        if (!actionBar.isActionModeShowed() && message != null && message.contentType == 0 && !message.isSponsored()) {{\n"
-            f"            items.add(LocaleController.getString(R.string.Select));\n"
-            f"            options.add({OPTION_SELECT_MESSAGE});\n"
-            f"            icons.add(R.drawable.msg_forward);\n"
+            f"        try {{\n"
+            f"            if (!actionBar.isActionModeShowed() && message != null && message.contentType == 0 && !message.isSponsored()) {{\n"
+            f"                items.add(LocaleController.getString(R.string.Select));\n"
+            f"                options.add({OPTION_SELECT_MESSAGE});\n"
+            f"                icons.add(R.drawable.msg_forward);\n"
+            f"            }}\n"
+            f"        }} catch (Throwable a11ySelectErr) {{\n"
+            f"            FileLog.e(a11ySelectErr);\n"
             f"        }}\n\n"
             f"        if (message.isSponsored() && !getUserConfig().isPremium()"
         )
@@ -911,10 +943,14 @@ def patch_bot_buttons_menu() -> None:
     )
     new_item = (
         "        // a11y-fork: bot buttons menu\n"
-        "        if (message != null && message.hasInlineBotButtons()) {\n"
-        "            items.add(LocaleController.getString(R.string.A11yBotButtons));\n"
-        f"            options.add({OPTION_BOT_BUTTONS_MENU});\n"
-        "            icons.add(R.drawable.msg_viewreplies);\n"
+        "        try {\n"
+        "            if (message != null && message.hasInlineBotButtons()) {\n"
+        "                items.add(LocaleController.getString(R.string.A11yBotButtons));\n"
+        f"                options.add({OPTION_BOT_BUTTONS_MENU});\n"
+        "                icons.add(R.drawable.msg_viewreplies);\n"
+        "            }\n"
+        "        } catch (Throwable a11yBotBtnErr) {\n"
+        "            FileLog.e(a11yBotBtnErr);\n"
         "        }\n"
         "\n"
         "        if (message.isSponsored() && !getUserConfig().isPremium() "
@@ -1144,11 +1180,15 @@ def patch_leave_comment_menu() -> None:
     )
     new_item = (
         "        // a11y-fork: leave comment menu\n"
-        "        if (message != null && message.messageOwner != null && message.messageOwner.replies != null) {\n"
-        "            int a11yRepliesCount = message.getRepliesCount();\n"
-        "            items.add(a11yRepliesCount > 0 ? LocaleController.formatPluralString(\"ViewReplies\", a11yRepliesCount) : LocaleController.getString(R.string.LeaveAComment));\n"
-        "            icons.add(R.drawable.msg_viewreplies);\n"
-        f"            options.add({OPTION_LEAVE_COMMENT});\n"
+        "        try {\n"
+        "            if (message != null && message.messageOwner != null && message.messageOwner.replies != null) {\n"
+        "                int a11yRepliesCount = message.getRepliesCount();\n"
+        "                items.add(a11yRepliesCount > 0 ? LocaleController.formatPluralString(\"ViewReplies\", a11yRepliesCount) : LocaleController.getString(R.string.LeaveAComment));\n"
+        "                icons.add(R.drawable.msg_viewreplies);\n"
+        f"                options.add({OPTION_LEAVE_COMMENT});\n"
+        "            }\n"
+        "        } catch (Throwable a11yLcErr) {\n"
+        "            FileLog.e(a11yLcErr);\n"
         "        }\n"
         "\n"
         "        // a11y-fork: reactions menu item\n"
@@ -1194,6 +1234,57 @@ def patch_leave_comment_menu() -> None:
     print("ChatActivity leave-comment-menu OK")
 
 
+def patch_talkback_action_long_click() -> None:
+    """
+    Accessibility-fork: TalkBack's own long-press gesture reaches the
+    message's virtual host node as ACTION_LONG_CLICK, a completely
+    separate path from the physical-touch long-press handlers (already
+    fixed elsewhere) -- without this, it falls through to Android's
+    default performAccessibilityAction -> performLongClick chain, which
+    can end up selecting the message directly instead of opening the
+    menu. Intercept it explicitly here and route it to the same,
+    already-fixed delegate.didLongPress(...).
+    """
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists():
+        print("WARN: ChatMessageCell missing (talkback action long click)")
+        return
+    t = cmc.read_text(encoding="utf-8")
+    if "a11y-fork: talkback action long click" in t:
+        print("ChatMessageCell talkback-action-long-click already patched")
+        return
+
+    old = (
+        "        public boolean performAction(int virtualViewId, int action, Bundle arguments) {\n"
+        "            if (virtualViewId == HOST_VIEW_ID) {\n"
+        "                performAccessibilityAction(action, arguments);\n"
+        "            } else {\n"
+    )
+    new = (
+        "        public boolean performAction(int virtualViewId, int action, Bundle arguments) {\n"
+        "            if (virtualViewId == HOST_VIEW_ID) {\n"
+        "                // a11y-fork: talkback action long click -- TalkBack's synthetic\n"
+        "                // long-press arrives here as ACTION_LONG_CLICK; route it directly\n"
+        "                // to the same fixed long-press handler instead of falling through\n"
+        "                // to the default (which can select the message directly).\n"
+        "                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
+        "                    if (delegate != null) {\n"
+        "                        delegate.didLongPress(ChatMessageCell.this, lastTouchX, lastTouchY);\n"
+        "                    }\n"
+        "                    return true;\n"
+        "                }\n"
+        "                performAccessibilityAction(action, arguments);\n"
+        "            } else {\n"
+    )
+    if old not in t:
+        print("WARN: ChatMessageCell performAction anchor not found (talkback action long click)")
+        return
+    t = t.replace(old, new, 1)
+
+    cmc.write_text(t, encoding="utf-8")
+    print("ChatMessageCell talkback-action-long-click OK")
+
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -1216,6 +1307,7 @@ def main() -> int:
     patch_longpress_message_menu()
     patch_go_to_first_message()
     patch_leave_comment_menu()
+    patch_talkback_action_long_click()
     print("A11y REAL patches done")
     return 0
 
