@@ -82,14 +82,21 @@ jobs:
               "https://raw.githubusercontent.com/mortezashamloo/telegram-a11y/5119a9836b0036de6edeb4d433e1cc4e482c48da/scripts/apply-a11y.py"
             wc -c "$A11Y"
           fi
-          
-          # اجرای اسکریپت‌های پچ از ریشه پروژه
-          python3 patches-repo/scripts/apply-a11y.py || true
-          if [ -f patches-repo/scripts/post-a11y-menu.py ]; then
-            python3 patches-repo/scripts/post-a11y-menu.py || true
+
+          # اعمال فایل‌های patch موجود در ریپوزیتوری
+          shopt -s nullglob
+          for f in "$PWD/patches-repo/patches/"*.patch; do
+            echo "Applying patch: $f"
+            git -C telegram apply --whitespace=nowarn "$f" || git -C telegram apply -3 "$f" || true
+          done
+
+          # اجرای اسکریپت‌ها با مسیر کامل مطلق
+          python3 "$PWD/patches-repo/scripts/apply-a11y.py" || true
+          if [ -f "$PWD/patches-repo/scripts/post-a11y-menu.py" ]; then
+            python3 "$PWD/patches-repo/scripts/post-a11y-menu.py" || true
           fi
-          if [ -f patches-repo/scripts/slim-arm64.py ]; then
-            python3 patches-repo/scripts/slim-arm64.py || true
+          if [ -f "$PWD/patches-repo/scripts/slim-arm64.py" ]; then
+            python3 "$PWD/patches-repo/scripts/slim-arm64.py" || true
           fi
 
       - name: Unique package id + private signing (Play Protect)
@@ -101,8 +108,8 @@ jobs:
           A11Y_APP_PACKAGE: ${{ secrets.A11Y_APP_PACKAGE }}
         run: |
           set -e
-          if [ -f patches-repo/scripts/prepare-release-signing.py ]; then
-            python3 patches-repo/scripts/prepare-release-signing.py
+          if [ -f "$PWD/patches-repo/scripts/prepare-release-signing.py" ]; then
+            python3 "$PWD/patches-repo/scripts/prepare-release-signing.py"
           fi
           echo "--- App build.gradle signing / release snippet ---"
           grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
