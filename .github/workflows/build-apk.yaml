@@ -86,7 +86,7 @@ jobs:
           shopt -s nullglob
           for f in "$PWD/patches-repo/patches/"*.patch; do
             echo "Applying patch: $f"
-            git -C telegram apply --whitespace=nowarn "$f" || git -C telegram apply -3 "$f"
+            git -C telegram apply --binary --whitespace=nowarn "$f" || git -C telegram apply --binary -3 "$f"
           done
 
           python3 "$PWD/patches-repo/scripts/apply-a11y.py"
