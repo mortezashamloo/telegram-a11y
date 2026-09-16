@@ -113,12 +113,20 @@ jobs:
           grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
           grep -n "^APP_PACKAGE\|^RELEASE_" telegram/gradle.properties || true
 
-      - name: Build APK
+      - name: Build APK (release, fallback debug)
         working-directory: telegram
         run: |
           set -e
           chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace --no-daemon || ./gradlew assembleDebug --stacktrace --no-daemon
+          if ./gradlew :TMessagesProj_App:assembleAfatRelease --stacktrace --no-daemon; then
+            echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
+          elif ./gradlew :TMessagesProj_App:assembleRelease --stacktrace --no-daemon; then
+            echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
+          else
+            echo "Release failed — falling back to afatDebug"
+            ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon || ./gradlew :TMessagesProj_App:assembleDebug --stacktrace --no-daemon
+            echo "BUILD_VARIANT=debug" >> "$GITHUB_ENV"
+          fi
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
@@ -133,7 +141,7 @@ jobs:
             exit 1
           fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "Found APK: $APK"
+          echo "Found APK: $APK (variant=${BUILD_VARIANT:-unknown})"
           ls -lh "$APK"
 
       - name: Prepare Keystore File for Artifact
