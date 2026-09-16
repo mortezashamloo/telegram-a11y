@@ -1,4 +1,4 @@
-name: Build APK
+﻿name: Build APK
 
 on:
   workflow_dispatch:
@@ -83,14 +83,12 @@ jobs:
             wc -c "$A11Y"
           fi
 
-          # اعمال فایل‌های patch موجود در ریپوزیتوری
           shopt -s nullglob
           for f in "$PWD/patches-repo/patches/"*.patch; do
             echo "Applying patch: $f"
             git -C telegram apply --whitespace=nowarn "$f" || git -C telegram apply -3 "$f" || true
           done
 
-          # اجرای اسکریپت‌ها با مسیر کامل مطلق
           python3 "$PWD/patches-repo/scripts/apply-a11y.py" || true
           if [ -f "$PWD/patches-repo/scripts/post-a11y-menu.py" ]; then
             python3 "$PWD/patches-repo/scripts/post-a11y-menu.py" || true
@@ -115,18 +113,12 @@ jobs:
           grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
           grep -n "^APP_PACKAGE\|^RELEASE_" telegram/gradle.properties || true
 
-      - name: Build APK (release, fallback debug)
+      - name: Build APK
         working-directory: telegram
         run: |
           set -e
           chmod +x gradlew
-          if ./gradlew :TMessagesProj_App:assembleAfatRelease --stacktrace --no-daemon; then
-            echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
-          else
-            echo "Release failed — falling back to afatDebug with a11y package/keystore"
-            ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon
-            echo "BUILD_VARIANT=debug" >> "$GITHUB_ENV"
-          fi
+          ./gradlew assembleRelease --stacktrace --no-daemon || ./gradlew assembleDebug --stacktrace --no-daemon
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
@@ -141,7 +133,7 @@ jobs:
             exit 1
           fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "Found APK: $APK (variant=${BUILD_VARIANT:-unknown})"
+          echo "Found APK: $APK"
           ls -lh "$APK"
 
       - name: Prepare Keystore File for Artifact
