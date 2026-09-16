@@ -1,4 +1,4 @@
-﻿package org.telegram.messenger;
+package org.telegram.messenger;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -16,6 +16,7 @@ public class A11yConfig {
     public static final String PREF_HIDE_SPONSOR = "a11y_hide_sponsor_channel";
     public static final String PREF_GHOST_MODE = "a11y_ghost_mode";
     public static final String PREF_SHOW_STATUS_IN_PREVIEW = "a11y_show_status_preview";
+    public static final String PREF_FORWARD_NO_QUOTE = "a11y_forward_no_quote";
     public static final String PREF_FORWARD_NO_QUOTE_SAVED = "a11y_forward_no_quote_saved";
 
     public static int getProgressStep() {
@@ -124,6 +125,22 @@ public class A11yConfig {
         }
     }
 
+    // Accessibility-fork: General Forward without quote
+    public static boolean isForwardNoQuoteEnabled() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_FORWARD_NO_QUOTE, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setForwardNoQuoteEnabled(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_FORWARD_NO_QUOTE, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     // Accessibility-fork: Forward to Saved Messages without quote
     public static boolean isForwardNoQuoteSavedEnabled() {
         try {
@@ -138,6 +155,21 @@ public class A11yConfig {
             MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_FORWARD_NO_QUOTE_SAVED, value).apply();
         } catch (Throwable ignore) {
         }
+    }
+
+    // Format status preview text cleanly for TalkBack with spaces between elements
+    public static String formatStatusPreview(String senderName, String status, String time) {
+        StringBuilder sb = new StringBuilder();
+        if (senderName != null && !senderName.isEmpty()) {
+            sb.append(senderName).append(" ");
+        }
+        if (status != null && !status.isEmpty()) {
+            sb.append(status).append(" ");
+        }
+        if (time != null && !time.isEmpty()) {
+            sb.append("at ").append(time);
+        }
+        return sb.toString().trim();
     }
 
     public static String voiceQualityLabel() {
@@ -162,6 +194,7 @@ public class A11yConfig {
                     LocaleController.formatString(R.string.A11yHideSponsorLabel, onOff(getHideSponsorChannel())),
                     LocaleController.formatString(R.string.A11yGhostModeLabel, onOff(getGhostMode())),
                     LocaleController.formatString(R.string.A11yStatusPreviewLabel, onOff(getShowStatusInPreview())),
+                    "Forward without quote: " + onOff(isForwardNoQuoteEnabled()),
                     "Forward without quote to Saved Messages: " + onOff(isForwardNoQuoteSavedEnabled())
             };
             new AlertDialog.Builder(activity)
@@ -193,10 +226,17 @@ public class A11yConfig {
                             } catch (Throwable ignore) {
                             }
                         } else if (which == 5) {
+                            setForwardNoQuoteEnabled(!isForwardNoQuoteEnabled());
+                            try {
+                                activity.getWindow().getDecorView().announceForAccessibility(
+                                        "Forward without quote " + onOff(isForwardNoQuoteEnabled()));
+                            } catch (Throwable ignore) {
+                            }
+                        } else if (which == 6) {
                             setForwardNoQuoteSavedEnabled(!isForwardNoQuoteSavedEnabled());
                             try {
                                 activity.getWindow().getDecorView().announceForAccessibility(
-                                        "Forward without quote " + onOff(isForwardNoQuoteSavedEnabled()));
+                                        "Forward without quote to Saved Messages " + onOff(isForwardNoQuoteSavedEnabled()));
                             } catch (Throwable ignore) {
                             }
                         }
