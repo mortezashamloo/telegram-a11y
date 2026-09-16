@@ -1,4 +1,4 @@
-package org.telegram.messenger;
+﻿package org.telegram.messenger;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -16,6 +16,7 @@ public class A11yConfig {
     public static final String PREF_HIDE_SPONSOR = "a11y_hide_sponsor_channel";
     public static final String PREF_GHOST_MODE = "a11y_ghost_mode";
     public static final String PREF_SHOW_STATUS_IN_PREVIEW = "a11y_show_status_preview";
+    public static final String PREF_FORWARD_NO_QUOTE_SAVED = "a11y_forward_no_quote_saved";
 
     public static int getProgressStep() {
         try {
@@ -92,9 +93,6 @@ public class A11yConfig {
     }
 
     // Accessibility-fork: Ghost Mode -- suppress outgoing read receipts
-    // ("seen") so the sender can't tell you've read their message. Local
-    // unread badges for you may not clear while this is on -- see
-    // ChatActivity's markDialogAsRead call sites.
     public static boolean getGhostMode() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_GHOST_MODE, false);
@@ -110,8 +108,7 @@ public class A11yConfig {
         }
     }
 
-    // Accessibility-fork: announce contact online/last-seen status at the
-    // end of the chat-list preview (e.g. "Leila: online")
+    // Accessibility-fork: announce contact online/last-seen status at the end of preview
     public static boolean getShowStatusInPreview() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_SHOW_STATUS_IN_PREVIEW, true);
@@ -123,6 +120,22 @@ public class A11yConfig {
     public static void setShowStatusInPreview(boolean value) {
         try {
             MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_SHOW_STATUS_IN_PREVIEW, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    // Accessibility-fork: Forward to Saved Messages without quote
+    public static boolean isForwardNoQuoteSavedEnabled() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_FORWARD_NO_QUOTE_SAVED, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setForwardNoQuoteSavedEnabled(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_FORWARD_NO_QUOTE_SAVED, value).apply();
         } catch (Throwable ignore) {
         }
     }
@@ -148,7 +161,8 @@ public class A11yConfig {
                     LocaleController.formatString(R.string.A11yVoiceQualityLabel, voiceQualityLabel()),
                     LocaleController.formatString(R.string.A11yHideSponsorLabel, onOff(getHideSponsorChannel())),
                     LocaleController.formatString(R.string.A11yGhostModeLabel, onOff(getGhostMode())),
-                    LocaleController.formatString(R.string.A11yStatusPreviewLabel, onOff(getShowStatusInPreview()))
+                    LocaleController.formatString(R.string.A11yStatusPreviewLabel, onOff(getShowStatusInPreview())),
+                    "Forward without quote to Saved Messages: " + onOff(isForwardNoQuoteSavedEnabled())
             };
             new AlertDialog.Builder(activity)
                     .setTitle(LocaleController.getString(R.string.A11yAccessibleSettingsTitle))
@@ -176,6 +190,13 @@ public class A11yConfig {
                             try {
                                 activity.getWindow().getDecorView().announceForAccessibility(
                                         LocaleController.getString(getShowStatusInPreview() ? R.string.A11yStatusOn : R.string.A11yStatusOff));
+                            } catch (Throwable ignore) {
+                            }
+                        } else if (which == 5) {
+                            setForwardNoQuoteSavedEnabled(!isForwardNoQuoteSavedEnabled());
+                            try {
+                                activity.getWindow().getDecorView().announceForAccessibility(
+                                        "Forward without quote " + onOff(isForwardNoQuoteSavedEnabled()));
                             } catch (Throwable ignore) {
                             }
                         }

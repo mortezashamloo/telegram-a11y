@@ -1,51 +1,52 @@
-# -*- coding: utf-8 -*-
-"""
-Strips stray \x01/\u0001 control characters that can end up embedded in a
-few generated/patched files (the root cause of the "illegal character"
-DialogCell.java compile errors seen earlier).
-"""
+#!/usr/bin/env python3
 import os
-
-def remove_hidden_char(text):
-    return text.replace('\x01', '').replace('\u0001', '')
-
-def process_text_file(file_path):
-    if not os.path.isfile(file_path):
-        return None
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-    cleaned = remove_hidden_char(content)
-    if cleaned != content:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(cleaned)
-        return True
-    return False
+import sys
 
 def main():
-    # a11y-fork: base_dir already IS patches-repo/scripts -- don't prepend
-    # "scripts/" again (that was the "scripts/scripts" bug).
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    # repo_root is two levels up from patches-repo/scripts; the cloned
-    # Telegram source lives at repo_root/telegram, a sibling of
-    # patches-repo, not inside it.
-    repo_root = os.path.dirname(os.path.dirname(base_dir))
-    telegram_dir = os.path.join(repo_root, "telegram")
+    target_file = "telegram/TMessagesProj/src/main/java/org/telegram/ui/AccessibilitySettingsActivity.java"
+    
+    if not os.path.exists(target_file):
+        found = False
+        for root, dirs, files in os.walk("telegram"):
+            if "AccessibilitySettingsActivity.java" in files:
+                target_file = os.path.join(root, "AccessibilitySettingsActivity.java")
+                found = True
+                break
+        if not found:
+            print(f"[WARN] Target file {target_file} not found. Skipping post-a11y-menu patch.")
+            return
 
-    files_to_fix = [
-        os.path.join(base_dir, "apply-a11y.py"),
-        os.path.join(base_dir, "post-a11y-menu.py"),
-        os.path.join(base_dir, "patch-proxy-muted.py"),
-        os.path.join(telegram_dir, "TMessagesProj", "src", "main", "res", "values", "strings.xml"),
-        os.path.join(telegram_dir, "TMessagesProj", "src", "main", "res", "values-fa", "strings.xml"),
-    ]
-    for file_path in files_to_fix:
-        result = process_text_file(file_path)
-        if result is True:
-            print(f"fixed: {file_path}")
-        elif result is False:
-            print(f"unchanged: {file_path}")
-        else:
-            print(f"skip (not found): {file_path}")
+    print(f"[INFO] Patching Accessible Settings menu in: {target_file}")
+
+    with open(target_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if "PREF_FORWARD_NO_QUOTE_SAVED" in content or "isForwardNoQuoteSavedEnabled" in content:
+        print("[INFO] Forward without quote option already exists in Accessible Settings.")
+        return
+
+    menu_item_code = '''
+        // Option: Forward without quote to Saved Messages
+        TextCheckCell forwardNoQuoteCell = new TextCheckCell(context);
+        forwardNoQuoteCell.setTextAndCheck("Forward to Saved Messages with no quote", org.telegram.messenger.A11yConfig.isForwardNoQuoteSavedEnabled(), true);
+        forwardNoQuoteCell.setOnClickListener(v -> {
+            boolean newState = !org.telegram.messenger.A11yConfig.isForwardNoQuoteSavedEnabled();
+            org.telegram.messenger.A11yConfig.setForwardNoQuoteSavedEnabled(newState);
+            forwardNoQuoteCell.setChecked(newState);
+        });
+        linearLayout.addView(forwardNoQuoteCell);
+    '''
+
+    if "linearLayout.addView(" in content:
+        injection_point = content.rfind("linearLayout.addView(")
+        end_of_line = content.find(";", injection_point) + 1
+        updated_content = content[:end_of_line] + "\n" + menu_item_code + content[end_of_line:]
+        
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write(updated_content)
+        print("[SUCCESS] Successfully added Forward without quote option to Accessible Settings.")
+    else:
+        print("[WARN] Could not find suitable injection point in AccessibilitySettingsActivity.java.")
 
 if __name__ == "__main__":
     main()
