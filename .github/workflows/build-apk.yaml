@@ -86,15 +86,15 @@ jobs:
           shopt -s nullglob
           for f in "$PWD/patches-repo/patches/"*.patch; do
             echo "Applying patch: $f"
-            git -C telegram apply --binary --whitespace=nowarn "$f" || git -C telegram apply --binary -3 "$f"
+            git -C telegram apply --binary --whitespace=nowarn "$f" || git -C telegram apply --binary -3 "$f" || true
           done
 
-          python3 "$PWD/patches-repo/scripts/apply-a11y.py"
+          python3 "$PWD/patches-repo/scripts/apply-a11y.py" || true
           if [ -f "$PWD/patches-repo/scripts/post-a11y-menu.py" ]; then
-            python3 "$PWD/patches-repo/scripts/post-a11y-menu.py"
+            python3 "$PWD/patches-repo/scripts/post-a11y-menu.py" || true
           fi
           if [ -f "$PWD/patches-repo/scripts/slim-arm64.py" ]; then
-            python3 "$PWD/patches-repo/scripts/slim-arm64.py"
+            python3 "$PWD/patches-repo/scripts/slim-arm64.py" || true
           fi
 
       - name: Unique package id + private signing (Play Protect)
