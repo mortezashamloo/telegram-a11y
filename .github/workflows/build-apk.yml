@@ -34,6 +34,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # a11y-fork: the action's default 'packages' input is
+          # "tools platform-tools", but Google removed the legacy 'tools'
+          # package from the SDK repository, which made this step fail
+          # with "Failed to find package 'tools'". platform-tools alone
+          # is enough here -- the next step installs everything else needed.
+          packages: 'platform-tools'
 
       - name: Install SDK components
         run: |
