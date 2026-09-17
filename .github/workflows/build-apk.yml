@@ -1,4 +1,4 @@
-name: Build APK
+﻿name: Build APK
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
       - name: Setup Android SDK
@@ -42,11 +42,6 @@ jobs:
         run: |
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-
-      - name: Accept Android SDK Licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
 
       - name: Inject API credentials
         env:
@@ -82,25 +77,18 @@ jobs:
           A11Y="patches-repo/scripts/apply-a11y.py"
           if [ ! -f "$A11Y" ] || [ "$(wc -c < "$A11Y")" -lt 10000 ]; then
             echo "apply-a11y.py missing/truncated — restoring from commit 5119a983"
-            mkdir -p patches-repo/scripts
             curl -fsSL -o "$A11Y" \
               "https://raw.githubusercontent.com/mortezashamloo/telegram-a11y/5119a9836b0036de6edeb4d433e1cc4e482c48da/scripts/apply-a11y.py"
             wc -c "$A11Y"
           fi
-
           shopt -s nullglob
-          for f in "$PWD/patches-repo/patches/"*.patch; do
-            echo "Applying patch: $f"
-            git -C telegram apply --binary --whitespace=nowarn "$f" || git -C telegram apply --binary -3 "$f" || true
+          for f in patches-repo/patches/*.patch; do
+            echo "Applying $f"
+            git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
           done
-
-          python3 "$PWD/patches-repo/scripts/apply-a11y.py"
-          if [ -f "$PWD/patches-repo/scripts/post-a11y-menu.py" ]; then
-            python3 "$PWD/patches-repo/scripts/post-a11y-menu.py" || true
-          fi
-          if [ -f "$PWD/patches-repo/scripts/slim-arm64.py" ]; then
-            python3 "$PWD/patches-repo/scripts/slim-arm64.py" || true
-          fi
+          python3 patches-repo/scripts/apply-a11y.py
+          python3 patches-repo/scripts/post-a11y-menu.py
+          python3 patches-repo/scripts/slim-arm64.py
 
       - name: Unique package id + private signing (Play Protect)
         env:
@@ -111,22 +99,21 @@ jobs:
           A11Y_APP_PACKAGE: ${{ secrets.A11Y_APP_PACKAGE }}
         run: |
           set -e
-          if [ -f "$PWD/patches-repo/scripts/prepare-release-signing.py" ]; then
-            python3 "$PWD/patches-repo/scripts/prepare-release-signing.py"
-          fi
+          python3 patches-repo/scripts/prepare-release-signing.py
           echo "--- App build.gradle signing / release snippet ---"
           grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
           grep -n "^APP_PACKAGE\|^RELEASE_" telegram/gradle.properties || true
 
-      - name: Build APK
+      - name: Build APK (release, fallback debug)
         working-directory: telegram
         run: |
           set -e
           chmod +x gradlew
+          # Release preferred (debuggable=false). If it fails, same unique package+keystore via debug.
           if ./gradlew :TMessagesProj_App:assembleAfatRelease --stacktrace --no-daemon; then
             echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
           else
-            echo "Release failed — falling back to afatDebug"
+            echo "Release failed — falling back to afatDebug with a11y package/keystore"
             ./gradlew :TMessagesProj_App:assembleAfatDebug --stacktrace --no-daemon
             echo "BUILD_VARIANT=debug" >> "$GITHUB_ENV"
           fi
@@ -144,17 +131,19 @@ jobs:
             exit 1
           fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "Found APK: $APK"
+          echo "Found APK: $APK (variant=${BUILD_VARIANT:-unknown})"
           ls -lh "$APK"
 
-      - name: Prepare Keystore File for Artifact
+      - name: Prepare Keystore Artifact
         if: always()
         run: |
           mkdir -p telegram/TMessagesProj/config
           KEYSTORE_FILE=$(find telegram -name "*.keystore" 2>/dev/null | head -n 1)
           if [ -n "$KEYSTORE_FILE" ] && [ -f "$KEYSTORE_FILE" ]; then
+            echo "Found keystore at $KEYSTORE_FILE, copying to default path..."
             cp "$KEYSTORE_FILE" telegram/TMessagesProj/config/a11y-release.keystore
           else
+            echo "No keystore found, generating placeholder to prevent workflow failure..."
             touch telegram/TMessagesProj/config/a11y-release.keystore
           fi
 
