@@ -4,7 +4,7 @@
 - Changes APP_PACKAGE away from official org.telegram.messenger
 - Generates (or restores from env) a private release keystore
 - Points gradle signing at that keystore
-- Disables R8 minify on release
+- Disables R8 minify and shrinkResources on release
 - Strips debug applicationIdSuffix .beta
 - Patches google-services.json so process*GoogleServices matches new package
 
@@ -143,14 +143,14 @@ def main() -> int:
 
         if "a11y-fork: release no minify" not in t:
             t2, n = re.subn(
-                r"(release\s*\{[\s\S]*?)minifyEnabled\s+true",
-                r"\1// a11y-fork: release no minify\n            minifyEnabled false",
+                r"(buildTypes\s*\{[\s\S]*?release\s*\{[\s\S]*?)minifyEnabled\s+true",
+                r"\1// a11y-fork: release no minify\n            minifyEnabled false\n            shrinkResources false",
                 t,
                 count=1,
             )
             if n:
                 t = t2
-                print("release minifyEnabled -> false OK")
+                print("release minifyEnabled -> false & shrinkResources -> false OK")
             else:
                 print("WARN: could not disable release minifyEnabled")
 
