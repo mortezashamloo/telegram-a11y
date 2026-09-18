@@ -1301,6 +1301,86 @@ def patch_talkback_action_long_click() -> None:
     print("ChatMessageCell talkback-action-long-click OK")
 
 
+def patch_longpress_single_finger() -> None:
+    """
+    Accessibility-fork: when TalkBack is ON, a SINGLE-FINGER long-press on
+    ANY message cell must always open the single-message menu, never
+    start multi-select. This guards the paths that patch_longpress_message_menu
+    does not cover.
+    """
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity missing (single-finger long-press)")
+        return
+    t = ca.read_text(encoding="utf-8")
+
+    if "a11y-fork: onItemLongClick under TalkBack" not in t:
+        candidates = [
+            "    @Override\n    public boolean onItemLongClick(android.widget.AdapterView<?> adapterView, View view, int i, long l) {\n",
+            "    public boolean onItemLongClick(android.widget.AdapterView<?> adapterView, View view, int i, long l) {\n",
+        ]
+        inserted = False
+        for needle in candidates:
+            if needle in t:
+                replacement = needle + (
+                    "        // a11y-fork: onItemLongClick under TalkBack\n"
+                    "        try {\n"
+                    "            android.view.accessibility.AccessibilityManager amItem = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n"
+                    "            if (amItem != null && amItem.isEnabled() && view instanceof ChatMessageCell) {\n"
+                    "                didLongPress((ChatMessageCell) view, view.getWidth() / 2f, view.getHeight() / 2f);\n"
+                    "                return true;\n"
+                    "            }\n"
+                    "        } catch (Throwable ignore) {}\n"
+                )
+                t = t.replace(needle, replacement, 1)
+                inserted = True
+                print("onItemLongClick a11y guard OK")
+                break
+        if not inserted:
+            print("WARN: onItemLongClick signature not found")
+
+    ca.write_text(t, encoding="utf-8")
+
+
+def patch_talkback_action_long_click_enhanced() -> None:
+    """
+    Enhanced: when TalkBack's synthetic ACTION_LONG_CLICK arrives with
+    lastTouchX/Y == 0, fall back to the centre of the cell so the menu
+    opens at a sane spot.
+    """
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists():
+        return
+    t = cmc.read_text(encoding="utf-8")
+    if "a11y-fork: talkback action long click enhanced" in t:
+        print("ChatMessageCell enhanced talkback long-click already patched")
+        return
+    old = (
+        "                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
+        "                    if (delegate != null) {\n"
+        "                        delegate.didLongPress(ChatMessageCell.this, lastTouchX, lastTouchY);\n"
+        "                    }\n"
+        "                    return true;\n"
+        "                }\n"
+    )
+    new = (
+        "                // a11y-fork: talkback action long click enhanced\n"
+        "                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
+        "                    if (delegate != null) {\n"
+        "                        int a11yX = lastTouchX > 0 ? lastTouchX : getWidth() / 2;\n"
+        "                        int a11yY = lastTouchY > 0 ? lastTouchY : getHeight() / 2;\n"
+        "                        delegate.didLongPress(ChatMessageCell.this, a11yX, a11yY);\n"
+        "                    }\n"
+        "                    return true;\n"
+        "                }\n"
+    )
+    if old not in t:
+        print("WARN: enhanced talkback long-click anchor not found")
+        return
+    t = t.replace(old, new, 1)
+    cmc.write_text(t, encoding="utf-8")
+    print("ChatMessageCell enhanced talkback long-click OK")
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -1324,6 +1404,9 @@ def main() -> int:
     patch_go_to_first_message()
     patch_leave_comment_menu()
     patch_talkback_action_long_click()
+    patch_longpress_single_finger()
+patch_talkback_action_long_click_enhanced()
+
     print("A11y REAL patches done")
     return 0
 
