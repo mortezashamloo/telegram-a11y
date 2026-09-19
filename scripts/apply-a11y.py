@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """Apply accessibility patches to cloned Telegram tree (cwd parent of telegram/).
 
 Portable: works with GitHub Actions (patches-repo/scripts) or local kit (scripts/).
