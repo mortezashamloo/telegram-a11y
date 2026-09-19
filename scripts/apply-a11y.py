@@ -1405,7 +1405,7 @@ def main() -> int:
     patch_leave_comment_menu()
     patch_talkback_action_long_click()
     patch_longpress_single_finger()
-patch_talkback_action_long_click_enhanced()
+    patch_talkback_action_long_click_enhanced()
 
     print("A11y REAL patches done")
     return 0
