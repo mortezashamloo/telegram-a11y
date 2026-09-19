@@ -86,70 +86,92 @@ def patch_app_name() -> None:
 
 
 def _patch_a11y_string_resources() -> None:
-    """Install English/Persian resources for all accessibility-fork UI text."""
+    """Install every accessibility-fork string resource referenced by A11yConfig.java.
+
+    The previous build failed because A11yConfig referenced the
+    Label/Title/On/Off resource names while the installer created only
+    shorter alias names. Keep both the exact names and compatibility aliases.
+    """
     en = {
+        "A11yAccessibleSettingsTitle": "Accessible settings",
+        "A11yProgressAnnounceLabel": "Progress announce: %s",
+        "A11yProgressStepLabel": "Progress step %1$d percent",
+        "A11yProgressStepPickerTitle": "Progress announce step",
+        "A11yVoiceQualityLabel": "Voice quality: %s",
+        "A11yVoiceQualityPickerTitle": "Voice message quality",
+        "A11yVoiceLow": "Low",
+        "A11yVoiceMedium": "Medium",
+        "A11yVoiceHigh": "High",
+        "A11yHideSponsorLabel": "Hide sponsor channel: %s",
+        "A11ySponsorHidden": "Sponsor channel hidden",
+        "A11ySponsorShown": "Sponsor channel shown",
+        "A11yGhostModeLabel": "Ghost mode: %s",
+        "A11yGhostOn": "Ghost mode on",
+        "A11yGhostOff": "Ghost mode off",
+        "A11yStatusPreviewLabel": "Show status in preview: %s",
+        "A11yStatusOn": "Status preview on",
+        "A11yStatusOff": "Status preview off",
+        "A11yForwardSavedNoQuoteLabel": "Forward to Saved Messages with no quote: %s",
+        "A11yRecordingBeepLabel": "Recording start beep: %s",
+        "A11ySolarCalendarLabel": "Solar calendar: %s",
+        "A11yOn": "On", "A11yOff": "Off", "A11yCancel": "Cancel",
+        "A11ySolarDate": "Solar date %1$s",
         "A11yAccessibleSettings": "Accessible settings",
         "A11yProgressAnnounce": "Progress announce",
         "A11yVoiceQuality": "Voice quality",
         "A11yProgressAnnounceSummary": "Progress & voice quality",
         "A11yProgressAnnounceStep": "Progress announce step",
         "A11yVoiceMessageQuality": "Voice message quality",
-        "A11yLow": "Low",
-        "A11yMedium": "Medium",
-        "A11yHigh": "High",
+        "A11yLow": "Low", "A11yMedium": "Medium", "A11yHigh": "High",
         "A11yProgressStep": "Progress step %1$d percent",
         "A11yVoiceQualitySelected": "Voice quality %1$s",
         "A11yForwardWithoutQuote": "Forward without quote",
         "A11yForwardToSaved": "Forward to Saved Messages",
         "A11yForwardedToSaved": "Forwarded to Saved Messages",
-        "A11yForwardSavedNoQuoteLabel": "Forward to Saved Messages with no quote: %s",
-        "A11ySelected": "Selected",
-        "A11yReceiveAt": "receive @%1$s",
-        "A11ySentAt": "sent @%1$s",
-        "A11yBotButtons": "Bot Buttons",
-        "A11yGoToFirstMessage": "Go to first message",
-        "A11yBotNumber": "Bot %1$d",
+        "A11ySelected": "Selected", "A11yReceiveAt": "receive @%1$s",
+        "A11ySentAt": "sent @%1$s", "A11yBotButtons": "Bot Buttons",
+        "A11yGoToFirstMessage": "Go to first message", "A11yBotNumber": "Bot %1$d",
         "A11yPercent": "%1$d percent",
-        "A11yRecordingBeepLabel": "Recording start beep: %s",
-        "A11ySolarCalendarLabel": "Solar calendar: %s",
-        "A11yOn": "On",
-        "A11yOff": "Off",
-        "A11ySolarDate": "Solar date %1$s",
     }
     fa = {
-        "A11yAccessibleSettings": "تنظیمات دسترسپذیری",
-        "A11yProgressAnnounce": "اعلام پیشرفت",
-        "A11yVoiceQuality": "کیفیت صدا",
-        "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
-        "A11yProgressAnnounceStep": "گام اعلام پیشرفت",
-        "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
-        "A11yLow": "پایین",
-        "A11yMedium": "متوسط",
-        "A11yHigh": "بالا",
-        "A11yProgressStep": "گام پیشرفت %1$d درصد",
-        "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
-        "A11yForwardWithoutQuote": "ارسال بدون نقلقول",
-        "A11yForwardToSaved": "ارسال به پیامهای ذخیرهشده",
-        "A11yForwardedToSaved": "به پیامهای ذخیرهشده ارسال شد",
+        "A11yAccessibleSettingsTitle": "تنظیمات دسترس‌پذیری",
+        "A11yProgressAnnounceLabel": "اعلام پیشرفت: %s",
+        "A11yProgressStepLabel": "گام پیشرفت %1$d درصد",
+        "A11yProgressStepPickerTitle": "گام اعلام پیشرفت",
+        "A11yVoiceQualityLabel": "کیفیت صدا: %s",
+        "A11yVoiceQualityPickerTitle": "کیفیت پیام صوتی",
+        "A11yVoiceLow": "پایین", "A11yVoiceMedium": "متوسط", "A11yVoiceHigh": "بالا",
+        "A11yHideSponsorLabel": "مخفی کردن کانال حامی: %s",
+        "A11ySponsorHidden": "کانال حامی مخفی شد",
+        "A11ySponsorShown": "کانال حامی نمایش داده شد",
+        "A11yGhostModeLabel": "حالت روح: %s",
+        "A11yGhostOn": "حالت روح روشن شد", "A11yGhostOff": "حالت روح خاموش شد",
+        "A11yStatusPreviewLabel": "نمایش وضعیت در پیش‌نمایش: %s",
+        "A11yStatusOn": "نمایش وضعیت روشن شد", "A11yStatusOff": "نمایش وضعیت خاموش شد",
         "A11yForwardSavedNoQuoteLabel": "فوروارد به پیام‌های ذخیره‌شده بدون نقل‌قول: %s",
-        "A11ySelected": "انتخاب شد",
-        "A11yReceiveAt": "دریافت در ساعت %1$s",
-        "A11ySentAt": "ارسال در ساعت %1$s",
-        "A11yBotButtons": "دکمههای ربات",
-        "A11yGoToFirstMessage": "رفتن به اولین پیام",
-        "A11yBotNumber": "ربات %1$d",
-        "A11yPercent": "%1$d درصد",
         "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
         "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
-        "A11yOn": "روشن",
-        "A11yOff": "خاموش",
+        "A11yOn": "روشن", "A11yOff": "خاموش", "A11yCancel": "لغو",
         "A11ySolarDate": "تاریخ خورشیدی %1$s",
+        "A11yAccessibleSettings": "تنظیمات دسترس‌پذیری",
+        "A11yProgressAnnounce": "اعلام پیشرفت", "A11yVoiceQuality": "کیفیت صدا",
+        "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
+        "A11yProgressAnnounceStep": "گام اعلام پیشرفت", "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
+        "A11yLow": "پایین", "A11yMedium": "متوسط", "A11yHigh": "بالا",
+        "A11yProgressStep": "گام پیشرفت %1$d درصد",
+        "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
+        "A11yForwardWithoutQuote": "فوروارد بدون نقل‌قول",
+        "A11yForwardToSaved": "ارسال به پیام‌های ذخیره‌شده",
+        "A11yForwardedToSaved": "به پیام‌های ذخیره‌شده ارسال شد", "A11ySelected": "انتخاب شد",
+        "A11yReceiveAt": "دریافت در ساعت %1$s", "A11ySentAt": "ارسال در ساعت %1$s",
+        "A11yBotButtons": "دکمه‌های ربات", "A11yGoToFirstMessage": "رفتن به اولین پیام",
+        "A11yBotNumber": "ربات %1$d", "A11yPercent": "%1$d درصد",
     }
-    # Remove the zero-width separator accidentally introduced by source editing;
-    # keep normal Persian spacing in Android resources.
-    fa = {k: v.replace("\u000b", " ") for k, v in fa.items()}
     for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
         path = RES / rel
+        if not path.exists():
+            print("WARN: resource file missing:", path)
+            continue
         for name, value in values.items():
             _set_string(path, name, value)
 
