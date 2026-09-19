@@ -86,92 +86,70 @@ def patch_app_name() -> None:
 
 
 def _patch_a11y_string_resources() -> None:
-    """Install every accessibility-fork string resource referenced by A11yConfig.java.
-
-    The previous build failed because A11yConfig referenced the
-    Label/Title/On/Off resource names while the installer created only
-    shorter alias names. Keep both the exact names and compatibility aliases.
-    """
+    """Install English/Persian resources for all accessibility-fork UI text."""
     en = {
-        "A11yAccessibleSettingsTitle": "Accessible settings",
-        "A11yProgressAnnounceLabel": "Progress announce: %s",
-        "A11yProgressStepLabel": "Progress step %1$d percent",
-        "A11yProgressStepPickerTitle": "Progress announce step",
-        "A11yVoiceQualityLabel": "Voice quality: %s",
-        "A11yVoiceQualityPickerTitle": "Voice message quality",
-        "A11yVoiceLow": "Low",
-        "A11yVoiceMedium": "Medium",
-        "A11yVoiceHigh": "High",
-        "A11yHideSponsorLabel": "Hide sponsor channel: %s",
-        "A11ySponsorHidden": "Sponsor channel hidden",
-        "A11ySponsorShown": "Sponsor channel shown",
-        "A11yGhostModeLabel": "Ghost mode: %s",
-        "A11yGhostOn": "Ghost mode on",
-        "A11yGhostOff": "Ghost mode off",
-        "A11yStatusPreviewLabel": "Show status in preview: %s",
-        "A11yStatusOn": "Status preview on",
-        "A11yStatusOff": "Status preview off",
-        "A11yForwardSavedNoQuoteLabel": "Forward to Saved Messages with no quote: %s",
-        "A11yRecordingBeepLabel": "Recording start beep: %s",
-        "A11ySolarCalendarLabel": "Solar calendar: %s",
-        "A11yOn": "On", "A11yOff": "Off", "A11yCancel": "Cancel",
-        "A11ySolarDate": "Solar date %1$s",
         "A11yAccessibleSettings": "Accessible settings",
         "A11yProgressAnnounce": "Progress announce",
         "A11yVoiceQuality": "Voice quality",
         "A11yProgressAnnounceSummary": "Progress & voice quality",
         "A11yProgressAnnounceStep": "Progress announce step",
         "A11yVoiceMessageQuality": "Voice message quality",
-        "A11yLow": "Low", "A11yMedium": "Medium", "A11yHigh": "High",
+        "A11yLow": "Low",
+        "A11yMedium": "Medium",
+        "A11yHigh": "High",
         "A11yProgressStep": "Progress step %1$d percent",
         "A11yVoiceQualitySelected": "Voice quality %1$s",
         "A11yForwardWithoutQuote": "Forward without quote",
         "A11yForwardToSaved": "Forward to Saved Messages",
         "A11yForwardedToSaved": "Forwarded to Saved Messages",
-        "A11ySelected": "Selected", "A11yReceiveAt": "receive @%1$s",
-        "A11ySentAt": "sent @%1$s", "A11yBotButtons": "Bot Buttons",
-        "A11yGoToFirstMessage": "Go to first message", "A11yBotNumber": "Bot %1$d",
+        "A11yForwardSavedNoQuoteLabel": "Forward to Saved Messages with no quote: %s",
+        "A11ySelected": "Selected",
+        "A11yReceiveAt": "at %1$s",
+        "A11ySentAt": "at %1$s",
+        "A11yBotButtons": "Bot Buttons",
+        "A11yGoToFirstMessage": "Go to first message",
+        "A11yBotNumber": "Bot %1$d",
         "A11yPercent": "%1$d percent",
+        "A11yRecordingBeepLabel": "Recording start beep: %s",
+        "A11ySolarCalendarLabel": "Solar calendar: %s",
+        "A11yOn": "On",
+        "A11yOff": "Off",
+        "A11ySolarDate": "Solar date %1$s",
     }
     fa = {
-        "A11yAccessibleSettingsTitle": "تنظیمات دسترس‌پذیری",
-        "A11yProgressAnnounceLabel": "اعلام پیشرفت: %s",
-        "A11yProgressStepLabel": "گام پیشرفت %1$d درصد",
-        "A11yProgressStepPickerTitle": "گام اعلام پیشرفت",
-        "A11yVoiceQualityLabel": "کیفیت صدا: %s",
-        "A11yVoiceQualityPickerTitle": "کیفیت پیام صوتی",
-        "A11yVoiceLow": "پایین", "A11yVoiceMedium": "متوسط", "A11yVoiceHigh": "بالا",
-        "A11yHideSponsorLabel": "مخفی کردن کانال حامی: %s",
-        "A11ySponsorHidden": "کانال حامی مخفی شد",
-        "A11ySponsorShown": "کانال حامی نمایش داده شد",
-        "A11yGhostModeLabel": "حالت روح: %s",
-        "A11yGhostOn": "حالت روح روشن شد", "A11yGhostOff": "حالت روح خاموش شد",
-        "A11yStatusPreviewLabel": "نمایش وضعیت در پیش‌نمایش: %s",
-        "A11yStatusOn": "نمایش وضعیت روشن شد", "A11yStatusOff": "نمایش وضعیت خاموش شد",
-        "A11yForwardSavedNoQuoteLabel": "فوروارد به پیام‌های ذخیره‌شده بدون نقل‌قول: %s",
-        "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
-        "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
-        "A11yOn": "روشن", "A11yOff": "خاموش", "A11yCancel": "لغو",
-        "A11ySolarDate": "تاریخ خورشیدی %1$s",
-        "A11yAccessibleSettings": "تنظیمات دسترس‌پذیری",
-        "A11yProgressAnnounce": "اعلام پیشرفت", "A11yVoiceQuality": "کیفیت صدا",
+        "A11yAccessibleSettings": "تنظیمات دسترسپذیری",
+        "A11yProgressAnnounce": "اعلام پیشرفت",
+        "A11yVoiceQuality": "کیفیت صدا",
         "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
-        "A11yProgressAnnounceStep": "گام اعلام پیشرفت", "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
-        "A11yLow": "پایین", "A11yMedium": "متوسط", "A11yHigh": "بالا",
+        "A11yProgressAnnounceStep": "گام اعلام پیشرفت",
+        "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
+        "A11yLow": "پایین",
+        "A11yMedium": "متوسط",
+        "A11yHigh": "بالا",
         "A11yProgressStep": "گام پیشرفت %1$d درصد",
         "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
-        "A11yForwardWithoutQuote": "فوروارد بدون نقل‌قول",
-        "A11yForwardToSaved": "ارسال به پیام‌های ذخیره‌شده",
-        "A11yForwardedToSaved": "به پیام‌های ذخیره‌شده ارسال شد", "A11ySelected": "انتخاب شد",
-        "A11yReceiveAt": "دریافت در ساعت %1$s", "A11ySentAt": "ارسال در ساعت %1$s",
-        "A11yBotButtons": "دکمه‌های ربات", "A11yGoToFirstMessage": "رفتن به اولین پیام",
-        "A11yBotNumber": "ربات %1$d", "A11yPercent": "%1$d درصد",
+        "A11yForwardWithoutQuote": "ارسال بدون نقلقول",
+        "A11yForwardToSaved": "ارسال به پیامهای ذخیرهشده",
+        "A11yForwardedToSaved": "به پیامهای ذخیرهشده ارسال شد",
+        "A11yForwardSavedNoQuoteLabel": "فوروارد به پیام‌های ذخیره‌شده بدون نقل‌قول: %s",
+        "A11ySelected": "انتخاب شد",
+        "A11yReceiveAt": "در ساعت %1$s",
+        "A11ySentAt": "در ساعت %1$s",
+        "A11yBotButtons": "دکمههای ربات",
+        "A11yGoToFirstMessage": "رفتن به اولین پیام",
+        "A11yBotNumber": "ربات %1$d",
+        "A11yPercent": "%1$d درصد",
+        "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
+        "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
+        "A11yOn": "روشن",
+        "A11yOff": "خاموش",
+        "A11ySolarDate": "تاریخ خورشیدی %1$s",
     }
+    # Remove the zero-width separator accidentally introduced by source editing;
+    # keep normal Persian spacing in Android resources.
+    fa = {k: v.replace("\u000b", " ") for k, v in fa.items()}
     for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
         path = RES / rel
-        if not path.exists():
-            print("WARN: resource file missing:", path)
-            continue
         for name, value in values.items():
             _set_string(path, name, value)
 
@@ -420,6 +398,7 @@ def patch_hide_share_and_comment() -> None:
 
 
 def patch_forward_menu_extras() -> None:
+    """Separate normal forward-without-quote from Saved Messages."""
     smh = JAVA / "org/telegram/messenger/SendMessagesHelper.java"
     if smh.exists():
         t = smh.read_text(encoding="utf-8")
@@ -429,22 +408,25 @@ def patch_forward_menu_extras() -> None:
                 "req.drop_author = forwardFromMyName || org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE; org.telegram.ui.ChatActivity.IS_FORWARD_NO_QUOTE = false;",
                 1,
             )
-            smh.write_text(t2, encoding="utf-8")
-            print("drop_author OK")
+            if t2 != t:
+                smh.write_text(t2, encoding="utf-8")
+                print("drop_author OK")
+
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         return
     t = ca.read_text(encoding="utf-8")
+
     if "IS_FORWARD_NO_QUOTE" not in t:
         t2, n = re.subn(
             r"(protected TLRPC\.Chat currentChat;)",
             r"public static boolean IS_FORWARD_NO_QUOTE = false;\n    \1",
-            t,
-            count=1,
+            t, count=1,
         )
         if n:
             t = t2
             print("IS_FORWARD_NO_QUOTE field OK")
+
     if "a11y-fork: forward menu extras" not in t:
         old = (
             "                if (canForward) {\n"
@@ -459,57 +441,96 @@ def patch_forward_menu_extras() -> None:
             "                    options.add(OPTION_FORWARD);\n"
             "                    icons.add(R.drawable.msg_forward);\n"
             "                    // a11y-fork: forward menu extras\n"
-            "                    items.add(\"Forward without quote\");\n"
+            "                    items.add(LocaleController.getString(R.string.A11yForwardWithoutQuote));\n"
             f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
             "                    icons.add(R.drawable.msg_forward);\n"
-            "                    items.add(\"Forward to Saved Messages\");\n"
+            "                    items.add(LocaleController.getString(R.string.A11yForwardToSaved));\n"
             f"                    options.add({OPTION_FORWARD_TO_SAVED});\n"
             "                    icons.add(R.drawable.msg_forward);\n"
             "                }"
         )
         if old in t:
-            t = t.replace(old, new, 1)
+            t=t.replace(old,new,1)
             print("Forward menu extras OK")
-        else:
-            print("WARN: canForward menu block not found")
-    if "a11y-fork: OPTION_FORWARD_NO_QUOTE" not in t:
-        old_case = "            case OPTION_FORWARD: {"
-        new_case = (
-            f"            case {OPTION_FORWARD_NO_QUOTE}: // a11y-fork: OPTION_FORWARD_NO_QUOTE\n"
-            "                IS_FORWARD_NO_QUOTE = true;\n"
-            "                // fall through to forward UI\n"
-            f"            case {OPTION_FORWARD_TO_SAVED}: // a11y-fork: forward to Saved Messages\n"
-            "                if (selectedObject != null) {{\n"
-            "                    try {{\n"
-            "                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n"
-            "                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {{\n"
-            "                            toSend.addAll(selectedObjectGroup.messages);\n"
-            "                        }} else {{\n"
-            "                            toSend.add(selectedObject);\n"
-            "                        }}\n"
-            "                        long savedId = getUserConfig().getClientUserId();\n"
-            "                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n"
-            "                        try {{\n"
-            "                            if (getParentActivity() != null) {{\n"
-            "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Forwarded to Saved Messages\");\n"
-            "                            }}\n"
-            "                        }} catch (Throwable ignore) {{}}\n"
-            "                    }} catch (Throwable e) {{\n"
-            "                        FileLog.e(e);\n"
-            "                    }}\n"
-            "                }}\n"
-            "                selectedObject = null;\n"
-            "                selectedObjectToEditCaption = null;\n"
-            "                selectedObjectGroup = null;\n"
-            "                break;\n"
-            "            case OPTION_FORWARD: {"
+
+    # The old generated block incorrectly put OPTION_FORWARD_TO_SAVED
+    # immediately after OPTION_FORWARD_NO_QUOTE, so a fall-through sent the
+    # message to Saved Messages. Replace that whole generated block.
+    if "a11y-fork: normal forward, no quote" not in t:
+        broken = re.compile(
+            rf"\s*case {OPTION_FORWARD_NO_QUOTE}: // a11y-fork: OPTION_FORWARD_NO_QUOTE[\s\S]*?\s*case OPTION_FORWARD: \{{",
+            re.MULTILINE,
         )
-        if old_case in t:
-            t = t.replace(old_case, new_case, 1)
-            print("Forward option handlers OK")
+        normal = f"""            case {OPTION_FORWARD_NO_QUOTE}: // a11y-fork: normal forward, no quote
+                IS_FORWARD_NO_QUOTE = true;
+                // Deliberate fall-through to Telegram's normal Forward handler.
+            case OPTION_FORWARD: {{
+                if (getMessagesController().isFrozen()) {{
+                    AccountFrozenAlert.show(currentAccount);
+                    selectedObject = null;
+                    selectedObjectToEditCaption = null;
+                    selectedObjectGroup = null;
+                    return;
+                }}
+                forwardingMessage = selectedObject;
+                forwardingMessageGroup = selectedObjectGroup;
+                Bundle args = new Bundle();
+                args.putBoolean("onlySelect", true);
+                args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
+                args.putInt("messagesCount", selectedObjectGroup != null ? selectedObjectGroup.messages.size() : 1);
+                args.putInt("hasPoll", forwardingMessage.isTodo() ? 3 : forwardingMessage.isPoll() ? (forwardingMessage.isPublicPoll() ? 2 : 1) : 0);
+                if (ChatObject.isMonoForum(currentChat) && ChatObject.canManageMonoForum(currentAccount, currentChat) && currentChat.linked_monoforum_id != 0) {{
+                    args.putLong("forward_into_channel", -currentChat.linked_monoforum_id);
+                }}
+                args.putBoolean("hasInvoice", forwardingMessage.isInvoice());
+                args.putBoolean("canSelectTopics", true);
+                DialogsActivity fragment = new DialogsActivity(args);
+                fragment.setDelegate(this);
+                presentFragment(fragment);
+                break;
+            case {OPTION_FORWARD_TO_SAVED}: // a11y-fork: forward to Saved Messages
+                if (selectedObject != null) {{
+                    try {{
+                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();
+                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {{
+                            toSend.addAll(selectedObjectGroup.messages);
+                        }} else {{
+                            toSend.add(selectedObject);
+                        }}
+                        if (org.telegram.messenger.A11yConfig.getForwardSavedNoQuote()) {{
+                            IS_FORWARD_NO_QUOTE = true;
+                        }}
+                        long savedId = getUserConfig().getClientUserId();
+                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);
+                        IS_FORWARD_NO_QUOTE = false;
+                        try {{
+                            if (getParentActivity() != null) {{
+                                getParentActivity().getWindow().getDecorView().announceForAccessibility(
+                                    LocaleController.getString(R.string.A11yForwardedToSaved));
+                            }}
+                        }} catch (Throwable ignore) {{}}
+                    }} catch (Throwable e) {{
+                        IS_FORWARD_NO_QUOTE = false;
+                        FileLog.e(e);
+                    }}
+                }}
+                selectedObject = null;
+                selectedObjectToEditCaption = null;
+                selectedObjectGroup = null;
+                break;"""
+        if broken.search(t):
+            t=broken.sub(normal,t,count=1)
+            print("Forward handlers corrected")
         else:
-            print("WARN: OPTION_FORWARD case not found")
-    ca.write_text(t, encoding="utf-8")
+            old_case="            case OPTION_FORWARD: {"
+            if old_case in t:
+                t=t.replace(old_case,normal,1)
+                print("Forward handlers installed")
+            else:
+                print("WARN: OPTION_FORWARD case not found")
+
+    ca.write_text(t,encoding="utf-8")
+
 
 
 def patch_reactions_as_menu() -> None:
@@ -846,6 +867,44 @@ def patch_chat_message_cell_float_coordinates() -> None:
         print("ChatMessageCell float coordinate fix already OK/not needed")
 
 
+def patch_chat_message_cell_accessibility_long_click() -> None:
+    """Route TalkBack ACTION_LONG_CLICK on the message bubble to didLongPress."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists():
+        print("WARN: ChatMessageCell missing (accessibility long-click)")
+        return
+    t = cmc.read_text(encoding="utf-8")
+    marker = "a11y-fork: host ACTION_LONG_CLICK"
+    if marker in t:
+        print("ChatMessageCell accessibility long-click already patched")
+        return
+    anchor = """    @Override
+    public boolean performAccessibilityAction(int action, Bundle arguments) {
+        if (delegate != null && delegate.onAccessibilityAction(action, arguments)) {
+            return false;
+        }
+"""
+    replacement = """    @Override
+    public boolean performAccessibilityAction(int action, Bundle arguments) {
+        if (delegate != null && delegate.onAccessibilityAction(action, arguments)) {
+            return false;
+        }
+        // a11y-fork: host ACTION_LONG_CLICK
+        if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK && delegate != null) {
+            int a11yX = lastTouchX > 0 ? (int) lastTouchX : getWidth() / 2;
+            int a11yY = lastTouchY > 0 ? (int) lastTouchY : getHeight() / 2;
+            delegate.didLongPress(this, a11yX, a11yY);
+            return true;
+        }
+"""
+    if anchor not in t:
+        print("WARN: ChatMessageCell performAccessibilityAction anchor not found")
+        return
+    t=t.replace(anchor,replacement,1)
+    cmc.write_text(t,encoding="utf-8")
+    print("ChatMessageCell host ACTION_LONG_CLICK OK")
+
+
 def patch_recording_beep() -> None:
     """
     Add an optional, short recording-start beep. Disabled by default and
@@ -871,8 +930,8 @@ def patch_recording_beep() -> None:
                     try {
                         if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
                             final android.media.ToneGenerator a11yTone =
-                                    new android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 55);
-                            a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 80);
+                                    new android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80);
+                            a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 100);
                             org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {
                                 try {
                                     a11yTone.stopTone();
@@ -911,7 +970,11 @@ def patch_solar_calendar_preview() -> None:
         // a11y-fork: solar-calendar
         try {
             if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {
-                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);
+                int a11ySolarTimestamp = lastDate;
+                if (message != null && message.messageOwner != null) {
+                    a11ySolarTimestamp = message.messageOwner.date;
+                }
+                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(a11ySolarTimestamp);
                 if (solarDate != null && solarDate.length() > 0) {
                     sb.append(solarDate);
                     sb.append(". ");
@@ -1046,8 +1109,8 @@ def patch_dialogcell_preview_muted_status() -> None:
         new_tail = (
             "        // a11y-fork: sent/received time read last\n"
             "        String a11yClockTime = LocaleController.formatDateAudio(lastDate, true);\n"
-            "        sb.append(message.isOut() ? \"sent @\" : \"receive @\");\n"
-            "        sb.append(a11yClockTime);\n"
+            "        if (sb.length() > 0 && !Character.isWhitespace(sb.charAt(sb.length() - 1))) sb.append(\" \");\n"
+            "        sb.append(LocaleController.formatString(message.isOut() ? \"A11ySentAt\" : \"A11yReceiveAt\", message.isOut() ? R.string.A11ySentAt : R.string.A11yReceiveAt, a11yClockTime));\n"
             "        sb.append(\". \");\n"
             "        event.setContentDescription(sb);\n"
             "        setContentDescription(sb);\n"
@@ -1394,6 +1457,7 @@ def main() -> int:
     patch_forward_menu_extras()
     # Shared end-anchor order: Bot Buttons -> Reactions -> Select (Select last).
     patch_longpress_message_menu()
+    patch_chat_message_cell_accessibility_long_click()
     patch_reactions_as_menu()
     patch_voice_bitrate()
     patch_settings_menu()
