@@ -258,7 +258,9 @@ def patch_hide_share_and_comment() -> None:
         )
         print("Hide leave-comment OK")
     cmc.write_text(t, encoding="utf-8")
-    def patch_forward_menu_extras() -> None:
+
+
+def patch_forward_menu_extras() -> None:
     smh = JAVA / "org/telegram/messenger/SendMessagesHelper.java"
     if smh.exists():
         t = smh.read_text(encoding="utf-8")
@@ -463,7 +465,9 @@ def patch_reactions_as_menu() -> None:
 
     ca.write_text(t, encoding="utf-8")
     print("ChatActivity reactions-menu item+toggle OK")
-    def patch_longpress_message_menu() -> None:
+
+
+def patch_longpress_message_menu() -> None:
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing")
@@ -701,7 +705,9 @@ def patch_settings_menu() -> None:
         else:
             print("WARN: Settings case 10 block not found")
     sa.write_text(t, encoding="utf-8")
-    def patch_dialogcell_preview_muted_status() -> None:
+
+
+def patch_dialogcell_preview_muted_status() -> None:
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (preview/muted/status)")
@@ -841,7 +847,6 @@ def patch_ghost_mode() -> None:
     if count == 0:
         print("WARN: ChatActivity markDialogAsRead call sites not found")
         return
-    import re
     pattern = re.compile(r"(\s*)getMessagesController\(\)\.markDialogAsRead\(([^;]*)\);")
     def guard(m):
         indent, args = m.group(1), m.group(2)
@@ -968,7 +973,9 @@ def patch_bot_buttons_menu() -> None:
 
     ca.write_text(t2, encoding="utf-8")
     print("ChatActivity bot-buttons-menu item+handler OK")
-    def patch_add_a11y_strings() -> None:
+
+
+def patch_add_a11y_strings() -> None:
     strings = {
         "A11yBotButtons": ("Bot Buttons", "\u062f\u06a9\u0645\u0647\u200c\u0647\u0627\u06cc \u0631\u0628\u0627\u062a"),
         "A11yForwardNoQuote": ("Forward without quote", "\u0641\u0648\u0631\u0648\u0627\u0631\u062f \u0628\u062f\u0648\u0646 \u0646\u0642\u0644\u200c\u0642\u0648\u0644"),
@@ -986,7 +993,7 @@ def patch_bot_buttons_menu() -> None:
         "A11yHideSponsorLabel": ("Hide sponsor channel: %1$s", "\u0645\u062e\u0641\u06cc\u200c\u06a9\u0631\u062f\u0646 \u06a9\u0627\u0646\u0627\u0644 \u0627\u0633\u067e\u0627\u0646\u0633\u0631: %1$s"),
         "A11yGhostModeLabel": ("Ghost mode (hide read receipts): %1$s", "\u062d\u0627\u0644\u062a \u0631\u0648\u062d (\u0645\u062e\u0641\u06cc\u200c\u06a9\u0631\u062f\u0646 \u062f\u06cc\u062f\u0647\u200c\u0634\u062f\u0646 \u067e\u06cc\u0627\u0645): %1$s"),
         "A11yStatusPreviewLabel": ("Announce contact status in chat list: %1$s", "\u0627\u0639\u0644\u0627\u0645 \u0648\u0636\u0639\u06cc\u062a \u0645\u062e\u0627\u0637\u0628 \u062f\u0631 \u0641\u0647\u0631\u0633\u062a \u06af\u0641\u062a\u06af\u0648\u0647\u0627: %1$s"),
-        "A11yOn": ("On", "\u0631\u0648\u0634\u0646"),
+        "A11yOn": ("On", "\u0631\u0648\u0631\u0646"),
         "A11yOff": ("Off", "\u062e\u0627\u0645\u0648\u0634"),
         "A11ySponsorHidden": ("Sponsor channel hidden", "\u06a9\u0627\u0646\u0627\u0644 \u0627\u0633\u067e\u0627\u0646\u0633\u0631 \u0645\u062e\u0641\u06cc \u0634\u062f"),
         "A11ySponsorShown": ("Sponsor channel shown", "\u06a9\u0627\u0646\u0627\u0644 \u0627\u0633\u067e\u0627\u0646\u0633\u0631 \u0646\u0645\u0627\u06cc\u0634 \u062f\u0627\u062f\u0647 \u0634\u062f"),
