@@ -16,9 +16,9 @@ public class A11yConfig {
     public static final String PREF_HIDE_SPONSOR = "a11y_hide_sponsor_channel";
     public static final String PREF_GHOST_MODE = "a11y_ghost_mode";
     public static final String PREF_SHOW_STATUS_IN_PREVIEW = "a11y_show_status_preview";
-    public static final String PREF_FWD_SAVED_NO_QUOTE = "a11y_fwd_saved_no_quote";
-    // a11y-fork: beep before voice record
-    public static final String PREF_BEEP_ON_RECORD = "a11y_beep_on_record";
+    public static final String PREF_FORWARD_SAVED_NO_QUOTE = "a11y_forward_saved_no_quote";
+    public static final String PREF_RECORDING_BEEP = "a11y_recording_beep";
+    public static final String PREF_SOLAR_CALENDAR = "a11y_solar_calendar";
 
     public static int getProgressStep() {
         try {
@@ -95,6 +95,9 @@ public class A11yConfig {
     }
 
     // Accessibility-fork: Ghost Mode -- suppress outgoing read receipts
+    // ("seen") so the sender can't tell you've read their message. Local
+    // unread badges for you may not clear while this is on -- see
+    // ChatActivity's markDialogAsRead call sites.
     public static boolean getGhostMode() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_GHOST_MODE, false);
@@ -111,7 +114,7 @@ public class A11yConfig {
     }
 
     // Accessibility-fork: announce contact online/last-seen status at the
-    // end of the chat-list preview
+    // end of the chat-list preview (e.g. "Leila: online")
     public static boolean getShowStatusInPreview() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_SHOW_STATUS_IN_PREVIEW, true);
@@ -127,11 +130,10 @@ public class A11yConfig {
         }
     }
 
-    // Accessibility-fork: when on, tapping "Forward to Saved Messages"
-    // omits the "Forwarded from" quote
+    // Accessibility-fork: Forward to Saved Messages without a quote.
     public static boolean getForwardSavedNoQuote() {
         try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_FWD_SAVED_NO_QUOTE, false);
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_FORWARD_SAVED_NO_QUOTE, false);
         } catch (Throwable ignore) {
             return false;
         }
@@ -139,26 +141,122 @@ public class A11yConfig {
 
     public static void setForwardSavedNoQuote(boolean value) {
         try {
-            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_FWD_SAVED_NO_QUOTE, value).apply();
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_FORWARD_SAVED_NO_QUOTE, value).apply();
         } catch (Throwable ignore) {
         }
     }
 
-    // Accessibility-fork: play a short beep when starting voice recording.
-    // Default: OFF (only vibration, as stock Telegram behavior).
-    public static boolean getBeepOnRecord() {
+    // Accessibility-fork: optional short beep when voice recording starts.
+    // Disabled by default.
+    public static boolean getRecordingBeep() {
         try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_BEEP_ON_RECORD, false);
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_RECORDING_BEEP, false);
         } catch (Throwable ignore) {
             return false;
         }
     }
 
-    public static void setBeepOnRecord(boolean value) {
+    public static void setRecordingBeep(boolean value) {
         try {
-            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_BEEP_ON_RECORD, value).apply();
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_RECORDING_BEEP, value).apply();
         } catch (Throwable ignore) {
         }
+    }
+
+    // Accessibility-fork: optional Solar Hijri/Jalali date in chat-list
+    // TalkBack descriptions. Disabled by default.
+    public static boolean getSolarCalendar() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_SOLAR_CALENDAR, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setSolarCalendar(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_SOLAR_CALENDAR, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /**
+     * Convert a Unix timestamp (seconds) to a Solar Hijri/Jalali date.
+     * The conversion is Gregorian -> Jalali and does not depend on any
+     * third-party calendar library.
+     */
+    public static String formatSolarDate(int unixSeconds) {
+        try {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.setTimeInMillis(((long) unixSeconds) * 1000L);
+            int gy = cal.get(java.util.Calendar.YEAR);
+            int gm = cal.get(java.util.Calendar.MONTH) + 1;
+            int gd = cal.get(java.util.Calendar.DAY_OF_MONTH);
+
+            int jy;
+            if (gy > 1600) {
+                jy = 979;
+                gy -= 1600;
+            } else {
+                jy = 0;
+                gy -= 621;
+            }
+
+            int[] gdm = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+            int gy2 = gm > 2 ? gy + 1 : gy;
+            int days = 365 * gy
+                    + (gy2 + 3) / 4
+                    - (gy2 + 99) / 100
+                    + (gy2 + 399) / 400
+                    - 80 + gd + gdm[gm - 1];
+
+            jy += 33 * (days / 12053);
+            days %= 12053;
+            jy += 4 * (days / 1461);
+            days %= 1461;
+            if (days > 365) {
+                jy += (days - 1) / 365;
+                days = (days - 1) % 365;
+            }
+
+            int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;
+            int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);
+
+            String[] faMonths = {
+                    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+                    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
+            };
+            String[] enMonths = {
+                    "Farvardin", "Ordibehesht", "Khordad", "Tir", "Mordad", "Shahrivar",
+                    "Mehr", "Aban", "Azar", "Dey", "Bahman", "Esfand"
+            };
+
+            boolean fa = false;
+            try {
+                java.util.Locale locale = java.util.Locale.getDefault();
+                fa = "fa".equalsIgnoreCase(locale.getLanguage());
+            } catch (Throwable ignore) {
+                fa = "fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
+            }
+
+            String date = String.format(java.util.Locale.US, "%d %s %d",
+                    jd, fa ? faMonths[jm - 1] : enMonths[jm - 1], jy);
+            if (fa) {
+                date = toPersianDigits(date);
+            }
+            return LocaleController.formatString(R.string.A11ySolarDate, date);
+        } catch (Throwable ignore) {
+            return "";
+        }
+    }
+
+    private static String toPersianDigits(String value) {
+        if (value == null) return "";
+        return value
+                .replace('0', '۰').replace('1', '۱').replace('2', '۲')
+                .replace('3', '۳').replace('4', '۴').replace('5', '۵')
+                .replace('6', '۶').replace('7', '۷').replace('8', '۸')
+                .replace('9', '۹');
     }
 
     public static String voiceQualityLabel() {
@@ -183,9 +281,9 @@ public class A11yConfig {
                     LocaleController.formatString(R.string.A11yHideSponsorLabel, onOff(getHideSponsorChannel())),
                     LocaleController.formatString(R.string.A11yGhostModeLabel, onOff(getGhostMode())),
                     LocaleController.formatString(R.string.A11yStatusPreviewLabel, onOff(getShowStatusInPreview())),
-                    LocaleController.formatString(R.string.A11yFwdSavedNoQuoteLabel, onOff(getForwardSavedNoQuote())),
-                    // a11y-fork: beep on record option
-                    LocaleController.formatString(R.string.A11yBeepOnRecordLabel, onOff(getBeepOnRecord()))
+                    LocaleController.formatString(R.string.A11yForwardSavedNoQuoteLabel, onOff(getForwardSavedNoQuote())),
+                    LocaleController.formatString(R.string.A11yRecordingBeepLabel, onOff(getRecordingBeep())),
+                    LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar()))
             };
             new AlertDialog.Builder(activity)
                     .setTitle(LocaleController.getString(R.string.A11yAccessibleSettingsTitle))
@@ -219,15 +317,21 @@ public class A11yConfig {
                             setForwardSavedNoQuote(!getForwardSavedNoQuote());
                             try {
                                 activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.getString(getForwardSavedNoQuote() ? R.string.A11yFwdSavedNoQuoteOn : R.string.A11yFwdSavedNoQuoteOff));
+                                        LocaleController.formatString(R.string.A11yForwardSavedNoQuoteLabel, onOff(getForwardSavedNoQuote())));
                             } catch (Throwable ignore) {
                             }
                         } else if (which == 6) {
-                            // a11y-fork: beep on record toggle
-                            setBeepOnRecord(!getBeepOnRecord());
+                            setRecordingBeep(!getRecordingBeep());
                             try {
                                 activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.getString(getBeepOnRecord() ? R.string.A11yBeepOnRecordOn : R.string.A11yBeepOnRecordOff));
+                                        LocaleController.formatString(R.string.A11yRecordingBeepLabel, onOff(getRecordingBeep())));
+                            } catch (Throwable ignore) {
+                            }
+                        } else if (which == 7) {
+                            setSolarCalendar(!getSolarCalendar());
+                            try {
+                                activity.getWindow().getDecorView().announceForAccessibility(
+                                        LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));
                             } catch (Throwable ignore) {
                             }
                         }
