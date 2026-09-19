@@ -385,8 +385,6 @@ def patch_forward_menu_extras() -> None:
         else:
             print("WARN: OPTION_FORWARD case not found")
     ca.write_text(t, encoding="utf-8")
-
-
 def patch_reactions_as_menu() -> None:
     """
     Accessibility-fork: put the emoji reactions row behind a "Reactions"
@@ -861,7 +859,6 @@ def patch_hide_sponsor_channel() -> None:
     da.write_text(t, encoding="utf-8")
     print("DialogsActivity hide-sponsor-channel OK")
 
-
 def patch_ghost_mode() -> None:
     """
     Accessibility-fork: Ghost Mode -- when A11yConfig.getGhostMode() is on,
@@ -896,7 +893,6 @@ def patch_ghost_mode() -> None:
         return
     ca.write_text(new_text, encoding="utf-8")
     print(f"ChatActivity ghost-mode OK ({n} call sites guarded)")
-
 
 
 def patch_bot_buttons_menu() -> None:
@@ -1032,40 +1028,40 @@ def patch_add_a11y_strings() -> None:
     resolution picks values-fa/ when the device/app language is Persian).
     """
     strings = {
-        "A11yBotButtons": ("Bot Buttons", "Ø¯Ú©Ù…Ù‡â€ŒÙ‡Ø§ÛŒ Ø±Ø¨Ø§Øª"),
-        "A11yForwardNoQuote": ("Forward without quote", "ÙÙˆØ±ÙˆØ§Ø±Ø¯ Ø¨Ø¯ÙˆÙ† Ù†Ù‚Ù„â€ŒÙ‚ÙˆÙ„"),
-        "A11yForwardToSaved": ("Forward to Saved Messages", "ÙÙˆØ±ÙˆØ§Ø±Ø¯ Ø¨Ù‡ Ù¾ÛŒØ§Ù…â€ŒÙ‡Ø§ÛŒ Ø°Ø®ÛŒØ±Ù‡â€ŒØ´Ø¯Ù‡"),
-        "A11yForwardedToSaved": ("Forwarded to Saved Messages", "Ø¨Ù‡ Ù¾ÛŒØ§Ù…â€ŒÙ‡Ø§ÛŒ Ø°Ø®ÛŒØ±Ù‡â€ŒØ´Ø¯Ù‡ ÙÙˆØ±ÙˆØ§Ø±Ø¯ Ø´Ø¯"),
-        "A11ySelectedAnnounce": ("Selected", "Ø§Ù†ØªØ®Ø§Ø¨ Ø´Ø¯"),
-        "A11ySentPrefix": ("sent ", "Ø§Ø±Ø³Ø§Ù„ "),
-        "A11yReceivePrefix": ("receive ", "Ø¯Ø±ÛŒØ§ÙØª "),
-        "A11yAccessibleSettingsTitle": ("Accessible settings", "ØªÙ†Ø¸ÛŒÙ…Ø§Øª Ø¯Ø³ØªØ±Ø³â€ŒÙ¾Ø°ÛŒØ±ÛŒ"),
-        "A11yAccessibleSettingsSubtitle": ("Progress & voice quality", "Ù¾ÛŒØ´Ø±ÙØª Ùˆ Ú©ÛŒÙÛŒØª ØµØ¯Ø§"),
-        "A11yProgressAnnounceLabel": ("Progress announce: %1$s", "Ø§Ø¹Ù„Ø§Ù… Ù¾ÛŒØ´Ø±ÙØª: %1$s"),
-        "A11yProgressStepPickerTitle": ("Progress announce step", "ÙØ§ØµÙ„Ù‡Ù” Ø§Ø¹Ù„Ø§Ù… Ù¾ÛŒØ´Ø±ÙØª"),
-        "A11yVoiceQualityLabel": ("Voice quality: %1$s", "Ú©ÛŒÙÛŒØª ØµØ¯Ø§: %1$s"),
-        "A11yVoiceQualityPickerTitle": ("Voice message quality", "Ú©ÛŒÙÛŒØª Ù¾ÛŒØ§Ù… ØµÙˆØªÛŒ"),
-        "A11yHideSponsorLabel": ("Hide sponsor channel: %1$s", "Ù…Ø®ÙÛŒâ€ŒÚ©Ø±Ø¯Ù† Ú©Ø§Ù†Ø§Ù„ Ø§Ø³Ù¾Ø§Ù†Ø³Ø±: %1$s"),
-        "A11yGhostModeLabel": ("Ghost mode (hide read receipts): %1$s", "Ø­Ø§Ù„Øª Ø±ÙˆØ­ (Ù…Ø®ÙÛŒâ€ŒÚ©Ø±Ø¯Ù† Ø¯ÛŒØ¯Ù‡â€ŒØ´Ø¯Ù† Ù¾ÛŒØ§Ù…): %1$s"),
-        "A11yStatusPreviewLabel": ("Announce contact status in chat list: %1$s", "Ø§Ø¹Ù„Ø§Ù… ÙˆØ¶Ø¹ÛŒØª Ù…Ø®Ø§Ø·Ø¨ Ø¯Ø± ÙÙ‡Ø±Ø³Øª Ú¯ÙØªÚ¯ÙˆÙ‡Ø§: %1$s"),
-        "A11yOn": ("On", "Ø±ÙˆØ´Ù†"),
-        "A11yOff": ("Off", "Ø®Ø§Ù…ÙˆØ´"),
-        "A11ySponsorHidden": ("Sponsor channel hidden", "Ú©Ø§Ù†Ø§Ù„ Ø§Ø³Ù¾Ø§Ù†Ø³Ø± Ù…Ø®ÙÛŒ Ø´Ø¯"),
-        "A11ySponsorShown": ("Sponsor channel shown", "Ú©Ø§Ù†Ø§Ù„ Ø§Ø³Ù¾Ø§Ù†Ø³Ø± Ù†Ù…Ø§ÛŒØ´ Ø¯Ø§Ø¯Ù‡ Ø´Ø¯"),
-        "A11yGhostOn": ("Ghost mode on", "Ø­Ø§Ù„Øª Ø±ÙˆØ­ Ø±ÙˆØ´Ù† Ø´Ø¯"),
-        "A11yGhostOff": ("Ghost mode off", "Ø­Ø§Ù„Øª Ø±ÙˆØ­ Ø®Ø§Ù…ÙˆØ´ Ø´Ø¯"),
-        "A11yStatusOn": ("Contact status announcements on", "Ø§Ø¹Ù„Ø§Ù… ÙˆØ¶Ø¹ÛŒØª Ù…Ø®Ø§Ø·Ø¨ Ø±ÙˆØ´Ù† Ø´Ø¯"),
-        "A11yStatusOff": ("Contact status announcements off", "Ø§Ø¹Ù„Ø§Ù… ÙˆØ¶Ø¹ÛŒØª Ù…Ø®Ø§Ø·Ø¨ Ø®Ø§Ù…ÙˆØ´ Ø´Ø¯"),
-        "A11yVoiceLow": ("Low", "Ú©Ù…"),
-        "A11yVoiceMedium": ("Medium", "Ù…ØªÙˆØ³Ø·"),
-        "A11yVoiceHigh": ("High", "Ø²ÛŒØ§Ø¯"),
-        "A11yProgressStepLabel": ("%1$d%%", "%1$dÙª"),
-        "A11yCancel": ("Cancel", "Ù„ØºÙˆ"),
-        "A11yGoToFirstMessage": ("Go to first message", "Ø±ÙØªÙ† Ø¨Ù‡ Ø§ÙˆÙ„ÛŒÙ† Ù¾ÛŒØ§Ù…"),
-        "A11yFwdSavedNoQuoteLabel": ("Forward to Saved Messages with no quote: %1$s", "ÙÙˆØ±ÙˆØ§Ø±Ø¯ Ø¨Ù‡ Ù¾ÛŒØ§Ù…â€ŒÙ‡Ø§ÛŒ Ø°Ø®ÛŒØ±Ù‡â€ŒØ´Ø¯Ù‡ Ø¨Ø¯ÙˆÙ† Ù†Ù‚Ù„â€ŒÙ‚ÙˆÙ„: %1$s"),
-        "A11yFwdSavedNoQuoteOn": ("Forward to Saved Messages with no quote on", "ÙÙˆØ±ÙˆØ§Ø±Ø¯ Ø¨Ø¯ÙˆÙ† Ù†Ù‚Ù„â€ŒÙ‚ÙˆÙ„ Ø¨Ù‡ Ù¾ÛŒØ§Ù…â€ŒÙ‡Ø§ÛŒ Ø°Ø®ÛŒØ±Ù‡â€ŒØ´Ø¯Ù‡ Ø±ÙˆØ´Ù† Ø´Ø¯"),
-        "A11yFwdSavedNoQuoteOff": ("Forward to Saved Messages with no quote off", "ÙÙˆØ±ÙˆØ§Ø±Ø¯ Ø¨Ø¯ÙˆÙ† Ù†Ù‚Ù„â€ŒÙ‚ÙˆÙ„ Ø¨Ù‡ Ù¾ÛŒØ§Ù…â€ŒÙ‡Ø§ÛŒ Ø°Ø®ÛŒØ±Ù‡â€ŒØ´Ø¯Ù‡ Ø®Ø§Ù…ÙˆØ´ Ø´Ø¯"),
-        "A11yPercentAnnounce": ("%1$d percent", "%1$d Ø¯Ø±ØµØ¯"),
+        "A11yBotButtons": ("Bot Buttons", "Ï˜ãååÇ? ÑÈÇÊ"),
+        "A11yForwardNoQuote": ("Forward without quote", "ÝæÑæÇÑÏ ÈÏæä äÞáÞæá"),
+        "A11yForwardToSaved": ("Forward to Saved Messages", "ÝæÑæÇÑÏ Èå ?ÇãåÇ? ÐÎ?ÑåÔÏå"),
+        "A11yForwardedToSaved": ("Forwarded to Saved Messages", "Èå ?ÇãåÇ? ÐÎ?ÑåÔÏå ÝæÑæÇÑÏ ÔÏ"),
+        "A11ySelectedAnnounce": ("Selected", "ÇäÊÎÇÈ ÔÏ"),
+        "A11ySentPrefix": ("sent ", "ÇÑÓÇá "),
+        "A11yReceivePrefix": ("receive ", "ÏÑ?ÇÝÊ "),
+        "A11yAccessibleSettingsTitle": ("Accessible settings", "ÊäÙ?ãÇÊ ÏÓÊÑÓÐ?Ñ?"),
+        "A11yAccessibleSettingsSubtitle": ("Progress & voice quality", "?ÔÑÝÊ æ ˜?Ý?Ê ÕÏÇ"),
+        "A11yProgressAnnounceLabel": ("Progress announce: %1$s", "ÇÚáÇã ?ÔÑÝÊ: %1$s"),
+        "A11yProgressStepPickerTitle": ("Progress announce step", "ÝÇÕáå? ÇÚáÇã ?ÔÑÝÊ"),
+        "A11yVoiceQualityLabel": ("Voice quality: %1$s", "˜?Ý?Ê ÕÏÇ: %1$s"),
+        "A11yVoiceQualityPickerTitle": ("Voice message quality", "˜?Ý?Ê ?Çã ÕæÊ?"),
+        "A11yHideSponsorLabel": ("Hide sponsor channel: %1$s", "ãÎÝ?˜ÑÏä ˜ÇäÇá ÇÓÇäÓÑ: %1$s"),
+        "A11yGhostModeLabel": ("Ghost mode (hide read receipts): %1$s", "ÍÇáÊ ÑæÍ (ãÎÝ?˜ÑÏä Ï?ÏåÔÏä ?Çã): %1$s"),
+        "A11yStatusPreviewLabel": ("Announce contact status in chat list: %1$s", "ÇÚáÇã æÖÚ?Ê ãÎÇØÈ ÏÑ ÝåÑÓÊ ÝÊæåÇ: %1$s"),
+        "A11yOn": ("On", "ÑæÔä"),
+        "A11yOff": ("Off", "ÎÇãæÔ"),
+        "A11ySponsorHidden": ("Sponsor channel hidden", "˜ÇäÇá ÇÓÇäÓÑ ãÎÝ? ÔÏ"),
+        "A11ySponsorShown": ("Sponsor channel shown", "˜ÇäÇá ÇÓÇäÓÑ äãÇ?Ô ÏÇÏå ÔÏ"),
+        "A11yGhostOn": ("Ghost mode on", "ÍÇáÊ ÑæÍ ÑæÔä ÔÏ"),
+        "A11yGhostOff": ("Ghost mode off", "ÍÇáÊ ÑæÍ ÎÇãæÔ ÔÏ"),
+        "A11yStatusOn": ("Contact status announcements on", "ÇÚáÇã æÖÚ?Ê ãÎÇØÈ ÑæÔä ÔÏ"),
+        "A11yStatusOff": ("Contact status announcements off", "ÇÚáÇã æÖÚ?Ê ãÎÇØÈ ÎÇãæÔ ÔÏ"),
+        "A11yVoiceLow": ("Low", "˜ã"),
+        "A11yVoiceMedium": ("Medium", "ãÊæÓØ"),
+        "A11yVoiceHigh": ("High", "Ò?ÇÏ"),
+        "A11yProgressStepLabel": ("%1$d%%", "%1$d?"),
+        "A11yCancel": ("Cancel", "áÛæ"),
+        "A11yGoToFirstMessage": ("Go to first message", "ÑÝÊä Èå Çæá?ä ?Çã"),
+        "A11yFwdSavedNoQuoteLabel": ("Forward to Saved Messages with no quote: %1$s", "ÝæÑæÇÑÏ Èå ?ÇãåÇ? ÐÎ?ÑåÔÏå ÈÏæä äÞáÞæá: %1$s"),
+        "A11yFwdSavedNoQuoteOn": ("Forward to Saved Messages with no quote on", "ÝæÑæÇÑÏ ÈÏæä äÞáÞæá Èå ?ÇãåÇ? ÐÎ?ÑåÔÏå ÑæÔä ÔÏ"),
+        "A11yFwdSavedNoQuoteOff": ("Forward to Saved Messages with no quote off", "ÝæÑæÇÑÏ ÈÏæä äÞáÞæá Èå ?ÇãåÇ? ÐÎ?ÑåÔÏå ÎÇãæÔ ÔÏ"),
+        "A11yPercentAnnounce": ("%1$d percent", "%1$d ÏÑÕÏ"),
     }
 
     def ensure_in_file(path: Path, lang_index: int) -> None:
@@ -1347,6 +1343,10 @@ def patch_talkback_action_long_click_enhanced() -> None:
     Enhanced: when TalkBack's synthetic ACTION_LONG_CLICK arrives with
     lastTouchX/Y == 0, fall back to the centre of the cell so the menu
     opens at a sane spot.
+
+    FIX: lastTouchX/lastTouchY are floats; the ternary mixes float and int,
+    which Java promotes to float and cannot implicitly narrow back to int.
+    Added explicit (int) casts to both branches.
     """
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
@@ -1367,8 +1367,8 @@ def patch_talkback_action_long_click_enhanced() -> None:
         "                // a11y-fork: talkback action long click enhanced\n"
         "                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
         "                    if (delegate != null) {\n"
-        "                        int a11yX = lastTouchX > 0 ? lastTouchX : getWidth() / 2;\n"
-        "                        int a11yY = lastTouchY > 0 ? lastTouchY : getHeight() / 2;\n"
+        "                        int a11yX = lastTouchX > 0 ? (int) lastTouchX : getWidth() / 2;\n"
+        "                        int a11yY = lastTouchY > 0 ? (int) lastTouchY : getHeight() / 2;\n"
         "                        delegate.didLongPress(ChatMessageCell.this, a11yX, a11yY);\n"
         "                    }\n"
         "                    return true;\n"
@@ -1380,6 +1380,7 @@ def patch_talkback_action_long_click_enhanced() -> None:
     t = t.replace(old, new, 1)
     cmc.write_text(t, encoding="utf-8")
     print("ChatMessageCell enhanced talkback long-click OK")
+
 
 def main() -> int:
     if not Path("telegram").is_dir():
