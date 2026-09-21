@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Apply accessibility patches to cloned Telegram tree (cwd parent of telegram/).
 
 Portable: works with GitHub Actions (patches-repo/scripts) or local kit (scripts/).
@@ -31,6 +31,7 @@ SCRIPTS = _find_scripts_dir()
 FA_NAME = "\u062a\u0644\u06af\u0631\u0627\u0645 \u062f\u0633\u062a\u0631\u0633\u200c\u067e\u0630\u06cc\u0631"
 EN_NAME = "Telegram Accessible"
 
+# --- Java option constants (must match declarations injected into ChatActivity.java) ---
 OPTION_FORWARD_NO_QUOTE = 200
 OPTION_REACTIONS_MENU = 201
 OPTION_FORWARD_TO_SAVED = 202
@@ -423,6 +424,37 @@ def patch_hide_share_and_comment() -> None:
     cmc.write_text(t, encoding="utf-8")
 
 
+def _ensure_java_option_fields(t: str) -> str:
+    """Ensure ChatActivity.java declares every OPTION_* constant used by
+    the forward/reactions/select/bot-buttons menu patches. Without this,
+    the injected `case OPTION_FORWARD_NO_QUOTE:` / `case OPTION_FORWARD_TO_SAVED:`
+    statements fail with `cannot find symbol` during javac.
+    """
+    needed = {
+        "OPTION_FORWARD_NO_QUOTE": OPTION_FORWARD_NO_QUOTE,
+        "OPTION_FORWARD_TO_SAVED": OPTION_FORWARD_TO_SAVED,
+    }
+    class_anchor = "public class ChatActivity"
+    class_idx = t.find(class_anchor)
+    if class_idx == -1:
+        return t
+    brace_idx = t.find("{", class_idx)
+    if brace_idx == -1:
+        return t
+    for name, value in needed.items():
+        marker = f"private static final int {name} ="
+        if marker in t:
+            continue
+        decl = (
+            f"\n    private static final int {name} = {value}; "
+            f"// a11y-fork: {name} declaration"
+        )
+        # Insert after the class opening brace (once per name).
+        brace_idx = t.find("{", t.find(class_anchor))
+        t = t[: brace_idx + 1] + decl + t[brace_idx + 1 :]
+    return t
+
+
 def patch_forward_handler(t: str) -> str:
     # If the broken old handler exists, remove it completely. It is the source
     # of the observed NO_QUOTE -> Saved Messages fall-through.
@@ -447,7 +479,7 @@ def patch_forward_handler(t: str) -> str:
         raise RuntimeError("forward no-quote case insertion failed")
     # Insert Saved case before no-quote case if it is not already present.
     if "a11y-fork: forward to Saved Messages" not in t:
-        saved = '''            case OPTION_FORWARD_TO_SAVED: { // a11y-fork: forward to Saved Messages\n                if (selectedObject != null) {\n                    try {\n                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {\n                            toSend.addAll(selectedObjectGroup.messages);\n                        } else {\n                            toSend.add(selectedObject);\n                        }\n                        IS_FORWARD_NO_QUOTE = org.telegram.messenger.A11yConfig.getForwardSavedNoQuote();\n                        long savedId = getUserConfig().getClientUserId();\n                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n                        try {\n                            if (getParentActivity() != null) {\n                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Forwarded to Saved Messages\");\n                            }\n                        } catch (Throwable ignore) {}\n                    } catch (Throwable e) {\n                        FileLog.e(e);\n                    }\n                }\n                selectedObject = null;\n                selectedObjectToEditCaption = null;\n                selectedObjectGroup = null;\n                break;\n            }\n'''
+        saved = '''            case OPTION_FORWARD_TO_SAVED: { // a11y-fork: forward to Saved Messages\n                if (selectedObject != null) {\n                    try {\n                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {\n                            toSend.addAll(selectedObjectGroup.messages);\n                        } else {\n                            toSend.add(selectedObject);\n                        }\n                        IS_FORWARD_NO_QUOTE = org.telegram.messenger.A11yConfig.getForwardSavedNoQuote();\n                        long savedId = getUserConfig().getClientUserId();\n                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n                        try {\n                            if (getParentActivity() != null) {\n                                getParentActivity().getWindow().getDecorView().announceForAccessibility("Forwarded to Saved Messages");\n                            }\n                        } catch (Throwable ignore) {}\n                    } catch (Throwable e) {\n                        FileLog.e(e);\n                    }\n                }\n                selectedObject = null;\n                selectedObjectToEditCaption = null;\n                selectedObjectGroup = null;\n                break;\n            }\n'''
         t = t[:saved_start] + saved + t[saved_start:]
     return t
 
@@ -482,15 +514,17 @@ def patch_forward_menu_extras() -> None:
              "                    icons.add(R.drawable.msg_forward);\n"
              "                    // a11y-fork: forward menu extras\n"
              "                    items.add(LocaleController.getString(R.string.A11yForwardWithoutQuote));\n"
-             f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
+             "                    options.add(OPTION_FORWARD_NO_QUOTE);\n"
              "                    icons.add(R.drawable.msg_forward);\n"
              "                    items.add(LocaleController.getString(R.string.A11yForwardToSaved));\n"
-             f"                    options.add({OPTION_FORWARD_TO_SAVED});\n"
+             "                    options.add(OPTION_FORWARD_TO_SAVED);\n"
              "                    icons.add(R.drawable.msg_forward);\n"
              "                }")
         if old in t: t=t.replace(old,new,1); print("Forward menu extras OK")
         else: print("WARN: canForward menu block not found")
-    t=patch_forward_handler(t)
+    # >>> CRITICAL FIX: declare Java fields before injecting case labels <<<
+    t = _ensure_java_option_fields(t)
+    t = patch_forward_handler(t)
     ca.write_text(t,encoding="utf-8")
     print("Forward option handlers v2 OK")
 
@@ -748,8 +782,6 @@ def patch_longpress_message_menu() -> None:
         else:
             print("WARN: OPTION_RETRY case not found")
     ca.write_text(t, encoding="utf-8")
-
-
 def patch_voice_bitrate() -> None:
     audio = ROOT / "jni/audio.c"
     if audio.exists():
@@ -1330,6 +1362,7 @@ def patch_message_time_and_solar() -> None:
     else:
         print("WARN: DialogCell final time tail not found (time/Jalali)")
 
+
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
     cmc=JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
@@ -1344,8 +1377,8 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
     prov="            if (virtualViewId == HOST_VIEW_ID) {\n                performAccessibilityAction(action, arguments);\n            } else {\n"
     prov_new=("            if (virtualViewId == HOST_VIEW_ID) {\n                performAccessibilityAction(action, arguments);\n            } else {\n                // "+marker+" virtual node\n                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n                    try {\n                        if (delegate != null && currentMessageObject != null) {\n                            float a11yX = lastTouchX > 0 ? lastTouchX : getWidth() / 2f;\n                            float a11yY = lastTouchY > 0 ? lastTouchY : getHeight() / 2f;\n                            delegate.didLongPress(ChatMessageCell.this, a11yX, a11yY);\n                            sendAccessibilityEventForVirtualView(virtualViewId, AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);\n                            return true;\n                        }\n                    } catch (Throwable e) { FileLog.e(e); }\n                    return true;\n                }\n")
     if prov not in t: print("WARN: provider long-click anchor missing"); return
-    t=t.replace(prov,prov_new,1)
-    cmc.write_text(t,encoding="utf-8")
+    t=t.replace(prov,prov_new, 1)
+    cmc.write_text(t, encoding="utf-8")
     print("ChatMessageCell accessibility long-click v2 OK")
 
 
