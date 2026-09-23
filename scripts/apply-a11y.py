@@ -466,10 +466,31 @@ def patch_forward_menu_extras() -> None:
             if old in t:
                 t=t.replace(old,new,1); smh.write_text(t,encoding="utf-8"); print("drop_author one-shot v2 OK")
     t=ca.read_text(encoding="utf-8")
-    if "IS_FORWARD_NO_QUOTE" not in t:
+    # IMPORTANT: the forward handler itself also contains the token
+    # IS_FORWARD_NO_QUOTE, so checking `if "IS_FORWARD_NO_QUOTE" not in t`
+    # is not sufficient to detect the field declaration.
+    if "public static boolean IS_FORWARD_NO_QUOTE" not in t:
         anchor="protected TLRPC.Chat currentChat;"
         if anchor in t:
-            t=t.replace(anchor,"public static boolean IS_FORWARD_NO_QUOTE = false;\n    "+anchor,1); print("IS_FORWARD_NO_QUOTE field OK")
+            t=t.replace(anchor,"public static boolean IS_FORWARD_NO_QUOTE = false;\n    "+anchor,1)
+            print("IS_FORWARD_NO_QUOTE field OK")
+        else:
+            print("WARN: currentChat anchor not found (IS_FORWARD_NO_QUOTE field)")
+
+    # The new switch cases use these accessibility option IDs.  They must be
+    # declared inside ChatActivity; Python constants at the top of this
+    # script do not exist in the generated Java source.
+    option_decl = (
+        "private static final int OPTION_FORWARD_NO_QUOTE = 200;\n"
+        "    private static final int OPTION_FORWARD_TO_SAVED = 202;"
+    )
+    if "private static final int OPTION_FORWARD_NO_QUOTE = 200;" not in t:
+        field_anchor = "public static boolean IS_FORWARD_NO_QUOTE = false;"
+        if field_anchor in t:
+            t=t.replace(field_anchor, field_anchor+"\n    "+option_decl, 1)
+            print("Forward option constants OK")
+        else:
+            print("WARN: IS_FORWARD_NO_QUOTE field anchor not found (option constants)")
     if "a11y-fork: forward menu extras" not in t:
         old=("                if (canForward) {\n"
              "                    items.add(LocaleController.getString(R.string.Forward));\n"
