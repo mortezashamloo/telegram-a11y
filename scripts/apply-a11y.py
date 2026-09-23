@@ -719,7 +719,6 @@ def patch_longpress_message_menu() -> None:
         else:
             print("WARN: didLongPress block not found")
 
-    # --- Select menu item (will be moved to last by patch_reorder_menu_items) ---
     if "a11y-fork: OPTION_SELECT_MESSAGE menu" not in t:
         needle = "        if (message.isSponsored() && !getUserConfig().isPremium()"
         insert = (
@@ -862,7 +861,6 @@ def patch_settings_menu() -> None:
         else:
             print("WARN: Settings case 10 block not found")
     sa.write_text(t, encoding="utf-8")
-
 def patch_dialogcell_preview_muted_status() -> None:
     """
     Accessibility-fork additions to DialogCell.java's TalkBack description:
@@ -871,8 +869,11 @@ def patch_dialogcell_preview_muted_status() -> None:
         gated by A11yConfig.getShowStatusInPreview()
       - bump the message-preview length read aloud from the visually
         truncated length to a fixed 300 characters
-      - keep Telegram's own native sent/received date format (AccDescrSentDate
-        / AccDescrReceivedDate) but move it to the very end of the description
+      - move the sent/received date block to the very end of the description,
+        reusing Telegram's own `lastDate` variable (which Telegram already
+        defines earlier in this method) -- we do NOT introduce a new local
+        variable, we only REMOVE Telegram's early `String date = ...` block
+        and re-emit the same code at the tail.
     """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
@@ -927,7 +928,9 @@ def patch_dialogcell_preview_muted_status() -> None:
     else:
         t = t.replace(old_len, new_len)
 
-    # --- 3) Remove the early sent/received block and store lastDate ---
+    # --- 3) Remove Telegram's OWN early date block. Telegram already defines
+    # `lastDate` earlier in this method; we just don't want the date to be
+    # read too early. We'll re-emit the exact same code at the tail. ---
     old_date_block = (
         "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
         "        if (message.isOut()) {\n"
@@ -940,15 +943,10 @@ def patch_dialogcell_preview_muted_status() -> None:
     if old_date_block not in t:
         print("WARN: DialogCell sent/received date block not found")
     else:
-        # Define lastDate here so it's available later; keep Telegram's native
-        # AccDescrSentDate / AccDescrReceivedDate format at the tail.
-        t = t.replace(
-            old_date_block,
-            "        // a11y-fork: lastDate computed here for use at the description tail\n"
-            "        final long lastDate = message.messageOwner != null ? message.messageOwner.date : 0;\n",
-            1,
-        )
-        print("DialogCell lastDate variable added OK")
+        # Remove the early date block entirely; we will re-emit the same
+        # block (still using Telegram's own `lastDate`) at the tail below.
+        t = t.replace(old_date_block, "        // a11y-fork: sent/received date moved to the tail\n", 1)
+        print("DialogCell early date block removed OK")
 
         old_tail = (
             "        event.setContentDescription(sb);\n"
@@ -959,12 +957,12 @@ def patch_dialogcell_preview_muted_status() -> None:
         )
         new_tail = (
             "        // a11y-fork: keep Telegram's native sent/received date format,\n"
-            "        // but read it at the very end of the description.\n"
-            "        String a11yDate = LocaleController.formatDateAudio(lastDate, true);\n"
+            "        // reuse Telegram's own `lastDate`, and read it at the very end.\n"
+            "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
             "        if (message.isOut()) {\n"
-            "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, a11yDate));\n"
+            "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date));\n"
             "        } else {\n"
-            "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, a11yDate));\n"
+            "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, date));\n"
             "        }\n"
             "        sb.append(\". \");\n"
             "        event.setContentDescription(sb);\n"
@@ -1532,7 +1530,6 @@ def patch_recording_beep() -> None:
     t = t.replace(needle, replacement, 1)
     mc.write_text(t, encoding="utf-8")
     print("MediaController recording-start beep OK")
-
 
 def patch_reorder_menu_items() -> None:
     """
