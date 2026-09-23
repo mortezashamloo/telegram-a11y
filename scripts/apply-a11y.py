@@ -115,7 +115,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yRecordingBeepLabel": "Recording start beep: %s",
         "A11ySolarCalendarLabel": "Solar calendar: %s",
         "A11yOn": "On", "A11yOff": "Off", "A11yCancel": "Cancel",
-        "A11ySolarDate": "Solar date %1$s",
+        "A11ySolarDate": "%1$s",
         "A11yAccessibleSettings": "Accessible settings",
         "A11yProgressAnnounce": "Progress announce",
         "A11yVoiceQuality": "Voice quality",
@@ -152,7 +152,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
         "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
         "A11yOn": "روشن", "A11yOff": "خاموش", "A11yCancel": "لغو",
-        "A11ySolarDate": "تاریخ خورشیدی %1$s",
+        "A11ySolarDate": "%1$s",
         "A11yAccessibleSettings": "تنظیمات دسترس‌پذیری",
         "A11yProgressAnnounce": "اعلام پیشرفت", "A11yVoiceQuality": "کیفیت صدا",
         "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
@@ -271,8 +271,16 @@ def install_a11y_config() -> None:
             if (days > 365) { jy+=(days-1)/365; days=(days-1)%365; }
             int jm=days < 186 ? 1+days/31 : 7+(days-186)/30;
             int jd=1+(days < 186 ? days%31 : (days-186)%30);
-            String date=String.format(java.util.Locale.US, "%04d/%02d/%02d", jy,jm,jd);
-            return LocaleController.formatString(R.string.A11ySolarDate, date);
+            String[] fa={"فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"};
+            String[] en={"Farvardin","Ordibehesht","Khordad","Tir","Mordad","Shahrivar","Mehr","Aban","Azar","Dey","Bahman","Esfand"};
+            boolean isFa="fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
+            String month=(isFa ? fa : en)[jm-1];
+            if (isFa) {
+                String value=String.format(java.util.Locale.US, "%d %s %d", jd, month, jy);
+                return LocaleController.formatString(R.string.A11ySolarDate, toPersianDigits(value));
+            }
+            String value=String.format(java.util.Locale.US, "%d %s %d", jd, month, jy);
+            return LocaleController.formatString(R.string.A11ySolarDate, value);
         } catch (Throwable ignore) { return ""; }
     }
 
@@ -1419,19 +1427,76 @@ def patch_go_to_first_message() -> None:
 
 
 def patch_message_time_and_solar() -> None:
+    """Keep Telegram's native sent/received date+time announcement.
+
+    When Solar Calendar is enabled, only the date value is replaced with the
+    Solar Hijri date. The surrounding Telegram accessibility string and
+    native date/time formatting remain untouched.
+    """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (time/Jalali)")
         return
     t = dc.read_text(encoding="utf-8")
-    old = "        sb.append(message.isOut() ? \"sent @\" : \"receive @\");\n        sb.append(a11yClockTime);\n        sb.append(\". \\);"
-    new = "        // a11y-fork: explicit separator before time\n        sb.append(\". \\);\n        sb.append(message.isOut() ? \"sent at \" : \"received at \");\n        sb.append(a11yClockTime);\n        sb.append(\". \\);\n        // a11y-fork: Jalali date\n        try {\n            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);\n                if (solarDate != null && solarDate.length() > 0) {\n                    sb.append(solarDate);\n                    sb.append(\". \\);\n                }\n            }\n        } catch (Throwable ignore) {}"
-    if old in t:
-        t=t.replace(old,new,1)
-        dc.write_text(t,encoding="utf-8")
-        print("DialogCell time spacing + Jalali OK")
+    marker = "a11y-fork: official-time-solar-date-v4"
+    if marker in t:
+        print("DialogCell official Telegram time + solar-date already patched")
+        return
+
+    # Remove the previous custom "sent at / received at" tail if v3 was
+    # applied to the same source tree before this function runs.
+    old_custom = ("        // a11y-fork: explicit separator before time\n"
+                  "        sb.append(\". \");\n"
+                  "        sb.append(message.isOut() ? \"sent at \" : \"received at \");\n"
+                  "        sb.append(a11yClockTime);\n"
+                  "        sb.append(\". \");\n"
+                  "        // a11y-fork: Jalali date\n"
+                  "        try {\n"
+                  "            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n"
+                  "                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);\n"
+                  "                if (solarDate != null && solarDate.length() > 0) {\n"
+                  "                    sb.append(solarDate);\n"
+                  "                    sb.append(\". \");\n"
+                  "                }\n"
+                  "            }\n"
+                  "        } catch (Throwable ignore) {}")
+    if old_custom in t:
+        t=t.replace(old_custom, "        // a11y-fork: official-time-solar-date-v4\n", 1)
+
+    # Locate Telegram's native accessibility date block and make only its
+    # date value conditional. This preserves the official formatting of
+    # "sent/received" and the time.
+    native = ("        String date = LocaleController.formatDateAudio(lastDate, true);\n"
+              "        if (message.isOut()) {\n"
+              "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date));\n"
+              "        } else {\n"
+              "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, date));\n"
+              "        }\n"
+              "        sb.append(\". \");")
+    native_repl = ("        // a11y-fork: official-time-solar-date-v4\n"
+                   "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
+                   "        try {\n"
+                   "            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n"
+                   "                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);\n"
+                   "                if (solarDate != null && solarDate.length() > 0) {\n"
+                   "                    date = solarDate;\n"
+                   "                }\n"
+                   "            }\n"
+                   "        } catch (Throwable ignore) {\n"
+                   "        }\n"
+                   "        if (message.isOut()) {\n"
+                   "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date));\n"
+                   "        } else {\n"
+                   "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, date));\n"
+                   "        }\n"
+                   "        sb.append(\". \");")
+    if native in t:
+        t=t.replace(native,native_repl,1)
     else:
-        print("WARN: DialogCell final time tail not found (time/Jalali)")
+        print("WARN: Telegram native sent/received date block not found")
+        return
+    dc.write_text(t,encoding="utf-8")
+    print("DialogCell official Telegram time format + optional Solar date OK")
 
 def patch_file_description_spacing() -> None:
     """TalkBack: announce the real document filename first, not Telegram's internal numeric storage filename."""
