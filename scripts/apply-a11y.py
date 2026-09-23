@@ -128,8 +128,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yForwardWithoutQuote": "Forward without quote",
         "A11yForwardToSaved": "Forward to Saved Messages",
         "A11yForwardedToSaved": "Forwarded to Saved Messages",
-        "A11ySelected": "Selected", "A11yReceiveAt": "receive @%1$s",
-        "A11ySentAt": "sent @%1$s", "A11yBotButtons": "Bot Buttons",
+        "A11ySelected": "Selected", "A11yReceiveAt": "received at %1$s",
+        "A11ySentAt": "sent at %1$s", "A11yBotButtons": "Bot Buttons",
         "A11yGoToFirstMessage": "Go to first message", "A11yBotNumber": "Bot %1$d",
         "A11yPercent": "%1$d percent",
     }
@@ -249,8 +249,37 @@ def install_a11y_config() -> None:
     cfg = dst.read_text(encoding="utf-8")
     cfg = cfg.replace("getBoolean(PREF_RECORDING_BEEP, false)", "getBoolean(PREF_RECORDING_BEEP, true)")
     cfg = cfg.replace("getBoolean(PREF_SOLAR_CALENDAR, false)", "getBoolean(PREF_SOLAR_CALENDAR, true)")
-    dst.write_text(cfg, encoding="utf-8")
-    print("A11yConfig.java installed + beep/Jalali defaults ON")
+    # a11y-fork: locale-independent Solar Hijri date in YYYY/MM/DD form.
+    solar_start=cfg.find("    public static String formatSolarDate(int unixSeconds) {")
+    if solar_start >= 0:
+        solar_end=cfg.find("    private static String toPersianDigits",solar_start)
+        if solar_end > solar_start:
+            solar_method="""    public static String formatSolarDate(int unixSeconds) {
+        try {
+            java.util.Calendar cal=java.util.Calendar.getInstance();
+            cal.setTimeInMillis(((long) unixSeconds)*1000L);
+            int gy=cal.get(java.util.Calendar.YEAR);
+            int gm=cal.get(java.util.Calendar.MONTH)+1;
+            int gd=cal.get(java.util.Calendar.DAY_OF_MONTH);
+            int jy;
+            if (gy > 1600) { jy=979; gy-=1600; } else { jy=0; gy-=621; }
+            int[] gdm={0,31,59,90,120,151,181,212,243,273,304,334};
+            int gy2=gm > 2 ? gy+1 : gy;
+            int days=365*gy+(gy2+3)/4-(gy2+99)/100+(gy2+399)/400-80+gd+gdm[gm-1];
+            jy+=33*(days/12053); days%=12053;
+            jy+=4*(days/1461); days%=1461;
+            if (days > 365) { jy+=(days-1)/365; days=(days-1)%365; }
+            int jm=days < 186 ? 1+days/31 : 7+(days-186)/30;
+            int jd=1+(days < 186 ? days%31 : (days-186)%30);
+            String date=String.format(java.util.Locale.US, "%04d/%02d/%02d", jy,jm,jd);
+            return LocaleController.formatString(R.string.A11ySolarDate, date);
+        } catch (Throwable ignore) { return ""; }
+    }
+
+"""
+            cfg=cfg[:solar_start]+solar_method+cfg[solar_end:]
+    dst.write_text(cfg,encoding="utf-8")
+    print("A11yConfig.java installed + beep/Jalali defaults ON + locale-independent solar date")
 
 
 def _inject_progress_announce(java_path: Path) -> None:
@@ -850,46 +879,51 @@ def patch_chat_message_cell_float_coordinates() -> None:
 
 
 def patch_recording_beep() -> None:
-    """
-    Add an optional, short recording-start beep. Disabled by default and
-    controlled from Accessible Settings through A11yConfig.
-    """
-    mc = JAVA / "org/telegram/messenger/MediaController.java"
-    if not mc.exists():
-        print("WARN: MediaController missing (recording beep)")
-        return
-    t = mc.read_text(encoding="utf-8")
-    marker = "a11y-fork: recording-start beep"
-    if marker in t:
-        print("MediaController recording beep already patched")
-        return
-
-    needle = "try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
-    if needle not in t:
-        print("WARN: MediaController record-start anchor not found (recording beep)")
-        return
-
-    replacement = needle + """
-                    // a11y-fork: recording-start beep
+    """Play a short synthetic beep through Android's accessibility audio usage."""
+    mc=JAVA/"org/telegram/messenger/MediaController.java"
+    if not mc.exists(): print("WARN: MediaController missing (recording beep)"); return
+    t=mc.read_text(encoding="utf-8"); marker="a11y-fork: recording-start beep-v3"
+    if marker in t: print("MediaController recording beep v3 already patched"); return
+    needle="try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
+    if needle not in t: print("WARN: MediaController record-start anchor not found (recording beep)"); return
+    replacement=needle+"""
+                    // a11y-fork: recording-start beep-v3
                     try {
                         if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
-                            final android.media.ToneGenerator a11yTone =
-                                    new android.media.ToneGenerator(android.media.AudioManager.STREAM_SYSTEM, 80);
-                            a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100);
+                            final int a11ySampleRate = 44100;
+                            final int a11yDurationMs = 120;
+                            final int a11ySamples = a11ySampleRate * a11yDurationMs / 1000;
+                            final short[] a11yPcm = new short[a11ySamples];
+                            final double a11yFrequency = 880.0;
+                            final double a11yAmplitude = 0.42 * Short.MAX_VALUE;
+                            for (int i = 0; i < a11ySamples; i++) {
+                                double envelope = 1.0 - ((double) i / (double) a11ySamples) * 0.35;
+                                a11yPcm[i] = (short) (Math.sin(2.0 * Math.PI * a11yFrequency * i / a11ySampleRate) * a11yAmplitude * envelope);
+                            }
+                            final android.media.AudioTrack a11yTrack = new android.media.AudioTrack(
+                                    new android.media.AudioAttributes.Builder()
+                                            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                            .build(),
+                                    new android.media.AudioFormat.Builder()
+                                            .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                                            .setSampleRate(a11ySampleRate)
+                                            .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                                            .build(),
+                                    a11yPcm.length * 2,
+                                    android.media.AudioTrack.MODE_STATIC,
+                                    android.media.AudioManager.AUDIO_SESSION_ID_GENERATE);
+                            a11yTrack.write(a11yPcm, 0, a11yPcm.length);
+                            a11yTrack.play();
                             org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {
-                                try {
-                                    a11yTone.stopTone();
-                                    a11yTone.release();
-                                } catch (Throwable ignore) {
-                                }
-                            }, 150);
+                                try { a11yTrack.stop(); } catch (Throwable ignore) {}
+                                try { a11yTrack.release(); } catch (Throwable ignore) {}
+                            }, a11yDurationMs + 80);
                         }
-                    } catch (Throwable ignore) {
+                    } catch (Throwable e) {
+                        org.telegram.messenger.FileLog.e(e);
                     }"""
-    t = t.replace(needle, replacement, 1)
-    mc.write_text(t, encoding="utf-8")
-    print("MediaController recording-start beep OK")
-
+    t=t.replace(needle,replacement,1); mc.write_text(t,encoding="utf-8"); print("MediaController recording-start accessibility beep v3 OK")
 
 def patch_solar_calendar_preview() -> None:
     """
@@ -1400,71 +1434,46 @@ def patch_message_time_and_solar() -> None:
         print("WARN: DialogCell final time tail not found (time/Jalali)")
 
 def patch_file_description_spacing() -> None:
-    """Accessibility-fork: fix "apk filetelegram.apk" gluing in TalkBack.
-
-    Problem: TalkBack reads content descriptions like
-    "apk filetelegram.apk" because the file-type suffix produced by
-    AccDescrDocumentType ("%s file, ") has no separator before the full
-    file name is appended by the accessibility node provider.
-
-    Solution (two parts):
-      1) In ChatMessageCell.java, append the full file name first, then
-         the type suffix, with explicit separators.
-      2) In values/strings.xml and values-fa/strings.xml, normalize
-         AccDescrDocumentType to use a period (stronger pause for
-         TalkBack than a comma) as the trailing separator.
-    """
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    """TalkBack: announce the real document filename first, not Telegram's internal numeric storage filename."""
+    cmc=JAVA/"org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
-        print("WARN: ChatMessageCell missing (file description spacing)")
-        return
-    t = cmc.read_text(encoding="utf-8")
-    if "a11y-fork: file description spacing" in t:
-        print("ChatMessageCell file description spacing already patched")
-        return
-
-    old = (
-        "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
-        "                        String fileName = FileLoader.getAttachFileName(documentAttach);\n"
-        "                        if (fileName.indexOf('.') != -1) {\n"
-        "                            sb.append(formatString(R.string.AccDescrDocumentType, fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)));\n"
-        "                        }\n"
-        "                    }"
-    )
-    new = (
-        "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
-        "                        // a11y-fork: file description spacing\n"
-        "                        String fileName = FileLoader.getAttachFileName(documentAttach);\n"
-        "                        if (fileName.indexOf('.') != -1) {\n"
-        "                            sb.append(fileName);\n"
-        "                            sb.append(\". \");\n"
-        "                            sb.append(formatString(R.string.AccDescrDocumentType, fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)));\n"
-        "                            sb.append(\" \");\n"
-        "                        }\n"
-        "                    }"
-    )
-    if old not in t:
-        print("WARN: ChatMessageCell file spacing anchor not found")
-    else:
-        t = t.replace(old, new, 1)
-        cmc.write_text(t, encoding="utf-8")
-        print("ChatMessageCell file description spacing OK")
-
-    # Normalize AccDescrDocumentType in all string resource files.
-    for rel in ("values/strings.xml", "values-fa/strings.xml", "values-fa-rIR/strings.xml"):
-        path = RES / rel
-        if not path.exists():
-            continue
-        rt = path.read_text(encoding="utf-8")
-        rt2, n = re.subn(
-            r'(<string\s+name="AccDescrDocumentType">)[^<]*(</string>)',
-            r"\1%s file. \2",
-            rt,
-            count=1,
-        )
-        if n:
-            path.write_text(rt2, encoding="utf-8")
-            print(f"{rel} AccDescrDocumentType normalized OK")
+        print("WARN: ChatMessageCell missing (file description spacing)"); return
+    t=cmc.read_text(encoding="utf-8")
+    marker="a11y-fork: real document filename"
+    if marker not in t:
+        old=(
+            "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
+            "                        String fileName = FileLoader.getAttachFileName(documentAttach);\n"
+            "                        if (fileName.indexOf('.') != -1) {\n"
+            "                            sb.append(formatString(R.string.AccDescrDocumentType, fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)));\n"
+            "                        }\n"
+            "                    }")
+        new=(
+            "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
+            "                        // a11y-fork: real document filename\n"
+            "                        String a11yDocumentName = FileLoader.getDocumentFileName(documentAttach);\n"
+            "                        if (!TextUtils.isEmpty(a11yDocumentName)) {\n"
+            "                            sb.append(a11yDocumentName);\n"
+            "                            sb.append(\". \");\n"
+            "                            String a11yExtension = a11yDocumentName;\n"
+            "                            int a11yDot = a11yExtension.lastIndexOf('.');\n"
+            "                            if (a11yDot >= 0 && a11yDot + 1 < a11yExtension.length()) {\n"
+            "                                a11yExtension = a11yExtension.substring(a11yDot + 1).toUpperCase(Locale.ROOT);\n"
+            "                                sb.append(formatString(R.string.AccDescrDocumentType, a11yExtension));\n"
+            "                                sb.append(\" \");\n"
+            "                            }\n"
+            "                        }\n"
+            "                    }")
+        if old in t:
+            t=t.replace(old,new,1); cmc.write_text(t,encoding="utf-8"); print("ChatMessageCell real filename + type spacing OK")
+        else: print("WARN: ChatMessageCell document accessibility anchor not found")
+    else: print("ChatMessageCell real document filename already patched")
+    for rel in ("values/strings.xml","values-fa/strings.xml","values-fa-rIR/strings.xml"):
+        path=RES/rel
+        if not path.exists(): continue
+        rt=path.read_text(encoding="utf-8")
+        rt2,n=re.subn(r'(<string\s+name="AccDescrDocumentType">)[^<]*(</string>)',r"\1%s file. \2",rt,count=1)
+        if n: path.write_text(rt2,encoding="utf-8"); print(f"{rel} AccDescrDocumentType normalized OK")
 
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
