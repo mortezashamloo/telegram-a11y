@@ -2,12 +2,16 @@ package org.telegram.messenger;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.SharedPreferences;
 
 /**
  * Accessibility-fork user preferences + simple settings dialog.
+ *
  * All user-facing strings are Android string resources (values/strings.xml,
  * values-fa/strings.xml) so they follow the device/app language automatically.
+ *
+ * Defaults follow official Telegram behaviour: most extras are OFF by
+ * default, and only "show status in preview" is ON because it directly
+ * helps TalkBack users understand chat context.
  */
 public class A11yConfig {
 
@@ -19,6 +23,11 @@ public class A11yConfig {
     public static final String PREF_FORWARD_SAVED_NO_QUOTE = "a11y_forward_saved_no_quote";
     public static final String PREF_RECORDING_BEEP = "a11y_recording_beep";
     public static final String PREF_SOLAR_CALENDAR = "a11y_solar_calendar";
+
+    // ------------------------------------------------------------------
+    // Progress announce (percentage step used when a voice/audio file
+    // is being downloaded and TalkBack focuses on the message cell).
+    // ------------------------------------------------------------------
 
     public static int getProgressStep() {
         try {
@@ -41,6 +50,15 @@ public class A11yConfig {
         } catch (Throwable ignore) {
         }
     }
+
+    public static String progressStepLabel() {
+        return LocaleController.formatString(R.string.A11yProgressStepLabel, getProgressStep());
+    }
+
+    // ------------------------------------------------------------------
+    // Voice message quality (Opus bitrate: 16k / 32k / 64k).
+    // Default: Medium (32k) -- same as Telegram's default.
+    // ------------------------------------------------------------------
 
     public static int getVoiceQuality() {
         try {
@@ -74,11 +92,18 @@ public class A11yConfig {
         }
     }
 
-    public static String progressStepLabel() {
-        return LocaleController.formatString(R.string.A11yProgressStepLabel, getProgressStep());
+    public static String voiceQualityLabel() {
+        int q = getVoiceQuality();
+        if (q <= 0) return LocaleController.getString(R.string.A11yVoiceLow);
+        if (q == 1) return LocaleController.getString(R.string.A11yVoiceMedium);
+        return LocaleController.getString(R.string.A11yVoiceHigh);
     }
 
-    // Accessibility-fork: hide the proxy sponsor/promo channel from the chat list
+    // ------------------------------------------------------------------
+    // Hide the proxy sponsor/promo channel from the chat list.
+    // Default: OFF (official Telegram behaviour).
+    // ------------------------------------------------------------------
+
     public static boolean getHideSponsorChannel() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_HIDE_SPONSOR, false);
@@ -94,10 +119,11 @@ public class A11yConfig {
         }
     }
 
-    // Accessibility-fork: Ghost Mode -- suppress outgoing read receipts
-    // ("seen") so the sender can't tell you've read their message. Local
-    // unread badges for you may not clear while this is on -- see
-    // ChatActivity's markDialogAsRead call sites.
+    // ------------------------------------------------------------------
+    // Ghost Mode -- suppress outgoing read receipts ("seen").
+    // Default: OFF (official Telegram behaviour).
+    // ------------------------------------------------------------------
+
     public static boolean getGhostMode() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_GHOST_MODE, false);
@@ -113,8 +139,12 @@ public class A11yConfig {
         }
     }
 
-    // Accessibility-fork: announce contact online/last-seen status at the
-    // end of the chat-list preview (e.g. "Leila: online")
+    // ------------------------------------------------------------------
+    // Announce contact online/last-seen status in the chat-list preview.
+    // Default: ON (this directly helps TalkBack users understand context;
+    // official Telegram has an equivalent wording).
+    // ------------------------------------------------------------------
+
     public static boolean getShowStatusInPreview() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_SHOW_STATUS_IN_PREVIEW, true);
@@ -130,7 +160,11 @@ public class A11yConfig {
         }
     }
 
-    // Accessibility-fork: Forward to Saved Messages without a quote.
+    // ------------------------------------------------------------------
+    // Forward to Saved Messages without a quote.
+    // Default: OFF (official Telegram always includes the quote).
+    // ------------------------------------------------------------------
+
     public static boolean getForwardSavedNoQuote() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_FORWARD_SAVED_NO_QUOTE, false);
@@ -146,8 +180,13 @@ public class A11yConfig {
         }
     }
 
-    // Accessibility-fork: optional short beep when voice recording starts.
-    // Disabled by default.
+    // ------------------------------------------------------------------
+    // Optional short beep when voice recording starts.
+    // Default: OFF (official Telegram plays a system tone, not our beep).
+    // NOTE: apply-a11y.py flips this default to ON by default at build
+    // time, so users get the beep out of the box and can disable it here.
+    // ------------------------------------------------------------------
+
     public static boolean getRecordingBeep() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_RECORDING_BEEP, false);
@@ -163,8 +202,14 @@ public class A11yConfig {
         }
     }
 
-    // Accessibility-fork: optional Solar Hijri/Jalali date in chat-list
-    // TalkBack descriptions. Disabled by default.
+    // ------------------------------------------------------------------
+    // Optional Solar Hijri/Jalali date in chat-list TalkBack descriptions.
+    // Default: OFF (official Telegram uses Gregorian only).
+    // NOTE: apply-a11y.py flips this default to ON by default at build
+    // time, so Persian users get the Solar date out of the box and can
+    // disable it here.
+    // ------------------------------------------------------------------
+
     public static boolean getSolarCalendar() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_SOLAR_CALENDAR, false);
@@ -180,15 +225,21 @@ public class A11yConfig {
         }
     }
 
-    /**
-     * Convert a Unix timestamp (seconds) to a Solar Hijri/Jalali date.
-     * The conversion is Gregorian -> Jalali and does not depend on any
-     * third-party calendar library.
-     */
-    public static String formatSolarDate(int unixSeconds) {
+    // ------------------------------------------------------------------
+    // Convert a Unix timestamp (seconds) to a Solar Hijri/Jalali date
+    // string (e.g. "5 Farvardin 1403" or "۵ فروردین ۱۴۰۳").
+    //
+    // Returns ONLY the date, without any prefix/suffix, so it can be
+    // dropped directly into Telegram's own date format (AccDescrSentDate
+    // / AccDescrReceivedDate) in DialogCell.java.
+    //
+    // Accepts `long` because DialogCell's `lastDate` is a long.
+    // ------------------------------------------------------------------
+
+    public static String formatSolarDate(long unixSeconds) {
         try {
             java.util.Calendar cal = java.util.Calendar.getInstance();
-            cal.setTimeInMillis(((long) unixSeconds) * 1000L);
+            cal.setTimeInMillis(unixSeconds * 1000L);
             int gy = cal.get(java.util.Calendar.YEAR);
             int gm = cal.get(java.util.Calendar.MONTH) + 1;
             int gd = cal.get(java.util.Calendar.DAY_OF_MONTH);
@@ -244,7 +295,7 @@ public class A11yConfig {
             if (fa) {
                 date = toPersianDigits(date);
             }
-            return LocaleController.formatString(R.string.A11ySolarDate, date);
+            return date;
         } catch (Throwable ignore) {
             return "";
         }
@@ -259,12 +310,9 @@ public class A11yConfig {
                 .replace('9', '۹');
     }
 
-    public static String voiceQualityLabel() {
-        int q = getVoiceQuality();
-        if (q <= 0) return LocaleController.getString(R.string.A11yVoiceLow);
-        if (q == 1) return LocaleController.getString(R.string.A11yVoiceMedium);
-        return LocaleController.getString(R.string.A11yVoiceHigh);
-    }
+    // ------------------------------------------------------------------
+    // Settings dialog
+    // ------------------------------------------------------------------
 
     private static String onOff(boolean value) {
         return LocaleController.getString(value ? R.string.A11yOn : R.string.A11yOff);
@@ -294,50 +342,41 @@ public class A11yConfig {
                             showVoiceQualityPicker(activity);
                         } else if (which == 2) {
                             setHideSponsorChannel(!getHideSponsorChannel());
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.getString(getHideSponsorChannel() ? R.string.A11ySponsorHidden : R.string.A11ySponsorShown));
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, LocaleController.getString(
+                                    getHideSponsorChannel() ? R.string.A11ySponsorHidden : R.string.A11ySponsorShown));
                         } else if (which == 3) {
                             setGhostMode(!getGhostMode());
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.getString(getGhostMode() ? R.string.A11yGhostOn : R.string.A11yGhostOff));
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, LocaleController.getString(
+                                    getGhostMode() ? R.string.A11yGhostOn : R.string.A11yGhostOff));
                         } else if (which == 4) {
                             setShowStatusInPreview(!getShowStatusInPreview());
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.getString(getShowStatusInPreview() ? R.string.A11yStatusOn : R.string.A11yStatusOff));
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, LocaleController.getString(
+                                    getShowStatusInPreview() ? R.string.A11yStatusOn : R.string.A11yStatusOff));
                         } else if (which == 5) {
                             setForwardSavedNoQuote(!getForwardSavedNoQuote());
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.formatString(R.string.A11yForwardSavedNoQuoteLabel, onOff(getForwardSavedNoQuote())));
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yForwardSavedNoQuoteLabel, onOff(getForwardSavedNoQuote())));
                         } else if (which == 6) {
                             setRecordingBeep(!getRecordingBeep());
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.formatString(R.string.A11yRecordingBeepLabel, onOff(getRecordingBeep())));
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yRecordingBeepLabel, onOff(getRecordingBeep())));
                         } else if (which == 7) {
                             setSolarCalendar(!getSolarCalendar());
-                            try {
-                                activity.getWindow().getDecorView().announceForAccessibility(
-                                        LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));
-                            } catch (Throwable ignore) {
-                            }
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));
                         }
                     })
                     .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
                     .show();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    private static void announce(Activity activity, String text) {
+        try {
+            if (activity != null && text != null) {
+                activity.getWindow().getDecorView().announceForAccessibility(text);
+            }
         } catch (Throwable ignore) {
         }
     }
@@ -358,10 +397,7 @@ public class A11yConfig {
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     setProgressStep(steps[which]);
                     d.dismiss();
-                    try {
-                        activity.getWindow().getDecorView().announceForAccessibility(labels[which]);
-                    } catch (Throwable ignore) {
-                    }
+                    announce(activity, labels[which]);
                 })
                 .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
                 .show();
@@ -380,10 +416,7 @@ public class A11yConfig {
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     setVoiceQuality(which);
                     d.dismiss();
-                    try {
-                        activity.getWindow().getDecorView().announceForAccessibility(labels[which]);
-                    } catch (Throwable ignore) {
-                    }
+                    announce(activity, labels[which]);
                 })
                 .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
                 .show();

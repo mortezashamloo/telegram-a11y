@@ -861,6 +861,7 @@ def patch_settings_menu() -> None:
         else:
             print("WARN: Settings case 10 block not found")
     sa.write_text(t, encoding="utf-8")
+
 def patch_dialogcell_preview_muted_status() -> None:
     """
     Accessibility-fork additions to DialogCell.java's TalkBack description:
@@ -873,7 +874,10 @@ def patch_dialogcell_preview_muted_status() -> None:
         reusing Telegram's own `lastDate` variable (which Telegram already
         defines earlier in this method) -- we do NOT introduce a new local
         variable, we only REMOVE Telegram's early `String date = ...` block
-        and re-emit the same code at the tail.
+        and re-emit an equivalent block at the tail.
+      - if A11yConfig.getSolarCalendar() is ON, REPLACE the Gregorian date
+        with the Solar Hijri date (still using Telegram's own `lastDate`
+        and Telegram's own AccDescrSentDate/AccDescrReceivedDate format).
     """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
@@ -930,7 +934,7 @@ def patch_dialogcell_preview_muted_status() -> None:
 
     # --- 3) Remove Telegram's OWN early date block. Telegram already defines
     # `lastDate` earlier in this method; we just don't want the date to be
-    # read too early. We'll re-emit the exact same code at the tail. ---
+    # read too early. We'll re-emit an equivalent block at the tail. ---
     old_date_block = (
         "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
         "        if (message.isOut()) {\n"
@@ -956,9 +960,19 @@ def patch_dialogcell_preview_muted_status() -> None:
             "    private MessageObject getCaptionMessage() {"
         )
         new_tail = (
-            "        // a11y-fork: keep Telegram's native sent/received date format,\n"
-            "        // reuse Telegram's own `lastDate`, and read it at the very end.\n"
+            "        // a11y-fork: keep Telegram's native sent/received date format\n"
+            "        // at the very end. When Solar Hijri is enabled in A11yConfig,\n"
+            "        // REPLACE the Gregorian date with the Solar Hijri date.\n"
             "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
+            "        try {\n"
+            "            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n"
+            "                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);\n"
+            "                if (solarDate != null && solarDate.length() > 0) {\n"
+            "                    date = solarDate;\n"
+            "                }\n"
+            "            }\n"
+            "        } catch (Throwable ignore) {\n"
+            "        }\n"
             "        if (message.isOut()) {\n"
             "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date));\n"
             "        } else {\n"
@@ -977,7 +991,7 @@ def patch_dialogcell_preview_muted_status() -> None:
             t = t.replace(old_tail, new_tail, 1)
 
     dc.write_text(t, encoding="utf-8")
-    print("DialogCell muted removed / status announce / preview-300 / time-last OK")
+    print("DialogCell muted removed / status announce / preview-300 / time-last+solar OK")
 
 
 def patch_hide_sponsor_channel() -> None:
@@ -1308,7 +1322,16 @@ def patch_go_to_first_message() -> None:
 
 
 def patch_file_description_spacing() -> None:
-    """Accessibility-fork: fix "apk filetelegram.apk" gluing in TalkBack."""
+    """Accessibility-fork: read file names the SAME way as official Telegram.
+
+    Target TalkBack output (matching DrKLO/Telegram's default order):
+        "<file name> <type> file"
+    e.g. "telegram.apk apk file"
+
+    We ALSO strip any long numeric ID that Telegram (or some forks) may
+    prepend to the file description, because TalkBack would otherwise read
+    a long meaningless number BEFORE the file name.
+    """
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
         print("WARN: ChatMessageCell missing (file description spacing)")
@@ -1318,7 +1341,30 @@ def patch_file_description_spacing() -> None:
         print("ChatMessageCell file description spacing already patched")
         return
 
-    old = (
+    # --- 1) Strip any numeric-only append tied to the document.
+    removed_id = 0
+    numeric_patterns = [
+        re.compile(
+            r"[ \t]*sb\.append\(\s*documentAttach\.(?:id|access_hash|dc_id|date|size)\s*\);\n"
+        ),
+        re.compile(
+            r"[ \t]*sb\.append\(\s*String\.valueOf\(\s*documentAttach\.(?:id|size|dc_id)\s*\)\s*\);\n"
+        ),
+        re.compile(
+            r"[ \t]*sb\.append\(\s*formatString\(\s*R\.string\.(?:AccDescrFileNumber|AccDescrFileId|AccDescrDocumentId)[^\)]*\)\s*\);\n"
+        ),
+    ]
+    for pat in numeric_patterns:
+        t, n = pat.subn("", t)
+        removed_id += n
+    if removed_id:
+        print(f"ChatMessageCell removed {removed_id} numeric-id append(s) from file description")
+    else:
+        print("ChatMessageCell no numeric-id append found (OK, nothing to remove)")
+
+    # --- 2) Use EXACTLY the same order as official Telegram:
+    # fileName + " " + (ext + " file").
+    old_block = (
         "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
         "                        String fileName = FileLoader.getAttachFileName(documentAttach);\n"
         "                        if (fileName.indexOf('.') != -1) {\n"
@@ -1326,25 +1372,32 @@ def patch_file_description_spacing() -> None:
         "                        }\n"
         "                    }"
     )
-    new = (
+    new_block = (
         "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
         "                        // a11y-fork: file description spacing\n"
+        "                        // Format: \"telegram.apk apk file\" (same as official Telegram)\n"
         "                        String fileName = FileLoader.getAttachFileName(documentAttach);\n"
         "                        if (fileName.indexOf('.') != -1) {\n"
+        "                            String ext = fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT);\n"
         "                            sb.append(fileName);\n"
-        "                            sb.append(\". \");\n"
-        "                            sb.append(formatString(R.string.AccDescrDocumentType, fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)));\n"
+        "                            sb.append(\" \");\n"
+        "                            sb.append(formatString(R.string.AccDescrDocumentType, ext));\n"
+        "                            sb.append(\" \");\n"
+        "                        } else {\n"
+        "                            sb.append(fileName);\n"
         "                            sb.append(\" \");\n"
         "                        }\n"
         "                    }"
     )
-    if old not in t:
+    if old_block not in t:
         print("WARN: ChatMessageCell file spacing anchor not found")
     else:
-        t = t.replace(old, new, 1)
+        t = t.replace(old_block, new_block, 1)
         cmc.write_text(t, encoding="utf-8")
         print("ChatMessageCell file description spacing OK")
 
+    # --- 3) Normalize AccDescrDocumentType in string resources to "%s file"
+    # (same wording as official Telegram, e.g. "apk file").
     for rel in ("values/strings.xml", "values-fa/strings.xml", "values-fa-rIR/strings.xml"):
         path = RES / rel
         if not path.exists():
@@ -1352,13 +1405,13 @@ def patch_file_description_spacing() -> None:
         rt = path.read_text(encoding="utf-8")
         rt2, n = re.subn(
             r'(<string\s+name="AccDescrDocumentType">)[^<]*(</string>)',
-            r"\1%s file. \2",
+            r"\1%s file\2",
             rt,
             count=1,
         )
         if n:
             path.write_text(rt2, encoding="utf-8")
-            print(f"{rel} AccDescrDocumentType normalized OK")
+            print(f"{rel} AccDescrDocumentType normalized to '%s file'")
 
 
 def patch_chat_message_cell_accessibility_long_click() -> None:
@@ -1487,20 +1540,76 @@ def patch_chat_message_cell_float_coordinates() -> None:
         print("ChatMessageCell float coordinate fix already OK/not needed")
 
 
+def _create_beep_resource() -> None:
+    """
+    Create a simple sine-wave beep WAV (100ms, 880Hz) inside
+    TMessagesProj/src/main/res/raw/a11y_beep.wav so the Android
+    MediaPlayer can play it reliably on every device/ROM.
+
+    The file is generated ONLY if it does not already exist, so you can
+    replace it with your own custom beep any time.
+    """
+    import struct
+    import math
+
+    raw_dir = ROOT / "src/main/res/raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = raw_dir / "a11y_beep.wav"
+    if wav_path.exists():
+        print("a11y_beep.wav already exists (kept as is)")
+        return
+
+    sample_rate = 44100
+    duration_ms = 100
+    frequency = 880.0
+    amplitude = 0.6
+
+    n_samples = int(sample_rate * duration_ms / 1000)
+    data = bytearray()
+    for i in range(n_samples):
+        # Simple linear fade-out to avoid click at the end
+        fade = 1.0 - (i / n_samples)
+        value = int(amplitude * fade * 32767 * math.sin(2 * math.pi * frequency * i / sample_rate))
+        data += struct.pack("<h", value)
+
+    # WAV header
+    byte_rate = sample_rate * 2
+    block_align = 2
+    header = b"RIFF"
+    header += struct.pack("<I", 36 + len(data))
+    header += b"WAVE"
+    header += b"fmt "
+    header += struct.pack("<I", 16)
+    header += struct.pack("<H", 1)  # PCM
+    header += struct.pack("<H", 1)  # mono
+    header += struct.pack("<I", sample_rate)
+    header += struct.pack("<I", byte_rate)
+    header += struct.pack("<H", block_align)
+    header += struct.pack("<H", 16)  # bits per sample
+    header += b"data"
+    header += struct.pack("<I", len(data))
+
+    wav_path.write_bytes(header + bytes(data))
+    print(f"a11y_beep.wav created ({len(header) + len(data)} bytes)")
+
+
 def patch_recording_beep() -> None:
     """
-    Add an optional, short recording-start beep. Disabled by default and
-    controlled from Accessible Settings through A11yConfig.
+    Add an optional recording-start beep, played via MediaPlayer from a
+    bundled WAV resource (res/raw/a11y_beep.wav). This is far more reliable
+    than ToneGenerator across devices/ROMs (ToneGenerator is often silent
+    on modern Android because of audio focus rules).
 
-    Volume 100 + duration 150ms + UI-thread stopTone gives reliable playback
-    across devices (the earlier 80/100 combination was often silent).
+    The beep is gated by A11yConfig.getRecordingBeep().
     """
+    _create_beep_resource()
+
     mc = JAVA / "org/telegram/messenger/MediaController.java"
     if not mc.exists():
         print("WARN: MediaController missing (recording beep)")
         return
     t = mc.read_text(encoding="utf-8")
-    marker = "a11y-fork: recording-start beep"
+    marker = "a11y-fork: recording-start beep (mediaplayer)"
     if marker in t:
         print("MediaController recording beep already patched")
         return
@@ -1511,39 +1620,39 @@ def patch_recording_beep() -> None:
         return
 
     replacement = needle + """
-                    // a11y-fork: recording-start beep
+                    // a11y-fork: recording-start beep (mediaplayer)
                     try {
                         if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
-                            final android.media.ToneGenerator a11yTone =
-                                    new android.media.ToneGenerator(android.media.AudioManager.STREAM_SYSTEM, 100);
-                            a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 150);
-                            org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {
-                                try {
-                                    a11yTone.stopTone();
-                                    a11yTone.release();
-                                } catch (Throwable ignore) {
-                                }
-                            }, 200);
+                            final android.media.MediaPlayer a11yBeep =
+                                    android.media.MediaPlayer.create(
+                                            org.telegram.messenger.ApplicationLoader.applicationContext,
+                                            org.telegram.messenger.R.raw.a11y_beep);
+                            if (a11yBeep != null) {
+                                a11yBeep.setOnCompletionListener(mp -> {
+                                    try { mp.release(); } catch (Throwable ignore) {}
+                                });
+                                a11yBeep.start();
+                            }
                         }
                     } catch (Throwable ignore) {
                     }"""
     t = t.replace(needle, replacement, 1)
     mc.write_text(t, encoding="utf-8")
-    print("MediaController recording-start beep OK")
+    print("MediaController recording-start beep (MediaPlayer) OK")
 
 def patch_reorder_menu_items() -> None:
     """
-    Accessibility-fork: final reorder of message options so TalkBack users
-    always see the a11y extras in a stable order:
+    Accessibility-fork: move the three a11y extras to the VERY END of the
+    message options menu, right BEFORE Telegram's own "Delete" item, so
+    TalkBack users always see them in a stable and predictable order:
 
-        ...default Telegram items...
+        ...all default Telegram items...
         Bot Buttons   (if present)
         Reactions     (if present)
-        Select        (last, always present for single normal messages)
+        Select        (always present for single normal messages)
+        Delete        (Telegram's own last item -- untouched)
 
-    Implementation: relocate each a11y item's insertion block to just
-    before the first "if (message.isSponsored() ..." anchor that
-    fillMessageMenu uses, then re-emit them in the desired order.
+    This runs AFTER every menu-item patch has already inserted its block.
     """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
@@ -1609,23 +1718,60 @@ def patch_reorder_menu_items() -> None:
         return
 
     combined = (
-        "        // a11y-fork: reorder-menu-items -- Bot Buttons -> Reactions -> Select\n"
+        "        // a11y-fork: reorder-menu-items -- Bot Buttons -> Reactions -> Select (at the very end, before Delete)\n"
         + "".join(ordered_parts)
         + "\n"
     )
 
-    # ---- 3) Reinsert before the first sponsored-item anchor ----
-    anchor = (
-        "        if (message.isSponsored() && !getUserConfig().isPremium() "
-        "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
-    )
-    if anchor not in t:
-        print("WARN: reorder-menu-items: sponsored anchor not found")
-        return
-    t = t.replace(anchor, combined + anchor, 1)
+    # ---- 3) Reinsert right BEFORE the "Delete" item so our a11y items
+    # appear at the very bottom of the menu, just above Delete. ----
+    # Try a few common Telegram shapes for the Delete item, in priority order.
+    candidate_anchors = [
+        # Modern Telegram (options + icons lists):
+        (
+            "        if (canDelete) {\n"
+            "            items.add(LocaleController.getString(R.string.Delete));\n"
+            "            options.add(OPTION_DELETE);\n"
+            "            icons.add(R.drawable.msg_delete);\n"
+        ),
+        # Slightly older shape:
+        (
+            "        if (canDelete) {\n"
+            "            items.add(LocaleController.getString(R.string.Delete));\n"
+            "            options.add(OPTION_DELETE);\n"
+        ),
+        # Fallback minimal shape:
+        (
+            "        if (canDelete) {\n"
+            "            items.add(LocaleController.getString(R.string.Delete));\n"
+        ),
+    ]
+
+    inserted = False
+    for anchor in candidate_anchors:
+        if anchor in t:
+            t = t.replace(anchor, combined + anchor, 1)
+            inserted = True
+            print("reorder-menu-items: inserted before Delete (anchor matched)")
+            break
+
+    if not inserted:
+        # Last-resort fallback: insert before the sponsored-item block
+        # (previous behaviour). Emit a warning so we know to update the anchor.
+        fallback = (
+            "        if (message.isSponsored() && !getUserConfig().isPremium() "
+            "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n"
+        )
+        if fallback in t:
+            t = t.replace(fallback, combined + fallback, 1)
+            print("WARN: reorder-menu-items: Delete anchor NOT found; "
+                  "fell back to sponsored anchor (items may not be at the very end)")
+        else:
+            print("WARN: reorder-menu-items: no anchor found at all; aborting")
+            return
 
     ca.write_text(t, encoding="utf-8")
-    print("ChatActivity menu reorder OK (Bot Buttons -> Reactions -> Select)")
+    print("ChatActivity menu reorder OK (Bot Buttons -> Reactions -> Select, before Delete)")
 
 
 def main() -> int:
@@ -1633,29 +1779,58 @@ def main() -> int:
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
         return 1
     print("Using scripts dir:", SCRIPTS.resolve())
+
+    # --- Resources / localization ---
     patch_app_name()
     install_a11y_config()
     patch_a11y_localization()
+
+    # --- Progress announcements ---
     patch_radial_progress()
+
+    # --- DialogCell base ordering (name before type) ---
     patch_dialogcell_name_then_type()
+
+    # --- Hide a11y-noisy elements ---
     patch_hide_share_and_comment()
+
+    # --- Forward extras ---
     patch_forward_menu_extras()
+
+    # --- Message options: Select, Reactions, Bot Buttons ---
     patch_longpress_message_menu()
     patch_reactions_as_menu()
     patch_bot_buttons_menu()
+
+    # --- Voice / audio ---
     patch_voice_bitrate()
+
+    # --- Settings entry ---
     patch_settings_menu()
+
+    # --- Recording beep (MediaPlayer + bundled WAV) ---
     patch_recording_beep()
+
+    # --- DialogCell preview: muted/status/preview-300/solar-at-tail ---
     patch_dialogcell_preview_muted_status()
+
+    # --- ChatMessageCell tweaks ---
     patch_chat_message_cell_float_coordinates()
-    patch_hide_sponsor_channel()
-    patch_ghost_mode()
-    patch_go_to_first_message()
     patch_file_description_spacing()
     patch_chat_message_cell_accessibility_long_click()
     patch_stuck_together_bubbles_long_press()
-    # NOTE: must run last, after every menu-item patch has inserted its block.
+
+    # --- Hide sponsor / Ghost mode ---
+    patch_hide_sponsor_channel()
+    patch_ghost_mode()
+
+    # --- Go to first message (channels/groups) ---
+    patch_go_to_first_message()
+
+    # --- FINAL STEP: reorder a11y menu items to the very end, before Delete.
+    #     Must run last, after every menu-item patch has inserted its block. ---
     patch_reorder_menu_items()
+
     print("A11y REAL patches done")
     return 0
 
