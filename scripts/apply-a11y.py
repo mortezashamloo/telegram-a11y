@@ -228,7 +228,7 @@ def patch_a11y_localization() -> None:
             'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
             '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
             '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
-            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
+            'parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
         }
         for old, new in replacements.items():
             t = t.replace(old, new)
@@ -273,7 +273,14 @@ def install_a11y_config() -> None:
             int jd=1+(days < 186 ? days%31 : (days-186)%30);
             String[] fa={"فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"};
             String[] en={"Farvardin","Ordibehesht","Khordad","Tir","Mordad","Shahrivar","Mehr","Aban","Azar","Dey","Bahman","Esfand"};
-            boolean isFa="fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
+            boolean isFa=false;
+            try {
+                org.telegram.messenger.LocaleController.LocaleInfo localeInfo=org.telegram.messenger.LocaleController.getInstance().getCurrentLocaleInfo();
+                String lang=localeInfo != null ? localeInfo.shortName : null;
+                isFa=lang != null && lang.toLowerCase(java.util.Locale.ROOT).startsWith("fa");
+            } catch (Throwable ignore) {
+                isFa="fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
+            }
             String month=(isFa ? fa : en)[jm-1];
             if (isFa) {
                 String value=String.format(java.util.Locale.US, "%d %s %d", jd, month, jy);
@@ -347,7 +354,7 @@ def _inject_progress_announce(java_path: Path) -> None:
                         int step = (pct / stepSize) * stepSize;
                         if (step != a11yLastAnnouncedPercent) {
                             a11yLastAnnouncedPercent = step;
-                            parent.announceForAccessibility(step + " percent");
+                            parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));
                         }
                         if (pct == 0) a11yLastAnnouncedPercent = -1;
                     }
@@ -887,51 +894,71 @@ def patch_chat_message_cell_float_coordinates() -> None:
 
 
 def patch_recording_beep() -> None:
-    """Play a short synthetic beep through Android's accessibility audio usage."""
-    mc=JAVA/"org/telegram/messenger/MediaController.java"
-    if not mc.exists(): print("WARN: MediaController missing (recording beep)"); return
-    t=mc.read_text(encoding="utf-8"); marker="a11y-fork: recording-start beep-v3"
-    if marker in t: print("MediaController recording beep v3 already patched"); return
-    needle="try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
-    if needle not in t: print("WARN: MediaController record-start anchor not found (recording beep)"); return
-    replacement=needle+"""
-                    // a11y-fork: recording-start beep-v3
+    """Play a short recording-start beep using Android sonification audio attributes."""
+    mc = JAVA / "org/telegram/messenger/MediaController.java"
+    if not mc.exists():
+        print("WARN: MediaController missing (recording beep)")
+        return
+    t = mc.read_text(encoding="utf-8")
+    marker = "a11y-fork: recording-start beep-v5"
+    if marker in t:
+        print("MediaController recording beep v5 already patched")
+        return
+    # Remove the previous synthesized accessibility-stream beep when upgrading
+    old_marker = "a11y-fork: recording-start beep-v4"
+    if old_marker in t:
+        import re
+        t = re.sub(r"\n\s*// a11y-fork: recording-start beep-v4[\s\S]*?\n\s*} catch \(Throwable e\) \{\n\s*org\.telegram\.messenger\.FileLog\.e\(e\);\n\s*\}", "", t, count=1)
+    needle = "try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
+    if needle not in t:
+        print("WARN: MediaController record-start anchor not found (recording beep)")
+        return
+    replacement = needle + """
+                    // a11y-fork: recording-start beep-v5
                     try {
                         if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
-                            final int a11ySampleRate = 44100;
-                            final int a11yDurationMs = 120;
-                            final int a11ySamples = a11ySampleRate * a11yDurationMs / 1000;
-                            final short[] a11yPcm = new short[a11ySamples];
-                            final double a11yFrequency = 880.0;
-                            final double a11yAmplitude = 0.42 * Short.MAX_VALUE;
-                            for (int i = 0; i < a11ySamples; i++) {
-                                double envelope = 1.0 - ((double) i / (double) a11ySamples) * 0.35;
-                                a11yPcm[i] = (short) (Math.sin(2.0 * Math.PI * a11yFrequency * i / a11ySampleRate) * a11yAmplitude * envelope);
+                            final int sampleRate = 44100;
+                            final int durationMs = 120;
+                            final int sampleCount = sampleRate * durationMs / 1000;
+                            final short[] pcm = new short[sampleCount];
+                            final double frequency = 880.0;
+                            final double amplitude = 0.70 * Short.MAX_VALUE;
+                            for (int i = 0; i < sampleCount; i++) {
+                                double attack = Math.min(1.0, i / (sampleRate * 0.008));
+                                double release = Math.min(1.0, (sampleCount - i) / (sampleRate * 0.025));
+                                double envelope = Math.min(attack, release);
+                                pcm[i] = (short) (Math.sin(2.0 * Math.PI * frequency * i / sampleRate) * amplitude * envelope);
                             }
-                            final android.media.AudioTrack a11yTrack = new android.media.AudioTrack(
-                                    new android.media.AudioAttributes.Builder()
-                                            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                            .build(),
-                                    new android.media.AudioFormat.Builder()
-                                            .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
-                                            .setSampleRate(a11ySampleRate)
-                                            .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
-                                            .build(),
-                                    a11yPcm.length * 2,
-                                    android.media.AudioTrack.MODE_STATIC,
-                                    android.media.AudioManager.AUDIO_SESSION_ID_GENERATE);
-                            a11yTrack.write(a11yPcm, 0, a11yPcm.length);
-                            a11yTrack.play();
+                            final android.media.AudioAttributes audioAttributes = new android.media.AudioAttributes.Builder()
+                                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build();
+                            final android.media.AudioFormat audioFormat = new android.media.AudioFormat.Builder()
+                                    .setSampleRate(sampleRate)
+                                    .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                                    .build();
+                            final android.media.AudioTrack track = new android.media.AudioTrack.Builder()
+                                    .setAudioAttributes(audioAttributes)
+                                    .setAudioFormat(audioFormat)
+                                    .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                                    .setBufferSizeInBytes(pcm.length * 2)
+                                    .build();
+                            track.setVolume(1.0f);
+                            track.write(pcm, 0, pcm.length);
+                            track.play();
                             org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {
-                                try { a11yTrack.stop(); } catch (Throwable ignore) {}
-                                try { a11yTrack.release(); } catch (Throwable ignore) {}
-                            }, a11yDurationMs + 80);
+                                try { track.stop(); } catch (Throwable ignore) {}
+                                try { track.release(); } catch (Throwable ignore) {}
+                            }, durationMs + 120);
                         }
                     } catch (Throwable e) {
                         org.telegram.messenger.FileLog.e(e);
                     }"""
-    t=t.replace(needle,replacement,1); mc.write_text(t,encoding="utf-8"); print("MediaController recording-start accessibility beep v3 OK")
+    t = t.replace(needle, replacement, 1)
+    mc.write_text(t, encoding="utf-8")
+    print("MediaController recording-start sonification beep v5 OK")
+
 
 def patch_solar_calendar_preview() -> None:
     """
@@ -1009,19 +1036,51 @@ def patch_dialogcell_preview_muted_status() -> None:
     """
     Accessibility-fork additions to DialogCell.java's TalkBack description:
       - remove the "Muted" announcement entirely
-      - read the contact's online/last-seen status (private chats only),
-        gated by A11yConfig.getShowStatusInPreview()
-      - bump the message-preview length read aloud from the visually
-        truncated length to a fixed 300 characters
+      - read the contact's online/last-seen status when enabled
+      - bump the message-preview length read aloud to 300 characters
+
+    IMPORTANT: keep Telegram's native AccDescrSentDate / AccDescrReceivedDate
+    block untouched.  The chat-list preview must use Telegram's own official
+    sent/received wording and time format; custom "sent at" / "receive at"
+    strings are intentionally not generated here.
     """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (preview/muted/status)")
         return
     t = dc.read_text(encoding="utf-8")
-    if "a11y-fork: muted/status/preview-300" in t:
-        print("DialogCell muted/status/preview-300 already patched")
-        return
+
+    # Remove any old custom accessibility time tail if this script is being
+    # applied to a tree that already contains the earlier v2/v3 patch.
+    old_custom_tail = (
+        "        // a11y-fork: sent/received time read last\n"
+        "        String a11yClockTime = LocaleController.formatDateAudio(lastDate, true);\n"
+        "        sb.append(message.isOut() ? \"sent @\" : \"receive @\");\n"
+        "        sb.append(a11yClockTime);\n"
+        "        sb.append(\". \");\n"
+    )
+    if old_custom_tail in t:
+        t = t.replace(old_custom_tail, "", 1)
+
+    old_custom_tail_v3 = (
+        "        // a11y-fork: explicit separator before time\n"
+        "        sb.append(\". \");\n"
+        "        sb.append(message.isOut() ? \"sent at \" : \"received at \");\n"
+        "        sb.append(a11yClockTime);\n"
+        "        sb.append(\". \");\n"
+        "        // a11y-fork: Jalali date\n"
+        "        try {\n"
+        "            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n"
+        "                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);\n"
+        "                if (solarDate != null && solarDate.length() > 0) {\n"
+        "                    sb.append(solarDate);\n"
+        "                    sb.append(\". \");\n"
+        "                }\n"
+        "            }\n"
+        "        } catch (Throwable ignore) {}"
+    )
+    if old_custom_tail_v3 in t:
+        t = t.replace(old_custom_tail_v3, "", 1)
 
     old_block = (
         "        if (dialogMuted) {\n"
@@ -1034,8 +1093,7 @@ def patch_dialogcell_preview_muted_status() -> None:
         "        }\n"
     )
     new_block = (
-        "        // a11y-fork: muted/status/preview-300 -- \"Muted\" removed,\n"
-        "        // online/last-seen status announced instead when enabled.\n"
+        "        // a11y-fork: muted/status/preview-300 -- \"Muted\" removed.\n"
         "        if (user != null && org.telegram.messenger.A11yConfig.getShowStatusInPreview()) {\n"
         "            try {\n"
         "                String statusText = LocaleController.formatUserStatus(UserConfig.selectedAccount, user);\n"
@@ -1047,52 +1105,39 @@ def patch_dialogcell_preview_muted_status() -> None:
         "            }\n"
         "        }\n"
     )
-    if old_block not in t:
+    if old_block in t:
+        t = t.replace(old_block, new_block, 1)
+    elif "a11y-fork: muted/status/preview-300" not in t:
         print("WARN: DialogCell muted/status block not found")
-        return
-    t = t.replace(old_block, new_block)
 
     old_len = (
         "            int len = messageLayout == null ? -1 : messageLayout.getText().length();\n"
         "            if (len > 0) {"
     )
     new_len = (
-        "            int len = 300; // a11y-fork: read up to 300 characters, not just the visually truncated amount\n"
+        "            int len = 300; // a11y-fork: read up to 300 characters\n"
         "            if (len > 0 && len < messageString.length()) {"
     )
-    if old_len not in t:
-        print("WARN: DialogCell preview-length block not found")
-    else:
-        t = t.replace(old_len, new_len)
+    if old_len in t:
+        t = t.replace(old_len, new_len, 1)
 
-    # Move the sent/received time announcement from its early position to
-    # the very end (after the sender name and message preview), reworded
-    # to "receive @5:55pm" / "sent @5:55pm".
-    old_date_block = (
-        "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
-        "        if (message.isOut()) {\n"
-        "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date));\n"
-        "        } else {\n"
-        "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, date));\n"
-        "        }\n"
-        "        sb.append(\". \");\n"
-    )
-    if old_date_block not in t:
-        print("WARN: DialogCell sent/received date block not found")
-    else:
-        t = t.replace(old_date_block, "", 1)
-        old_tail = (
+    # If an older patch removed Telegram's native date block entirely, restore
+    # it at the same end position used by the original DialogCell builder.
+    if "LocaleController.formatString(\"AccDescrSentDate\"" not in t and "LocaleController.formatString(\"AccDescrReceivedDate\"" not in t:
+        anchor = (
             "        event.setContentDescription(sb);\n"
             "        setContentDescription(sb);\n"
             "    }\n"
             "\n"
             "    private MessageObject getCaptionMessage() {"
         )
-        new_tail = (
-            "        // a11y-fork: sent/received time read last\n"
-            "        String a11yClockTime = LocaleController.formatDateAudio(lastDate, true);\n"
-            "        sb.append(message.isOut() ? \"sent @\" : \"receive @\");\n"
-            "        sb.append(a11yClockTime);\n"
+        native_tail = (
+            "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
+            "        if (message.isOut()) {\n"
+            "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date));\n"
+            "        } else {\n"
+            "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, date));\n"
+            "        }\n"
             "        sb.append(\". \");\n"
             "        event.setContentDescription(sb);\n"
             "        setContentDescription(sb);\n"
@@ -1100,13 +1145,12 @@ def patch_dialogcell_preview_muted_status() -> None:
             "\n"
             "    private MessageObject getCaptionMessage() {"
         )
-        if old_tail not in t:
-            print("WARN: DialogCell tail anchor not found (sent/received time)")
-        else:
-            t = t.replace(old_tail, new_tail, 1)
+        if anchor in t:
+            t = t.replace(anchor, native_tail, 1)
+            print("DialogCell native Telegram date block restored")
 
     dc.write_text(t, encoding="utf-8")
-    print("DialogCell muted removed / status announce / preview-300 / time-last OK")
+    print("DialogCell muted/status/preview-300 OK; official Telegram time format preserved")
 
 
 def patch_hide_sponsor_channel() -> None:
@@ -1438,9 +1482,16 @@ def patch_message_time_and_solar() -> None:
         print("WARN: DialogCell missing (time/Jalali)")
         return
     t = dc.read_text(encoding="utf-8")
-    marker = "a11y-fork: official-time-solar-date-v4"
+    marker = "a11y-fork: official-time-solar-date-v6"
     if marker in t:
-        print("DialogCell official Telegram time + solar-date already patched")
+        print("DialogCell official Telegram time + solar-date v6 already patched")
+        return
+    # v5 used the same native block; upgrade its marker without changing the
+    # official Telegram date/time construction.
+    if "a11y-fork: official-time-solar-date-v4" in t:
+        t = t.replace("a11y-fork: official-time-solar-date-v4", marker, 1)
+        dc.write_text(t, encoding="utf-8")
+        print("DialogCell official Telegram time + solar-date upgraded to v6")
         return
 
     # Remove the previous custom "sent at / received at" tail if v3 was
