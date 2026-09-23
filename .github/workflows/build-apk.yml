@@ -149,13 +149,16 @@ jobs:
         run: |
           set -e
           A11Y="patches-repo/scripts/apply-a11y.py"
-          if [ ! -f "$A11Y" ] || [ "$(wc -c < "$A11Y")" -lt 10000 ]; then
-            echo "apply-a11y.py missing/truncated — restoring from commit 5119a983"
-            mkdir -p patches-repo/scripts
-            curl -fsSL -o "$A11Y" \
-              "https://raw.githubusercontent.com/mortezashamloo/telegram-a11y/5119a9836b0036de6edeb4d433e1cc4e482c48da/scripts/apply-a11y.py"
-            wc -c "$A11Y"
+          if [ ! -f "$A11Y" ]; then
+            echo "ERROR: $A11Y not found in repo"
+            exit 1
           fi
+          if [ "$(wc -c < "$A11Y")" -lt 40000 ]; then
+            echo "ERROR: $A11Y is truncated ($(wc -c < "$A11Y") bytes); expected > 40000 bytes."
+            echo "Please upload the full apply-a11y.py to patches-repo/scripts/"
+            exit 1
+          fi
+          echo "Using $A11Y ($(wc -c < "$A11Y") bytes)"
 
           shopt -s nullglob
           for f in patches-repo/patches/*.patch; do
