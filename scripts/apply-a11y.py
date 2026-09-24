@@ -1353,7 +1353,6 @@ def patch_bot_buttons_menu() -> None:
     ca.write_text(t, encoding="utf-8")
 
 def patch_hide_sponsor_channel() -> None:
-    # اگر در پروژه جدید این تابع اضافه نشده بود، اضافه می‌کنم (برای جلوگیری از خطا)
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         return
@@ -1372,7 +1371,6 @@ def patch_hide_sponsor_channel() -> None:
     ca.write_text(t, encoding="utf-8")
 
 def patch_ghost_mode() -> None:
-    # اگر در پروژه جدید این تابع اضافه نشده بود، اضافه می‌کنم
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         return
