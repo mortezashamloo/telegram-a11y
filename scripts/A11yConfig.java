@@ -2,7 +2,6 @@ package org.telegram.messenger;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.text.TextUtils;
 
 /**
  * Accessibility-fork user preferences + simple settings dialog.
@@ -143,7 +142,8 @@ public class A11yConfig {
 
     // ------------------------------------------------------------------
     // Announce contact online/last-seen status in the chat-list preview.
-    // Default: ON (this directly helps TalkBack users understand context).
+    // Default: ON (this directly helps TalkBack users understand context;
+    // official Telegram has an equivalent wording).
     // ------------------------------------------------------------------
 
     public static boolean getShowStatusInPreview() {
@@ -183,7 +183,9 @@ public class A11yConfig {
 
     // ------------------------------------------------------------------
     // Optional short beep when voice recording starts.
-    // Default: OFF in code; apply-a11y.py flips it to ON at build time.
+    // Default: OFF (official Telegram plays a system tone, not our beep).
+    // NOTE: apply-a11y.py flips this default to ON by default at build
+    // time, so users get the beep out of the box and can disable it here.
     // ------------------------------------------------------------------
 
     public static boolean getRecordingBeep() {
@@ -202,9 +204,27 @@ public class A11yConfig {
     }
 
     // ------------------------------------------------------------------
-    // Optional Solar Hijri/Jalali date in TalkBack descriptions.
-    // Default: OFF in code; apply-a11y.py flips it to ON at build time.
+    // Optional Solar Hijri/Jalali date in chat-list TalkBack descriptions.
+    // Default: OFF (official Telegram uses Gregorian only).
+    // NOTE: apply-a11y.py flips this default to ON by default at build
+    // time, so Persian users get the Solar date out of the box and can
+    // disable it here.
     // ------------------------------------------------------------------
+
+    public static boolean getLinksMenuEnabled() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_LINKS_MENU, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setLinksMenuEnabled(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_LINKS_MENU, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
 
     public static boolean getSolarCalendar() {
         try {
@@ -222,32 +242,14 @@ public class A11yConfig {
     }
 
     // ------------------------------------------------------------------
-    // Links menu: gather all links (text + caption + webpage) into one
-    // "Links" item in the message options menu.
-    // Default: OFF (official Telegram has no such menu).
-    // Inline bot buttons are NOT counted as links.
-    // ------------------------------------------------------------------
-
-    public static boolean getLinksMenu() {
-        try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_LINKS_MENU, false);
-        } catch (Throwable ignore) {
-            return false;
-        }
-    }
-
-    public static void setLinksMenu(boolean value) {
-        try {
-            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_LINKS_MENU, value).apply();
-        } catch (Throwable ignore) {
-        }
-    }
-
-    // ------------------------------------------------------------------
     // Convert a Unix timestamp (seconds) to a Solar Hijri/Jalali date
     // string (e.g. "5 Farvardin 1403" or "۵ فروردین ۱۴۰۳").
     //
-    // Returns ONLY the date, without any prefix/suffix.
+    // Returns ONLY the date, without any prefix/suffix, so it can be
+    // dropped directly into Telegram's own date format (AccDescrSentDate
+    // / AccDescrReceivedDate) in DialogCell.java.
+    //
+    // Accepts `long` because DialogCell's `lastDate` is a long.
     // ------------------------------------------------------------------
 
     public static String formatSolarDate(long unixSeconds) {
@@ -301,7 +303,7 @@ public class A11yConfig {
                 java.util.Locale locale = java.util.Locale.getDefault();
                 fa = "fa".equalsIgnoreCase(locale.getLanguage());
             } catch (Throwable ignore) {
-                fa = false;
+                fa = "fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
             }
 
             String date = String.format(java.util.Locale.US, "%d %s %d",
@@ -322,105 +324,6 @@ public class A11yConfig {
                 .replace('3', '۳').replace('4', '۴').replace('5', '۵')
                 .replace('6', '۶').replace('7', '۷').replace('8', '۸')
                 .replace('9', '۹');
-    }
-
-    /**
-     * Accessibility-fork: a single entry point used by DialogCell and
-     * ChatMessageCell to produce the date+time part of TalkBack descriptions.
-     *
-     * When Solar Calendar is OFF:
-     *   returns exactly what LocaleController.formatDateAudio returns
-     *   (official Telegram format: "Today at 14:30", "Yesterday at 9:15",
-     *   or a Gregorian date+time for older messages).
-     *
-     * When Solar Calendar is ON:
-     *   keeps the same structure Telegram uses ("TodayAt"/"YesterdayAt"/"At")
-     *   but replaces the Gregorian date with the Solar Hijri date and keeps
-     *   the original time. So a message from today reads:
-     *     "Today at 14:30"   (unchanged)
-     *   and a message from a month ago reads:
-     *     "۵ فروردین ۱۴۰۳ ساعت ۱۴:۳۰"   (in Persian)
-     *     "5 Farvardin 1403 at 14:30"  (in English)
-     *
-     * On any failure, falls back to the official Gregorian string, so the
-     * user never loses the date announcement.
-     */
-    public static String formatAccessibleDate(long unixSeconds, boolean includeTime) {
-        try {
-            if (!getSolarCalendar()) {
-                return LocaleController.formatDateAudio(unixSeconds, includeTime);
-            }
-
-            String solarDate = formatSolarDate(unixSeconds);
-
-            if (!includeTime) {
-                return TextUtils.isEmpty(solarDate)
-                        ? LocaleController.formatDateAudio(unixSeconds, false)
-                        : solarDate;
-            }
-
-            // Extract the time from Telegram's own format so we don't lose
-            // locale-specific time formatting (12h vs 24h, AM/PM, Persian
-            // digits, etc).
-            String official = LocaleController.formatDateAudio(unixSeconds, true);
-            String time = extractTime(official);
-            if (TextUtils.isEmpty(time)) {
-                return TextUtils.isEmpty(solarDate) ? official : solarDate;
-            }
-
-            // Same-day -> "Today at HH:MM" (unchanged, time only)
-            // Yesterday  -> "Yesterday at HH:MM" (unchanged, time only)
-            // Older      -> "SOLAR_DATE at HH:MM"
-            java.util.Calendar now = java.util.Calendar.getInstance();
-            java.util.Calendar then = java.util.Calendar.getInstance();
-            then.setTimeInMillis(unixSeconds * 1000L);
-
-            boolean sameDay = now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR)
-                    && now.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR);
-            if (sameDay) {
-                String todayAt = LocaleController.getString("TodayAt", R.string.TodayAt);
-                return todayAt + " " + time;
-            }
-
-            java.util.Calendar yest = java.util.Calendar.getInstance();
-            yest.add(java.util.Calendar.DAY_OF_YEAR, -1);
-            boolean isYesterday = yest.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR)
-                    && yest.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR);
-            if (isYesterday) {
-                String yesterdayAt = LocaleController.getString("YesterdayAt", R.string.YesterdayAt);
-                return yesterdayAt + " " + time;
-            }
-
-            String at = LocaleController.getString("At", R.string.At);
-            if (TextUtils.isEmpty(solarDate)) {
-                return official;
-            }
-            return solarDate + " " + at + " " + time;
-        } catch (Throwable ignore) {
-            try {
-                return LocaleController.formatDateAudio(unixSeconds, includeTime);
-            } catch (Throwable ignore2) {
-                return "";
-            }
-        }
-    }
-
-    /**
-     * Pull "HH:MM" (optionally with AM/PM, optionally with Persian digits)
-     * out of Telegram's own date string. If we cannot find a time, return "".
-     */
-    private static String extractTime(String value) {
-        if (value == null) return "";
-        try {
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("([0-9۰-۹]{1,2}:[0-9۰-۹]{2}(?:\\s*[APap]\\.?[Mm]\\.?)?)")
-                    .matcher(value);
-            if (m.find()) {
-                return m.group(1).trim();
-            }
-        } catch (Throwable ignore) {
-        }
-        return "";
     }
 
     // ------------------------------------------------------------------
@@ -445,7 +348,7 @@ public class A11yConfig {
                     LocaleController.formatString(R.string.A11yForwardSavedNoQuoteLabel, onOff(getForwardSavedNoQuote())),
                     LocaleController.formatString(R.string.A11yRecordingBeepLabel, onOff(getRecordingBeep())),
                     LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())),
-                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenu()))
+                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))
             };
             new AlertDialog.Builder(activity)
                     .setTitle(LocaleController.getString(R.string.A11yAccessibleSettingsTitle))
@@ -479,9 +382,9 @@ public class A11yConfig {
                             announce(activity, LocaleController.formatString(
                                     R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));
                         } else if (which == 8) {
-                            setLinksMenu(!getLinksMenu());
+                            setLinksMenuEnabled(!getLinksMenuEnabled());
                             announce(activity, LocaleController.formatString(
-                                    R.string.A11yLinksLabel, onOff(getLinksMenu())));
+                                    R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));
                         }
                     })
                     .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
