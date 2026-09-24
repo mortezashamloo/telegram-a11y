@@ -132,40 +132,40 @@ def _patch_a11y_string_resources() -> None:
         "A11yLinks": "Links",
     }
     fa = {
-        "A11yAccessibleSettingsTitle": "تنظیمات دسترس‌پذیری",
-        "A11yProgressAnnounceLabel": "اعلام پیشرفت: %s",
-        "A11yProgressStepLabel": "گام پیشرفت %1$d درصد",
-        "A11yProgressStepPickerTitle": "گام اعلام پیشرفت",
-        "A11yVoiceQualityLabel": "کیفیت صدا: %s",
-        "A11yVoiceQualityPickerTitle": "کیفیت پیام صوتی",
-        "A11yVoiceLow": "پایین", "A11yVoiceMedium": "متوسط", "A11yVoiceHigh": "بالا",
-        "A11yHideSponsorLabel": "مخفی کردن کانال حامی: %s",
-        "A11ySponsorHidden": "کانال حامی مخفی شد",
-        "A11ySponsorShown": "کانال حامی نمایش داده شد",
-        "A11yGhostModeLabel": "حالت روح: %s",
-        "A11yGhostOn": "حالت روح روشن شد", "A11yGhostOff": "حالت روح خاموش شد",
-        "A11yStatusPreviewLabel": "نمایش وضعیت در پیش‌نمایش: %s",
-        "A11yStatusOn": "نمایش وضعیت روشن شد", "A11yStatusOff": "نمایش وضعیت خاموش شد",
-        "A11yForwardSavedNoQuoteLabel": "فوروارد به پیام‌های ذخیره‌شده بدون نقل‌قول: %s",
-        "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
-        "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
-        "A11yLinksLabel": "منوی پیوندها: %s",
-        "A11yOn": "روشن", "A11yOff": "خاموش", "A11yCancel": "لغو",
+        "A11yAccessibleSettingsTitle": "طھظ†ط¸غŒظ…ط§طھ ط¯ط³طھط±ط³â€Œظ¾ط°غŒط±غŒ",
+        "A11yProgressAnnounceLabel": "ط§ط¹ظ„ط§ظ… ظ¾غŒط´ط±ظپطھ: %s",
+        "A11yProgressStepLabel": "ع¯ط§ظ… ظ¾غŒط´ط±ظپطھ %1$d ط¯ط±طµط¯",
+        "A11yProgressStepPickerTitle": "ع¯ط§ظ… ط§ط¹ظ„ط§ظ… ظ¾غŒط´ط±ظپطھ",
+        "A11yVoiceQualityLabel": "ع©غŒظپغŒطھ طµط¯ط§: %s",
+        "A11yVoiceQualityPickerTitle": "ع©غŒظپغŒطھ ظ¾غŒط§ظ… طµظˆطھغŒ",
+        "A11yVoiceLow": "ظ¾ط§غŒغŒظ†", "A11yVoiceMedium": "ظ…طھظˆط³ط·", "A11yVoiceHigh": "ط¨ط§ظ„ط§",
+        "A11yHideSponsorLabel": "ظ…ط®ظپغŒ ع©ط±ط¯ظ† ع©ط§ظ†ط§ظ„ ط­ط§ظ…غŒ: %s",
+        "A11ySponsorHidden": "ع©ط§ظ†ط§ظ„ ط­ط§ظ…غŒ ظ…ط®ظپغŒ ط´ط¯",
+        "A11ySponsorShown": "ع©ط§ظ†ط§ظ„ ط­ط§ظ…غŒ ظ†ظ…ط§غŒط´ ط¯ط§ط¯ظ‡ ط´ط¯",
+        "A11yGhostModeLabel": "ط­ط§ظ„طھ ط±ظˆط­: %s",
+        "A11yGhostOn": "ط­ط§ظ„طھ ط±ظˆط­ ط±ظˆط´ظ† ط´ط¯", "A11yGhostOff": "ط­ط§ظ„طھ ط±ظˆط­ ط®ط§ظ…ظˆط´ ط´ط¯",
+        "A11yStatusPreviewLabel": "ظ†ظ…ط§غŒط´ ظˆط¶ط¹غŒطھ ط¯ط± ظ¾غŒط´â€Œظ†ظ…ط§غŒط´: %s",
+        "A11yStatusOn": "ظ†ظ…ط§غŒط´ ظˆط¶ط¹غŒطھ ط±ظˆط´ظ† ط´ط¯", "A11yStatusOff": "ظ†ظ…ط§غŒط´ ظˆط¶ط¹غŒطھ ط®ط§ظ…ظˆط´ ط´ط¯",
+        "A11yForwardSavedNoQuoteLabel": "ظپظˆط±ظˆط§ط±ط¯ ط¨ظ‡ ظ¾غŒط§ظ…â€Œظ‡ط§غŒ ط°ط®غŒط±ظ‡â€Œط´ط¯ظ‡ ط¨ط¯ظˆظ† ظ†ظ‚ظ„â€Œظ‚ظˆظ„: %s",
+        "A11yRecordingBeepLabel": "ط¨ظˆظ‚ ط´ط±ظˆط¹ ط¶ط¨ط·: %s",
+        "A11ySolarCalendarLabel": "طھظ‚ظˆغŒظ… ط®ظˆط±ط´غŒط¯غŒ: %s",
+        "A11yLinksLabel": "ظ…ظ†ظˆغŒ ظ¾غŒظˆظ†ط¯ظ‡ط§: %s",
+        "A11yOn": "ط±ظˆط´ظ†", "A11yOff": "ط®ط§ظ…ظˆط´", "A11yCancel": "ظ„ط؛ظˆ",
         "A11ySolarDate": "%1$s",
-        "A11yAccessibleSettings": "تنظیمات دسترس‌پذیری",
-        "A11yProgressAnnounce": "اعلام پیشرفت", "A11yVoiceQuality": "کیفیت صدا",
-        "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
-        "A11yProgressAnnounceStep": "گام اعلام پیشرفت", "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
-        "A11yLow": "پایین", "A11yMedium": "متوسط", "A11yHigh": "بالا",
-        "A11yProgressStep": "گام پیشرفت %1$d درصد",
-        "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
-        "A11yForwardWithoutQuote": "فوروارد بدون نقل‌قول",
-        "A11yForwardToSaved": "ارسال به پیام‌های ذخیره‌شده",
-        "A11yForwardedToSaved": "به پیام‌های ذخیره‌شده ارسال شد", "A11ySelected": "انتخاب شد",
-        "A11yReceiveAt": "دریافت در ساعت %1$s", "A11ySentAt": "ارسال در ساعت %1$s",
-        "A11yBotButtons": "دکمه‌های ربات", "A11yGoToFirstMessage": "رفتن به اولین پیام",
-        "A11yBotNumber": "ربات %1$d", "A11yPercent": "%1$d درصد",
-        "A11yLinks": "پیوندها",
+        "A11yAccessibleSettings": "طھظ†ط¸غŒظ…ط§طھ ط¯ط³طھط±ط³â€Œظ¾ط°غŒط±غŒ",
+        "A11yProgressAnnounce": "ط§ط¹ظ„ط§ظ… ظ¾غŒط´ط±ظپطھ", "A11yVoiceQuality": "ع©غŒظپغŒطھ طµط¯ط§",
+        "A11yProgressAnnounceSummary": "ط§ط¹ظ„ط§ظ… ظ¾غŒط´ط±ظپطھ ظˆ ع©غŒظپغŒطھ طµط¯ط§",
+        "A11yProgressAnnounceStep": "ع¯ط§ظ… ط§ط¹ظ„ط§ظ… ظ¾غŒط´ط±ظپطھ", "A11yVoiceMessageQuality": "ع©غŒظپغŒطھ ظ¾غŒط§ظ… طµظˆطھغŒ",
+        "A11yLow": "ظ¾ط§غŒغŒظ†", "A11yMedium": "ظ…طھظˆط³ط·", "A11yHigh": "ط¨ط§ظ„ط§",
+        "A11yProgressStep": "ع¯ط§ظ… ظ¾غŒط´ط±ظپطھ %1$d ط¯ط±طµط¯",
+        "A11yVoiceQualitySelected": "ع©غŒظپغŒطھ طµط¯ط§ %1$s",
+        "A11yForwardWithoutQuote": "ظپظˆط±ظˆط§ط±ط¯ ط¨ط¯ظˆظ† ظ†ظ‚ظ„â€Œظ‚ظˆظ„",
+        "A11yForwardToSaved": "ط§ط±ط³ط§ظ„ ط¨ظ‡ ظ¾غŒط§ظ…â€Œظ‡ط§غŒ ط°ط®غŒط±ظ‡â€Œط´ط¯ظ‡",
+        "A11yForwardedToSaved": "ط¨ظ‡ ظ¾غŒط§ظ…â€Œظ‡ط§غŒ ط°ط®غŒط±ظ‡â€Œط´ط¯ظ‡ ط§ط±ط³ط§ظ„ ط´ط¯", "A11ySelected": "ط§ظ†طھط®ط§ط¨ ط´ط¯",
+        "A11yReceiveAt": "ط¯ط±غŒط§ظپطھ ط¯ط± ط³ط§ط¹طھ %1$s", "A11ySentAt": "ط§ط±ط³ط§ظ„ ط¯ط± ط³ط§ط¹طھ %1$s",
+        "A11yBotButtons": "ط¯ع©ظ…ظ‡â€Œظ‡ط§غŒ ط±ط¨ط§طھ", "A11yGoToFirstMessage": "ط±ظپطھظ† ط¨ظ‡ ط§ظˆظ„غŒظ† ظ¾غŒط§ظ…",
+        "A11yBotNumber": "ط±ط¨ط§طھ %1$d", "A11yPercent": "%1$d ط¯ط±طµط¯",
+        "A11yLinks": "ظ¾غŒظˆظ†ط¯ظ‡ط§",
     }
     for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
         path = RES / rel
@@ -245,7 +245,7 @@ def patch_percent_localization() -> None:
         if not path.exists():
             continue
         rt = path.read_text(encoding="utf-8")
-        value = "%1$d percent" if rel == "values/strings.xml" else "%1$d درصد"
+        value = "%1$d percent" if rel == "values/strings.xml" else "%1$d ط¯ط±طµط¯"
         rt2, n = re.subn(r'(<string\s+name="A11yPercent">)[^<]*(</string>)', rf'\1{value}\2', rt, count=1)
         if n:
             path.write_text(rt2, encoding="utf-8")
@@ -847,7 +847,7 @@ def patch_message_menu_order() -> None:
             "            // common case; this is a defensive fallback.\n"
             "            if (message.caption != null) {\n"
             "                java.util.regex.Matcher m = java.util.regex.Pattern\n"
-            "                        .compile(\"(https?://|t\\.me/|@[A-Za-z0-9_]{4,})\")\n"
+            "                        .compile(\"(https?://|t\\\\.me/|@[A-Za-z0-9_]{4,})\")\n"
             "                        .matcher(message.caption.toString());\n"
             "                if (m.find()) {\n"
             "                    return true;\n"
@@ -906,7 +906,7 @@ def patch_links_menu() -> None:
         "                            String title = msg.messageOwner.media.webpage.title;\n"
         "                            if (!links.contains(url)) {\n"
         "                                links.add(url);\n"
-        "                                labels.add(!TextUtils.isEmpty(title) ? title + \" — \" + url : url);\n"
+        "                                labels.add(!TextUtils.isEmpty(title) ? title + \" â€” \" + url : url);\n"
         "                            }\n"
         "                        }\n"
         "                        // entities on the message text\n"
@@ -1610,7 +1610,7 @@ def patch_file_description_spacing() -> None:
         if not path.exists():
             continue
         rt = path.read_text(encoding="utf-8")
-        value = "file %s. " if "fa" not in rel else "فایل %s. "
+        value = "file %s. " if "fa" not in rel else "ظپط§غŒظ„ %s. "
         rt2, n = re.subn(
             r'(<string\s+name="AccDescrDocumentType">)[^<]*(</string>)',
             rf'\1{value}\2', rt, count=1
