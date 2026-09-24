@@ -1136,10 +1136,21 @@ def patch_dialogcell_preview_muted_status() -> None:
         r'\s*sb\.append\("\. "\);', re.MULTILINE
     )
     t = marker_re.sub("", t, count=1)
-    end_anchor = '        event.setContentDescription(sb);'
-    if end_anchor not in t:
-        end_anchor = '        setContentDescription(sb);'
-    if end_anchor in t:
+    # The newline prefix matters: upstream also has an early-return block
+    # ("message == null || currentDialogFolderId != 0") whose
+    # event.setContentDescription(sb) is indented deeper and sits BEFORE
+    # 'int lastDate' is declared.  A plain substring match hit that one first
+    # and produced "cannot find symbol: lastDate".  Use the LAST 8-space match,
+    # and require that lastDate is already declared above it.
+    end_anchor = '\n        event.setContentDescription(sb);\n        setContentDescription(sb);\n    }'
+    end_idx = t.rfind(end_anchor)
+    if end_idx < 0:
+        end_anchor = '\n        setContentDescription(sb);\n    }'
+        end_idx = t.rfind(end_anchor)
+    if end_idx >= 0 and t.rfind('int lastDate = lastMessageDate;', 0, end_idx) < 0:
+        print("WARN: DialogCell lastDate not declared before end anchor; skipping date tail")
+        end_idx = -1
+    if end_idx >= 0:
         native_tail = (
             '        // a11y-fork-v6: official Telegram send/receive date LAST\n'
             '        String a11yDate = LocaleController.formatDateAudio(lastDate, true);\n'
@@ -1159,7 +1170,7 @@ def patch_dialogcell_preview_muted_status() -> None:
             '        }\n'
             '        sb.append(". ");\n'
         )
-        t=t.replace(end_anchor, native_tail+end_anchor, 1)
+        t = t[:end_idx + 1] + native_tail + t[end_idx + 1:]
     else:
         print("WARN: DialogCell content-description end anchor not found")
 
