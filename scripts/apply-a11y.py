@@ -132,12 +132,12 @@ def _patch_a11y_string_resources() -> None:
         "A11yForwardWithoutQuote": "Forward without quote",
         "A11yForwardToSaved": "Forward to Saved Messages",
         "A11yForwardedToSaved": "Forwarded to Saved Messages",
-        "A11ySelected": "Selected", "A11yReceiveAt": "received at %1$s",
+        "A11ySelected": "Selected", "A11yFile": "File", "A11yReceiveAt": "received at %1$s",
         "A11ySentAt": "sent at %1$s", "A11yBotButtons": "Bot Buttons",
         "A11yGoToFirstMessage": "Go to first message",
         "A11yLinks": "Links", "A11yLinksLabel": "Links: %s", "A11yNoLinks": "No links",
         "A11yBotNumber": "Bot %1$d",
-        "A11yPercent": "%1$d percent",
+        "A11yPercent": "%1$d percent", "A11yFileLabel": "File: %1$s.",
     }
     fa = {
         "A11yAccessibleSettingsTitle": "تنظیمات دسترس‌پذیری",
@@ -168,11 +168,11 @@ def _patch_a11y_string_resources() -> None:
         "A11yVoiceQualitySelected": "کیفیت صدا %1$s",
         "A11yForwardWithoutQuote": "فوروارد بدون نقل‌قول",
         "A11yForwardToSaved": "ارسال به پیام‌های ذخیره‌شده",
-        "A11yForwardedToSaved": "به پیام‌های ذخیره‌شده ارسال شد", "A11ySelected": "انتخاب شد",
+        "A11yForwardedToSaved": "به پیام‌های ذخیره‌شده ارسال شد", "A11ySelected": "انتخاب شد", "A11yFile": "فایل",
         "A11yReceiveAt": "دریافت در ساعت %1$s", "A11ySentAt": "ارسال در ساعت %1$s",
         "A11yBotButtons": "دکمه‌های ربات", "A11yGoToFirstMessage": "رفتن به اولین پیام",
         "A11yLinks": "لینک‌ها", "A11yLinksLabel": "لینک‌ها: %s", "A11yNoLinks": "لینکی وجود ندارد",
-        "A11yBotNumber": "ربات %1$d", "A11yPercent": "%1$d درصد",
+        "A11yBotNumber": "ربات %1$d", "A11yPercent": "%1$d درصد", "A11yFileLabel": "فایل: %1$s.",
     }
     for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
         path = RES / rel
@@ -236,7 +236,7 @@ def patch_a11y_localization() -> None:
             'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
             '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
             '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
-            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
+            'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
         }
         for old, new in replacements.items():
             t = t.replace(old, new)
@@ -390,7 +390,7 @@ def _inject_progress_announce(java_path: Path) -> None:
                         int step = (pct / stepSize) * stepSize;
                         if (step != a11yLastAnnouncedPercent) {
                             a11yLastAnnouncedPercent = step;
-                            parent.announceForAccessibility(step + " percent");
+                            parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));
                         }
                         if (pct == 0) a11yLastAnnouncedPercent = -1;
                     }
@@ -930,89 +930,34 @@ def patch_chat_message_cell_float_coordinates() -> None:
 
 
 def patch_recording_beep() -> None:
-    """Recording start feedback: unconditional short vibration + an optional beep.
-
-    Vibration fires every time recording starts (no setting, always on -- it's
-    the primary non-visual cue). The bundled WAV tone additionally plays through
-    Android's accessibility audio stream, but only when A11yConfig.getRecordingBeep()
-    is on; that setting defaults to OFF (see install_a11y_config) and the user turns
-    it on themselves from Accessible Settings.
-    """
-    raw_dir = RES / "raw"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    wav_path = raw_dir / "a11y_recording_beep.wav"
-    sample_rate = 44100
-    duration_ms = 120
-    frequency = 880.0
-    amplitude = 0.42 * 32767.0
-    samples = int(sample_rate * duration_ms / 1000)
-    with wave.open(str(wav_path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        frames = bytearray()
-        for i in range(samples):
-            envelope = 1.0 - (i / float(samples)) * 0.35
-            value = int(math.sin(2.0 * math.pi * frequency * i / sample_rate) * amplitude * envelope)
-            frames.extend(struct.pack("<h", value))
-        wf.writeframes(frames)
-    print(f"Generated recording beep WAV: {wav_path}")
-
-    mc = JAVA / "org/telegram/messenger/MediaController.java"
+    """Recording-start beep through Android RING volume."""
+    mc=JAVA/"org/telegram/messenger/MediaController.java"
     if not mc.exists():
         print("WARN: MediaController missing (recording beep)")
         return
-    t = mc.read_text(encoding="utf-8")
-    marker = "a11y-fork: recording-start beep-wav-v1"
-    if marker in t:
-        print("MediaController WAV recording beep already patched")
-        return
-    needle = "try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
+    t=mc.read_text(encoding="utf-8")
+    marker="a11y-fork: recording-start beep-ring-v2"
+    if marker in t: return
+    needle="try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
     if needle not in t:
         print("WARN: MediaController record-start anchor not found (recording beep)")
         return
-    replacement = needle + """
-                    // a11y-fork: recording-start beep-wav-v1
-                    try {
-                        // Unconditional haptic cue -- always fires, independent of the beep setting.
-                        try {
-                            android.content.Context a11yVibCtx = org.telegram.messenger.ApplicationLoader.applicationContext;
-                            if (a11yVibCtx != null) {
-                                android.os.Vibrator a11yVibrator = (android.os.Vibrator) a11yVibCtx.getSystemService(android.content.Context.VIBRATOR_SERVICE);
-                                if (a11yVibrator != null && a11yVibrator.hasVibrator()) {
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                        a11yVibrator.vibrate(android.os.VibrationEffect.createOneShot(50, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
-                                    } else {
-                                        a11yVibrator.vibrate(50);
-                                    }
-                                }
-                            }
-                        } catch (Throwable ignoreVib) {
-                        }
-                        if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
-                            final android.media.MediaPlayer a11yBeep = android.media.MediaPlayer.create(
-                                    org.telegram.messenger.ApplicationLoader.applicationContext, org.telegram.messenger.R.raw.a11y_recording_beep);
-                            if (a11yBeep != null) {
-                                a11yBeep.setAudioAttributes(new android.media.AudioAttributes.Builder()
-                                        .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                        .build());
-                                a11yBeep.setOnCompletionListener(player -> {
-                                    try { player.release(); } catch (Throwable ignore) {}
-                                });
-                                a11yBeep.setOnErrorListener((player, what, extra) -> {
-                                    try { player.release(); } catch (Throwable ignore) {}
-                                    return true;
-                                });
-                                a11yBeep.start();
-                            }
-                        }
-                    } catch (Throwable e) {
-                        org.telegram.messenger.FileLog.e(e);
-                    }"""
-    t = t.replace(needle, replacement, 1)
-    mc.write_text(t, encoding="utf-8")
-    print("MediaController bundled WAV recording-start beep OK")
+    replacement=needle+f"""
+                    // {marker}
+                    try {{
+                        if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {{
+                            android.media.ToneGenerator tone = new android.media.ToneGenerator(android.media.AudioManager.STREAM_RING, 80);
+                            tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 120);
+                        org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {{
+                            try {{ tone.stopTone(); tone.release(); }} catch (Throwable ignore) {{}}
+                            }}, 150);
+                        }}
+                    }} catch (Throwable ignore) {{}}
+"""
+    t=t.replace(needle,replacement,1)
+    mc.write_text(t,encoding="utf-8")
+    print("MediaController recording-start beep uses RING volume OK")
+
 
 def patch_solar_calendar_preview() -> None:
     """
@@ -1349,6 +1294,13 @@ def patch_links_as_menu() -> None:
                 while(url.endsWith(".")||url.endsWith(",")||url.endsWith(")")||url.endsWith("]")) url=url.substring(0,url.length()-1);
                 if(url.length()>0&&!links.contains(url)) links.add(url);
             }
+            // Telegram usernames: @people, @groups, @channels and @bots.
+            java.util.regex.Matcher u=java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])@[A-Za-z0-9_]{5,32}").matcher(raw);
+            while(u.find()) {
+                String username=u.group().substring(1);
+                String url="https://t.me/"+username;
+                if(!links.contains(url)) links.add(url);
+            }
             if(links.isEmpty()) {
                 if(getParentActivity()!=null) getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11yNoLinks));
                 return;
@@ -1629,64 +1581,108 @@ def patch_go_to_first_message() -> None:
 
 
 def patch_file_description_spacing() -> None:
-    """TalkBack: announce the real document filename as a single clean "file <name>" (with a real
-    space, never concatenated), not Telegram's internal numeric storage filename and not a
-    separate/duplicated extension-type announcement (which read out of order and could confuse
-    TalkBack's long-press gesture)."""
-    cmc=JAVA/"org/telegram/ui/Cells/ChatMessageCell.java"
+    """TalkBack: announce a document exactly once as localized `File: filename.`."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
-        print("WARN: ChatMessageCell missing (file description spacing)"); return
-    t=cmc.read_text(encoding="utf-8")
-    marker="a11y-fork: real document filename"
-    # Clean up: if an older revision of this patch (with the redundant extension-type
-    # announcement) already applied, replace it with the simplified single-announcement version.
-    old_verbose = (
-        "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
-        "                        // a11y-fork: real document filename\n"
-        "                        String a11yDocumentName = FileLoader.getDocumentFileName(documentAttach);\n"
-        "                        if (!TextUtils.isEmpty(a11yDocumentName)) {\n"
-        "                            sb.append(a11yDocumentName);\n"
-        "                            sb.append(\". \");\n"
-        "                            String a11yExtension = a11yDocumentName;\n"
-        "                            int a11yDot = a11yExtension.lastIndexOf('.');\n"
-        "                            if (a11yDot >= 0 && a11yDot + 1 < a11yExtension.length()) {\n"
-        "                                a11yExtension = a11yExtension.substring(a11yDot + 1).toUpperCase(Locale.ROOT);\n"
-        "                                sb.append(formatString(R.string.AccDescrDocumentType, a11yExtension));\n"
-        "                                sb.append(\" \");\n"
-        "                            }\n"
-        "                        }\n"
-        "                    }")
-    if old_verbose in t:
-        t = t.replace(old_verbose, "", 1)  # drop; the block below (re)inserts the clean version
+        print("WARN: ChatMessageCell missing (file description spacing)")
+        return
+    t = cmc.read_text(encoding="utf-8")
 
+    # Remove old accessibility-fork filename blocks, if any.
+    t = re.sub(
+        r'\n\s*// a11y-fork: real document filename[\s\S]*?\n\s*}\n\s*}\n',
+        '\n', t, count=1
+    )
+
+    marker = "a11y-fork: single localized document filename v2"
     if marker not in t:
-        old=(
+        old = (
             "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
             "                        String fileName = FileLoader.getAttachFileName(documentAttach);\n"
             "                        if (fileName.indexOf('.') != -1) {\n"
             "                            sb.append(formatString(R.string.AccDescrDocumentType, fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)));\n"
             "                        }\n"
-            "                    }")
-        new=(
+            "                    }"
+        )
+        new = (
             "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
-            "                        // a11y-fork: real document filename -- single \"file <name>\" announcement,\n"
-            "                        // built as one literal Java string so \"file\" can never end up glued to\n"
-            "                        // the filename (that broke TalkBack reading and its long-press gesture).\n"
+            "                        // " + marker + "\n"
             "                        String a11yDocumentName = FileLoader.getDocumentFileName(documentAttach);\n"
             "                        if (!TextUtils.isEmpty(a11yDocumentName)) {\n"
-            "                            sb.append(\"file \");\n"
-            "                            sb.append(a11yDocumentName);\n"
-            "                            sb.append(\". \");\n"
+            "                            sb.append(LocaleController.formatString(\"A11yFileLabel\", R.string.A11yFileLabel, a11yDocumentName));\n"
             "                        }\n"
-            "                    }")
+            "                    }"
+        )
         if old in t:
-            t=t.replace(old,new,1); cmc.write_text(t,encoding="utf-8"); print("ChatMessageCell single clean \"file <name>\" announcement OK")
-        else: print("WARN: ChatMessageCell document accessibility anchor not found")
-    else:
+            t=t.replace(old,new,1)
+            print("ChatMessageCell single localized File: filename announcement OK")
+        else:
+            print("WARN: ChatMessageCell official document accessibility anchor not found")
+    cmc.write_text(t,encoding="utf-8")
+
+
+def patch_direct_accessibility_long_click() -> None:
+    """Ensure TalkBack ACTION_LONG_CLICK on ChatMessageCell reaches ChatActivity."""
+    cmc=JAVA/"org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists(): return
+    t=cmc.read_text(encoding="utf-8")
+    marker="a11y-fork: direct ACTION_LONG_CLICK v2"
+    if marker in t: return
+    anchor="""    @Override
+    public boolean performAccessibilityAction(int action, Bundle arguments) {
+"""
+    replacement="""    @Override
+    public boolean performAccessibilityAction(int action, Bundle arguments) {
+        // a11y-fork: direct ACTION_LONG_CLICK v2
+        if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK && delegate != null && currentMessageObject != null) {
+            try {
+                float x = lastTouchX > 0 ? lastTouchX : getWidth() / 2f;
+                float y = lastTouchY > 0 ? lastTouchY : getHeight() / 2f;
+                delegate.didLongPress(this, x, y);
+                return true;
+            } catch (Throwable e) {
+                FileLog.e(e);
+                return true;
+            }
+        }
+"""
+    if anchor in t:
+        t=t.replace(anchor,replacement,1)
         cmc.write_text(t,encoding="utf-8")
-        print("ChatMessageCell real document filename already patched")
-    # AccDescrDocumentType is no longer referenced by the patched block above
-    # (the clean "file <name>" text is built directly in Java), so it's left untouched.
+        print("ChatMessageCell direct ACTION_LONG_CLICK v2 OK")
+    else:
+        print("WARN: performAccessibilityAction anchor not found")
+
+def patch_chat_message_solar_date() -> None:
+    """Use Solar Hijri as the date value in ChatMessageCell accessibility."""
+    cmc=JAVA/"org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists(): return
+    t=cmc.read_text(encoding="utf-8")
+    marker="a11y-fork: ChatMessageCell solar date v2"
+    if marker in t: return
+    # Preserve native Telegram AccDescrSentDate/ReceivedDate wording and time format.
+    pattern=re.compile(
+        r'(?P<indent>\s*)String date = LocaleController\.formatDateAudio\((?P<expr>[^,]+), true\);\s*'
+        r'(?P<body>if \(messageObject\.isOut\(\)\) \{[\s\S]{0,800}?R\.string\.AccDescrReceivedDate[\s\S]{0,350}?\})'
+    )
+    m=pattern.search(t)
+    if m:
+        indent=m.group("indent")
+        expr=m.group("expr")
+        repl=(f'{indent}// {marker}\n'
+              f'{indent}String date = LocaleController.formatDateAudio({expr}, true);\n'
+              f'{indent}try {{\n'
+              f'{indent}    if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {{\n'
+              f'{indent}        String solar = org.telegram.messenger.A11yConfig.formatSolarDate({expr});\n'
+              f'{indent}        if (solar != null && solar.length() > 0) date = solar;\n'
+              f'{indent}    }}\n'
+              f'{indent}}} catch (Throwable ignore) {{}}\n'
+              + m.group("body"))
+        t=t[:m.start()]+repl+t[m.end():]
+        cmc.write_text(t,encoding="utf-8")
+        print("ChatMessageCell Solar date v2 OK")
+    else:
+        print("WARN: ChatMessageCell native accessibility date block not found")
 
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
@@ -1884,6 +1880,14 @@ def patch_reorder_a11y_menu_items() -> None:
     print("ChatActivity a11y menu items reordered to end (Links, Bot Buttons, Reactions, Select) OK")
 
 
+def validate_links_helpers() -> None:
+    ca=JAVA/"org/telegram/ui/ChatActivity.java"
+    if not ca.exists(): return
+    t=ca.read_text(encoding="utf-8")
+    if "a11y-fork: links menu v1" in t:
+        if "private boolean a11yMessageHasLinks(MessageObject message)" not in t or "private void a11yShowMessageLinks(MessageObject message)" not in t:
+            raise RuntimeError("Links helpers missing from ChatActivity.java")
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -1911,8 +1915,11 @@ def main() -> int:
     patch_reorder_a11y_menu_items()
     patch_go_to_first_message()
     patch_file_description_spacing()
+    patch_chat_message_solar_date()
+    patch_direct_accessibility_long_click()
     patch_chat_message_cell_accessibility_long_click()
     patch_stuck_together_bubbles_long_press()
+    validate_links_helpers()
     print("A11y REAL patches done")
     return 0
 
