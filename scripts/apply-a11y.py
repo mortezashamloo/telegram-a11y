@@ -1320,7 +1320,7 @@ def patch_links_as_menu() -> None:
                 }
             }
             String raw = message.messageOwner.message;
-            return raw != null && raw.matches("(?s).*https?://[^\\s]+.*");
+            return raw != null && raw.matches("(?s).*https?://[^\\\\s]+.*");
         } catch (Throwable ignore) { return false; }
     }
 
@@ -1343,7 +1343,7 @@ def patch_links_as_menu() -> None:
                     if (url != null && url.length()>0 && !links.contains(url)) links.add(url);
                 }
             }
-            java.util.regex.Matcher m=java.util.regex.Pattern.compile("https?://[^\\s<>\"]+").matcher(raw);
+            java.util.regex.Matcher m=java.util.regex.Pattern.compile("https?://[^\\\\s<>\\"]+").matcher(raw);
             while(m.find()) {
                 String url=m.group();
                 while(url.endsWith(".")||url.endsWith(",")||url.endsWith(")")||url.endsWith("]")) url=url.substring(0,url.length()-1);
