@@ -254,6 +254,26 @@ public class A11yConfig {
 
     public static String formatSolarDate(long unixSeconds) {
         try {
+            // a11y-fork: mirror Telegram's own formatDateAudio() behaviour -- for a
+            // message from today or yesterday, native Telegram doesn't speak a real
+            // calendar date at all (just "Today at HH:MM" / "Yesterday at HH:MM"), so
+            // leave those two cases alone (return "") and let that native wording
+            // stand unconverted. Only replace the date for genuinely older messages,
+            // where native would otherwise speak a real Gregorian date.
+            java.util.Calendar rightNow = java.util.Calendar.getInstance();
+            int today = rightNow.get(java.util.Calendar.DAY_OF_YEAR);
+            int thisYear = rightNow.get(java.util.Calendar.YEAR);
+            java.util.Calendar msgCal = java.util.Calendar.getInstance();
+            msgCal.setTimeInMillis(unixSeconds * 1000L);
+            int msgDay = msgCal.get(java.util.Calendar.DAY_OF_YEAR);
+            int msgYear = msgCal.get(java.util.Calendar.YEAR);
+            if (msgYear == thisYear && msgDay == today) {
+                return "";
+            }
+            if (msgYear == thisYear && msgDay + 1 == today) {
+                return "";
+            }
+
             java.util.Calendar cal = java.util.Calendar.getInstance();
             cal.setTimeInMillis(unixSeconds * 1000L);
             int gy = cal.get(java.util.Calendar.YEAR);
@@ -310,6 +330,18 @@ public class A11yConfig {
                     jd, fa ? faMonths[jm - 1] : enMonths[jm - 1], jy);
             if (fa) {
                 date = toPersianDigits(date);
+            }
+            // a11y-fork: append the time-of-day the same way Telegram's own
+            // formatDateAtTime does for an older message ("<date> at <time>"),
+            // using Telegram's own time formatter/localization for the time part.
+            try {
+                String time = org.telegram.messenger.LocaleController.getInstance()
+                        .getFormatterDay().format(new java.util.Date(unixSeconds * 1000L));
+                if (time != null && time.length() > 0) {
+                    date = org.telegram.messenger.LocaleController.formatString(
+                            "formatDateAtTime", org.telegram.messenger.R.string.formatDateAtTime, date, time);
+                }
+            } catch (Throwable ignore) {
             }
             return date;
         } catch (Throwable ignore) {
