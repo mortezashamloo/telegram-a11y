@@ -976,7 +976,7 @@ def patch_recording_beep() -> None:
                     try {
                         // Unconditional haptic cue -- always fires, independent of the beep setting.
                         try {
-                            android.content.Context a11yVibCtx = getApplicationContext();
+                            android.content.Context a11yVibCtx = org.telegram.messenger.ApplicationLoader.applicationContext;
                             if (a11yVibCtx != null) {
                                 android.os.Vibrator a11yVibrator = (android.os.Vibrator) a11yVibCtx.getSystemService(android.content.Context.VIBRATOR_SERVICE);
                                 if (a11yVibrator != null && a11yVibrator.hasVibrator()) {
@@ -991,7 +991,7 @@ def patch_recording_beep() -> None:
                         }
                         if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
                             final android.media.MediaPlayer a11yBeep = android.media.MediaPlayer.create(
-                                    getApplicationContext(), org.telegram.messenger.R.raw.a11y_recording_beep);
+                                    org.telegram.messenger.ApplicationLoader.applicationContext, org.telegram.messenger.R.raw.a11y_recording_beep);
                             if (a11yBeep != null) {
                                 a11yBeep.setAudioAttributes(new android.media.AudioAttributes.Builder()
                                         .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
