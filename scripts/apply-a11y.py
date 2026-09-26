@@ -236,7 +236,7 @@ def patch_a11y_localization() -> None:
             'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
             '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
             '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
-            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", R.string.A11yPercent, step));',
+            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));',
         }
         for old, new in replacements.items():
             t = t.replace(old, new)
@@ -290,8 +290,44 @@ def install_a11y_config() -> None:
         old_handler = "                        } else if (which == 7) {\n                            setSolarCalendar(!getSolarCalendar());\n                            announce(activity, LocaleController.formatString(\n                                    R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));\n                        }\n"
         new_handler = "                        } else if (which == 7) {\n                            setSolarCalendar(!getSolarCalendar());\n                            announce(activity, LocaleController.formatString(\n                                    R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));\n                        } else if (which == 8) {\n                            setLinksMenuEnabled(!getLinksMenuEnabled());\n                            announce(activity, LocaleController.formatString(\n                                    R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));\n                        }\n"
         cfg = cfg.replace(old_handler, new_handler, 1)
+    # a11y-fork: official Telegram-style relative Solar Hijri date for message focus.
+    relative_method = """    public static String formatSolarDateRelative(long unixSeconds) {
+        try {
+            java.util.Calendar target = java.util.Calendar.getInstance();
+            target.setTimeInMillis(unixSeconds * 1000L);
+            java.util.Calendar today = java.util.Calendar.getInstance();
+            if (target.get(java.util.Calendar.YEAR) == today.get(java.util.Calendar.YEAR)
+                    && target.get(java.util.Calendar.DAY_OF_YEAR) == today.get(java.util.Calendar.DAY_OF_YEAR)) {
+                return LocaleController.getString(R.string.Today);
+            }
+            java.util.Calendar yesterday = (java.util.Calendar) today.clone();
+            yesterday.add(java.util.Calendar.DAY_OF_YEAR, -1);
+            if (target.get(java.util.Calendar.YEAR) == yesterday.get(java.util.Calendar.YEAR)
+                    && target.get(java.util.Calendar.DAY_OF_YEAR) == yesterday.get(java.util.Calendar.DAY_OF_YEAR)) {
+                return LocaleController.getString(R.string.Yesterday);
+            }
+            String full = formatSolarDate(unixSeconds);
+            if (full == null || full.length() == 0) return "";
+            String todayFull = formatSolarDate(today.getTimeInMillis() / 1000L);
+            String targetYear = full.substring(full.lastIndexOf(' ') + 1);
+            String todayYear = todayFull.substring(todayFull.lastIndexOf(' ') + 1);
+            if (targetYear.equals(todayYear)) {
+                int lastSpace = full.lastIndexOf(' ');
+                if (lastSpace > 0) return full.substring(0, lastSpace);
+            }
+            return full;
+        } catch (Throwable ignore) {
+            return "";
+        }
+    }
+
+"""
+    if "formatSolarDateRelative(long unixSeconds)" not in cfg:
+        pos = cfg.find("    private static String toPersianDigits")
+        if pos >= 0:
+            cfg = cfg[:pos] + relative_method + cfg[pos:]
     dst.write_text(cfg, encoding="utf-8")
-    print("A11yConfig.java installed + recording beep OFF by default (vibration unconditional) + Jalali default ON + Links toggle")
+    print("A11yConfig.java installed + localized settings + relative Solar date")
     # a11y-fork: locale-independent Solar Hijri date in YYYY/MM/DD form.
     solar_start=cfg.find("    public static String formatSolarDate(int unixSeconds) {")
     if solar_start >= 0:
@@ -773,14 +809,15 @@ def patch_longpress_message_menu() -> None:
         "            startMultiselect(chatListView.getChildAdapterPosition(cell));"
     )
     new_dlp = (
-        "            createMenu(cell, false, false, x, y, false);\n"
-        "            // a11y-fork: do not auto-start multi-select under TalkBack\n"
+        "            // a11y-fork: open the single-message options menu reliably under TalkBack\n"
         "            boolean a11yOn2 = false;\n"
         "            try {\n"
         "                android.view.accessibility.AccessibilityManager am2 = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n"
         "                a11yOn2 = am2 != null && am2.isEnabled();\n"
         "            } catch (Throwable ignore) {}\n"
-        "            if (!a11yOn2 || actionBar.isActionModeShowed()) {\n"
+        "            if (a11yOn2 && !actionBar.isActionModeShowed()) {\n"
+        "                createMenu(cell, true, false, x, y, false);\n"
+        "            } else {\n"
         "                startMultiselect(chatListView.getChildAdapterPosition(cell));\n"
         "            }"
     )
@@ -990,15 +1027,19 @@ def patch_recording_beep() -> None:
                         } catch (Throwable ignoreVib) {
                         }
                         if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
-                            final android.media.MediaPlayer a11yBeep = android.media.MediaPlayer.create(
-                                    org.telegram.messenger.ApplicationLoader.applicationContext, org.telegram.messenger.R.raw.a11y_recording_beep);
-                            if (a11yBeep != null) {
-                                a11yBeep.setAudioAttributes(new android.media.AudioAttributes.Builder()
-                                        // a11y-fork: ring-volume stream so the beep is reliably audible
-                                        // (the accessibility stream is muted/uncontrolled on many devices)
-                                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                        .build());
+                            // a11y-fork: set AudioAttributes BEFORE prepare() -- MediaPlayer.create()
+                            // prepares internally with default attributes first, and changing
+                            // attributes afterward is unreliable on many OEMs (silent/wrong stream).
+                            final android.media.MediaPlayer a11yBeep = new android.media.MediaPlayer();
+                            a11yBeep.setAudioAttributes(new android.media.AudioAttributes.Builder()
+                                    .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build());
+                            android.content.res.AssetFileDescriptor a11yAfd = org.telegram.messenger.ApplicationLoader.applicationContext
+                                    .getResources().openRawResourceFd(org.telegram.messenger.R.raw.a11y_recording_beep);
+                            if (a11yAfd != null) {
+                                a11yBeep.setDataSource(a11yAfd.getFileDescriptor(), a11yAfd.getStartOffset(), a11yAfd.getLength());
+                                a11yAfd.close();
                                 a11yBeep.setOnCompletionListener(player -> {
                                     try { player.release(); } catch (Throwable ignore) {}
                                 });
@@ -1006,6 +1047,7 @@ def patch_recording_beep() -> None:
                                     try { player.release(); } catch (Throwable ignore) {}
                                     return true;
                                 });
+                                a11yBeep.prepare();
                                 a11yBeep.start();
                             }
                         }
@@ -1178,7 +1220,7 @@ def patch_dialogcell_preview_muted_status() -> None:
             "        String a11yDateValue = LocaleController.formatDateAudio(lastDate, true);\n"
             "        try {\n"
             "            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n"
-            "                String a11ySolarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);\n"
+            "                String a11ySolarDate = org.telegram.messenger.A11yConfig.formatSolarDateRelative(lastDate);\n"
             "                if (a11ySolarDate != null && a11ySolarDate.length() > 0) {\n"
             "                    a11yDateValue = a11ySolarDate;\n"
             "                }\n"
@@ -1204,6 +1246,25 @@ def patch_dialogcell_preview_muted_status() -> None:
 
     dc.write_text(t, encoding="utf-8")
     print("DialogCell muted removed / status announce / preview-300 / time-last OK")
+
+
+def patch_remove_solar_from_preview() -> None:
+    """Remove older fork code that appended Solar dates to chat-list previews."""
+    dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
+    if not dc.exists():
+        return
+    t = dc.read_text(encoding="utf-8")
+    patterns = [
+        r'\n        // a11y-fork: solar-calendar\n        try \{.*?\n        \} catch \(Throwable ignore\) \{\n        \}\n',
+        r'\n        // a11y-fork: solar-calendar.*?event\.setContentDescription\(sb\);',
+    ]
+    for pat in patterns:
+        t2, n = re.subn(pat, "\n", t, count=1, flags=re.S)
+        if n:
+            t = t2
+            print("DialogCell old solar preview block removed")
+            break
+    dc.write_text(t, encoding="utf-8")
 
 
 def patch_hide_sponsor_channel() -> None:
@@ -1710,6 +1771,69 @@ def patch_file_description_spacing() -> None:
     # AccDescrDocumentType is no longer referenced by the patched block above
     # (the clean "file <name>" text is built directly in Java), so it's left untouched.
 
+def patch_chat_message_cell_granularity_navigation() -> None:
+    """Implement real character/word TalkBack text-navigation for the message
+    accessibility node. The base View class's performAccessibilityAction has no
+    text-cursor concept for a non-TextView custom View, so ACTION_NEXT/PREVIOUS_
+    AT_MOVEMENT_GRANULARITY were never handled -- TalkBack would fall through to
+    unrelated "move to next accessibility element" behavior (observed as jumping
+    to the toolbar's Search button) instead of stepping character-by-character
+    or word-by-word through the message text. This adds the missing declaration
+    (setMovementGranularities/addAction) plus the actual traversal logic.
+    """
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists():
+        print("WARN: ChatMessageCell missing (granularity navigation)")
+        return
+    t = cmc.read_text(encoding="utf-8")
+    marker = "a11y-fork: granularity-navigation-v1"
+    if marker in t:
+        print("ChatMessageCell granularity navigation already patched")
+        return
+
+    field_anchor = "    CharSequence accessibilityText;"
+    if field_anchor not in t:
+        print("WARN: accessibilityText field anchor not found (granularity navigation)")
+        return
+    t = t.replace(field_anchor, field_anchor + "\n    private int a11yGranularityCursor = -1; // " + marker, 1)
+
+    reset_anchor = "        accessibilityText = null;"
+    if reset_anchor not in t:
+        print("WARN: accessibilityText reset anchor not found (granularity navigation)")
+        return
+    t = t.replace(reset_anchor, reset_anchor + "\n        a11yGranularityCursor = -1;", 1)
+
+    decl_anchor = (
+        "                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {\n"
+        "                    info.setContentDescription(accessibilityText.toString());\n"
+        "                } else {\n"
+        "                    info.setText(accessibilityText);\n"
+        "                }\n"
+    )
+    if decl_anchor not in t:
+        print("WARN: host info.setText anchor not found (granularity navigation)")
+        return
+    decl_new = (
+        "                // " + marker + "\n"
+        "                info.setMovementGranularities(AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER\n"
+        "                        | AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD);\n"
+        "                info.addAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY);\n"
+        "                info.addAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY);\n"
+        + decl_anchor
+    )
+    t = t.replace(decl_anchor, decl_new, 1)
+
+    trav_anchor = "        return super.performAccessibilityAction(action, arguments);\n    }"
+    if trav_anchor not in t:
+        print("WARN: performAccessibilityAction fallthrough anchor not found (granularity navigation)")
+        return
+    trav_new = '        // a11y-fork: granularity-navigation-v1\n        if ((action == AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY\n                || action == AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY)\n                && arguments != null && accessibilityText != null) {\n            try {\n                int a11yGranularity = arguments.getInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT);\n                boolean a11yForward = action == AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY;\n                String a11yFullText = accessibilityText.toString();\n                int a11yLen = a11yFullText.length();\n                int a11yCur = a11yGranularityCursor;\n                if (a11yCur < 0 || a11yCur > a11yLen) {\n                    a11yCur = a11yForward ? 0 : a11yLen;\n                }\n                int[] a11ySeg = null;\n                if (a11yGranularity == AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER) {\n                    if (a11yForward) {\n                        if (a11yCur < a11yLen) {\n                            int a11yNext = a11yCur + Character.charCount(a11yFullText.codePointAt(a11yCur));\n                            a11ySeg = new int[]{a11yCur, Math.min(a11yLen, a11yNext)};\n                        }\n                    } else {\n                        if (a11yCur > 0) {\n                            int a11yPrev = a11yCur - Character.charCount(a11yFullText.codePointBefore(a11yCur));\n                            a11ySeg = new int[]{Math.max(0, a11yPrev), a11yCur};\n                        }\n                    }\n                } else if (a11yGranularity == AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD) {\n                    android.icu.text.BreakIterator a11yWordIt = android.icu.text.BreakIterator.getWordInstance();\n                    a11yWordIt.setText(a11yFullText);\n                    if (a11yForward) {\n                        int a11yStart = a11yWordIt.following(Math.max(0, Math.min(a11yLen - 1, a11yCur - 1)));\n                        while (a11yStart != android.icu.text.BreakIterator.DONE && a11yStart < a11yLen) {\n                            int a11yEnd = a11yWordIt.next();\n                            if (a11yEnd == android.icu.text.BreakIterator.DONE) break;\n                            if (Character.isLetterOrDigit(a11yFullText.codePointAt(a11yStart))) {\n                                a11ySeg = new int[]{a11yStart, a11yEnd};\n                                break;\n                            }\n                            a11yStart = a11yEnd;\n                        }\n                    } else {\n                        int a11yEnd = a11yWordIt.preceding(Math.max(0, Math.min(a11yLen, a11yCur)));\n                        while (a11yEnd != android.icu.text.BreakIterator.DONE && a11yEnd > 0) {\n                            int a11yStart = a11yWordIt.previous();\n                            if (a11yStart == android.icu.text.BreakIterator.DONE) break;\n                            if (a11yStart < a11yEnd && Character.isLetterOrDigit(a11yFullText.codePointAt(a11yStart))) {\n                                a11ySeg = new int[]{a11yStart, a11yEnd};\n                                break;\n                            }\n                            a11yEnd = a11yStart;\n                        }\n                    }\n                }\n                if (a11ySeg != null) {\n                    a11yGranularityCursor = a11yForward ? a11ySeg[1] : a11ySeg[0];\n                    AccessibilityEvent a11yTravEvent = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_TEXT_TRAVERSED_AT_MOVEMENT_GRANULARITY);\n                    a11yTravEvent.setPackageName(getContext().getPackageName());\n                    a11yTravEvent.setSource(ChatMessageCell.this, AccessibilityNodeProvider.HOST_VIEW_ID);\n                    a11yTravEvent.setFromIndex(a11ySeg[0]);\n                    a11yTravEvent.setToIndex(a11ySeg[1]);\n                    a11yTravEvent.setAction(action);\n                    a11yTravEvent.setMovementGranularity(a11yGranularity);\n                    a11yTravEvent.getText().add(a11yFullText);\n                    if (getParent() != null) {\n                        getParent().requestSendAccessibilityEvent(ChatMessageCell.this, a11yTravEvent);\n                    }\n                    return true;\n                }\n                return false;\n            } catch (Throwable a11yGranErr) {\n                FileLog.e(a11yGranErr);\n            }\n        }\n        return super.performAccessibilityAction(action, arguments);\n    }'
+    t = t.replace(trav_anchor, trav_new, 1)
+
+    cmc.write_text(t, encoding="utf-8")
+    print("ChatMessageCell granularity navigation v1 OK")
+
+
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
@@ -1725,8 +1849,8 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
         "        if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
         "            try {\n"
         "                if (delegate != null && currentMessageObject != null) {\n"
-        "                    float a11yX = lastTouchX > 0 ? lastTouchX : getWidth() / 2f;\n"
-        "                    float a11yY = lastTouchY > 0 ? lastTouchY : getHeight() / 2f;\n"
+        "                    float a11yX = getWidth() / 2f;\n"
+        "                    float a11yY = getHeight() / 2f;\n"
         "                    delegate.didLongPress(ChatMessageCell.this, a11yX, a11yY);\n"
         "                    return true;\n"
         "                }\n"
@@ -1747,8 +1871,8 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
         "                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
         "                    try {\n"
         "                        if (delegate != null && currentMessageObject != null) {\n"
-        "                            float a11yX = lastTouchX > 0 ? lastTouchX : getWidth() / 2f;\n"
-        "                            float a11yY = lastTouchY > 0 ? lastTouchY : getHeight() / 2f;\n"
+        "                            float a11yX = getWidth() / 2f;\n"
+        "                            float a11yY = getHeight() / 2f;\n"
         "                            delegate.didLongPress(ChatMessageCell.this, a11yX, a11yY);\n"
         "                            sendAccessibilityEventForVirtualView(virtualViewId, AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);\n"
         "                            return true;\n"
@@ -1925,6 +2049,7 @@ def main() -> int:
     patch_settings_menu()
     patch_recording_beep()
     patch_dialogcell_preview_muted_status()
+    patch_remove_solar_from_preview()
     patch_chat_message_cell_float_coordinates()
     patch_hide_sponsor_channel()
     patch_ghost_mode()
@@ -1934,7 +2059,14 @@ def main() -> int:
     patch_go_to_first_message()
     patch_file_description_spacing()
     patch_chat_message_cell_accessibility_long_click()
+    patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if ca.exists():
+        chat_text = ca.read_text(encoding="utf-8")
+        for required in ("a11yMessageHasLinks", "a11yShowMessageLinks"):
+            if required not in chat_text:
+                raise RuntimeError(f"Required ChatActivity helper missing after patching: {required}")
     print("A11y REAL patches done")
     return 0
 

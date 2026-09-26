@@ -228,7 +228,7 @@ public class A11yConfig {
 
     public static boolean getSolarCalendar() {
         try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_SOLAR_CALENDAR, false);
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_SOLAR_CALENDAR, true);
         } catch (Throwable ignore) {
             return false;
         }
@@ -254,96 +254,57 @@ public class A11yConfig {
 
     public static String formatSolarDate(long unixSeconds) {
         try {
-            // a11y-fork: mirror Telegram's own formatDateAudio() behaviour -- for a
-            // message from today or yesterday, native Telegram doesn't speak a real
-            // calendar date at all (just "Today at HH:MM" / "Yesterday at HH:MM"), so
-            // leave those two cases alone (return "") and let that native wording
-            // stand unconverted. Only replace the date for genuinely older messages,
-            // where native would otherwise speak a real Gregorian date.
-            java.util.Calendar rightNow = java.util.Calendar.getInstance();
-            int today = rightNow.get(java.util.Calendar.DAY_OF_YEAR);
-            int thisYear = rightNow.get(java.util.Calendar.YEAR);
-            java.util.Calendar msgCal = java.util.Calendar.getInstance();
-            msgCal.setTimeInMillis(unixSeconds * 1000L);
-            int msgDay = msgCal.get(java.util.Calendar.DAY_OF_YEAR);
-            int msgYear = msgCal.get(java.util.Calendar.YEAR);
-            if (msgYear == thisYear && msgDay == today) {
-                return "";
-            }
-            if (msgYear == thisYear && msgDay + 1 == today) {
-                return "";
-            }
-
             java.util.Calendar cal = java.util.Calendar.getInstance();
             cal.setTimeInMillis(unixSeconds * 1000L);
             int gy = cal.get(java.util.Calendar.YEAR);
             int gm = cal.get(java.util.Calendar.MONTH) + 1;
             int gd = cal.get(java.util.Calendar.DAY_OF_MONTH);
-
             int jy;
-            if (gy > 1600) {
-                jy = 979;
-                gy -= 1600;
-            } else {
-                jy = 0;
-                gy -= 621;
-            }
-
+            if (gy > 1600) { jy = 979; gy -= 1600; }
+            else { jy = 0; gy -= 621; }
             int[] gdm = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
             int gy2 = gm > 2 ? gy + 1 : gy;
-            int days = 365 * gy
-                    + (gy2 + 3) / 4
-                    - (gy2 + 99) / 100
-                    + (gy2 + 399) / 400
-                    - 80 + gd + gdm[gm - 1];
-
-            jy += 33 * (days / 12053);
-            days %= 12053;
-            jy += 4 * (days / 1461);
-            days %= 1461;
-            if (days > 365) {
-                jy += (days - 1) / 365;
-                days = (days - 1) % 365;
-            }
-
+            int days = 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 - 80 + gd + gdm[gm - 1];
+            jy += 33 * (days / 12053); days %= 12053;
+            jy += 4 * (days / 1461); days %= 1461;
+            if (days > 365) { jy += (days - 1) / 365; days = (days - 1) % 365; }
             int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;
             int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);
+            String[] faMonths = {"فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"};
+            String[] enMonths = {"Farvardin", "Ordibehesht", "Khordad", "Tir", "Mordad", "Shahrivar", "Mehr", "Aban", "Azar", "Dey", "Bahman", "Esfand"};
+            boolean fa = "fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
+            String value = String.format(java.util.Locale.US, "%d %s %d", jd, fa ? faMonths[jm - 1] : enMonths[jm - 1], jy);
+            return fa ? toPersianDigits(value) : value;
+        } catch (Throwable ignore) {
+            return "";
+        }
+    }
 
-            String[] faMonths = {
-                    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
-                    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
-            };
-            String[] enMonths = {
-                    "Farvardin", "Ordibehesht", "Khordad", "Tir", "Mordad", "Shahrivar",
-                    "Mehr", "Aban", "Azar", "Dey", "Bahman", "Esfand"
-            };
-
-            boolean fa = false;
-            try {
-                java.util.Locale locale = java.util.Locale.getDefault();
-                fa = "fa".equalsIgnoreCase(locale.getLanguage());
-            } catch (Throwable ignore) {
-                fa = "fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
+    public static String formatSolarDateRelative(long unixSeconds) {
+        try {
+            java.util.Calendar target = java.util.Calendar.getInstance();
+            target.setTimeInMillis(unixSeconds * 1000L);
+            java.util.Calendar today = java.util.Calendar.getInstance();
+            if (target.get(java.util.Calendar.YEAR) == today.get(java.util.Calendar.YEAR)
+                    && target.get(java.util.Calendar.DAY_OF_YEAR) == today.get(java.util.Calendar.DAY_OF_YEAR)) {
+                return LocaleController.getString(R.string.Today);
             }
-
-            String date = String.format(java.util.Locale.US, "%d %s %d",
-                    jd, fa ? faMonths[jm - 1] : enMonths[jm - 1], jy);
-            if (fa) {
-                date = toPersianDigits(date);
+            java.util.Calendar yesterday = (java.util.Calendar) today.clone();
+            yesterday.add(java.util.Calendar.DAY_OF_YEAR, -1);
+            if (target.get(java.util.Calendar.YEAR) == yesterday.get(java.util.Calendar.YEAR)
+                    && target.get(java.util.Calendar.DAY_OF_YEAR) == yesterday.get(java.util.Calendar.DAY_OF_YEAR)) {
+                return LocaleController.getString(R.string.Yesterday);
             }
-            // a11y-fork: append the time-of-day the same way Telegram's own
-            // formatDateAtTime does for an older message ("<date> at <time>"),
-            // using Telegram's own time formatter/localization for the time part.
-            try {
-                String time = org.telegram.messenger.LocaleController.getInstance()
-                        .getFormatterDay().format(new java.util.Date(unixSeconds * 1000L));
-                if (time != null && time.length() > 0) {
-                    date = org.telegram.messenger.LocaleController.formatString(
-                            "formatDateAtTime", org.telegram.messenger.R.string.formatDateAtTime, date, time);
-                }
-            } catch (Throwable ignore) {
+            String full = formatSolarDate(unixSeconds);
+            if (full.length() == 0) return full;
+            String todayFull = formatSolarDate(today.getTimeInMillis() / 1000L);
+            String targetYear = full.substring(full.lastIndexOf(' ') + 1);
+            String todayYear = todayFull.substring(todayFull.lastIndexOf(' ') + 1);
+            if (targetYear.equals(todayYear)) {
+                int lastSpace = full.lastIndexOf(' ');
+                if (lastSpace > 0) return full.substring(0, lastSpace);
             }
-            return date;
+            return full;
         } catch (Throwable ignore) {
             return "";
         }
