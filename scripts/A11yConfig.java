@@ -228,7 +228,7 @@ public class A11yConfig {
 
     public static boolean getSolarCalendar() {
         try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_SOLAR_CALENDAR, true);
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_SOLAR_CALENDAR, false);
         } catch (Throwable ignore) {
             return false;
         }
@@ -252,6 +252,81 @@ public class A11yConfig {
     // Accepts `long` because DialogCell's `lastDate` is a long.
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // Solar Hijri for the chat's own date-separator headers (LocaleController.
+    // formatDateChat): "21 Mehr" for a recent message, "21 Mehr, 1404" once it's
+    // further back -- mirrors native's own short/full decision (checkYear param,
+    // or within-1-year test) so the year appears exactly when Gregorian mode
+    // would also show a year, just translated to Jalali.
+    // ------------------------------------------------------------------
+    public static String formatSolarDateChat(long unixSeconds, boolean checkYear) {
+        try {
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            int currentYear = now.get(java.util.Calendar.YEAR);
+            long dateMillis = unixSeconds * 1000L;
+
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.setTimeInMillis(dateMillis);
+            boolean includeYear = !((checkYear && currentYear == cal.get(java.util.Calendar.YEAR))
+                    || (!checkYear && Math.abs(System.currentTimeMillis() - dateMillis) < 31536000000L));
+
+            int gy = cal.get(java.util.Calendar.YEAR);
+            int gm = cal.get(java.util.Calendar.MONTH) + 1;
+            int gd = cal.get(java.util.Calendar.DAY_OF_MONTH);
+
+            int jy;
+            if (gy > 1600) {
+                jy = 979;
+                gy -= 1600;
+            } else {
+                jy = 0;
+                gy -= 621;
+            }
+
+            int[] gdm = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+            int gy2 = gm > 2 ? gy + 1 : gy;
+            int days = 365 * gy
+                    + (gy2 + 3) / 4
+                    - (gy2 + 99) / 100
+                    + (gy2 + 399) / 400
+                    - 80 + gd + gdm[gm - 1];
+
+            jy += 33 * (days / 12053);
+            days %= 12053;
+            jy += 4 * (days / 1461);
+            days %= 1461;
+            if (days > 365) {
+                jy += (days - 1) / 365;
+                days = (days - 1) % 365;
+            }
+
+            int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;
+            int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);
+
+            String[] faMonths = {
+                    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+                    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
+            };
+            String[] enMonths = {
+                    "Farvardin", "Ordibehesht", "Khordad", "Tir", "Mordad", "Shahrivar",
+                    "Mehr", "Aban", "Azar", "Dey", "Bahman", "Esfand"
+            };
+
+            boolean fa = "fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
+            String month = (fa ? faMonths : enMonths)[jm - 1];
+
+            String date = includeYear
+                    ? String.format(java.util.Locale.US, "%d %s, %d", jd, month, jy)
+                    : String.format(java.util.Locale.US, "%d %s", jd, month);
+            if (fa) {
+                date = toPersianDigits(date);
+            }
+            return date;
+        } catch (Throwable ignore) {
+            return "";
+        }
+    }
+
     public static String formatSolarDate(long unixSeconds) {
         try {
             java.util.Calendar cal = java.util.Calendar.getInstance();
@@ -259,52 +334,71 @@ public class A11yConfig {
             int gy = cal.get(java.util.Calendar.YEAR);
             int gm = cal.get(java.util.Calendar.MONTH) + 1;
             int gd = cal.get(java.util.Calendar.DAY_OF_MONTH);
+
             int jy;
-            if (gy > 1600) { jy = 979; gy -= 1600; }
-            else { jy = 0; gy -= 621; }
+            if (gy > 1600) {
+                jy = 979;
+                gy -= 1600;
+            } else {
+                jy = 0;
+                gy -= 621;
+            }
+
             int[] gdm = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
             int gy2 = gm > 2 ? gy + 1 : gy;
-            int days = 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 - 80 + gd + gdm[gm - 1];
-            jy += 33 * (days / 12053); days %= 12053;
-            jy += 4 * (days / 1461); days %= 1461;
-            if (days > 365) { jy += (days - 1) / 365; days = (days - 1) % 365; }
+            int days = 365 * gy
+                    + (gy2 + 3) / 4
+                    - (gy2 + 99) / 100
+                    + (gy2 + 399) / 400
+                    - 80 + gd + gdm[gm - 1];
+
+            jy += 33 * (days / 12053);
+            days %= 12053;
+            jy += 4 * (days / 1461);
+            days %= 1461;
+            if (days > 365) {
+                jy += (days - 1) / 365;
+                days = (days - 1) % 365;
+            }
+
             int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;
             int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);
-            String[] faMonths = {"فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"};
-            String[] enMonths = {"Farvardin", "Ordibehesht", "Khordad", "Tir", "Mordad", "Shahrivar", "Mehr", "Aban", "Azar", "Dey", "Bahman", "Esfand"};
-            boolean fa = "fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
-            String value = String.format(java.util.Locale.US, "%d %s %d", jd, fa ? faMonths[jm - 1] : enMonths[jm - 1], jy);
-            return fa ? toPersianDigits(value) : value;
-        } catch (Throwable ignore) {
-            return "";
-        }
-    }
 
-    public static String formatSolarDateRelative(long unixSeconds) {
-        try {
-            java.util.Calendar target = java.util.Calendar.getInstance();
-            target.setTimeInMillis(unixSeconds * 1000L);
-            java.util.Calendar today = java.util.Calendar.getInstance();
-            if (target.get(java.util.Calendar.YEAR) == today.get(java.util.Calendar.YEAR)
-                    && target.get(java.util.Calendar.DAY_OF_YEAR) == today.get(java.util.Calendar.DAY_OF_YEAR)) {
-                return LocaleController.getString(R.string.Today);
+            String[] faMonths = {
+                    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+                    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
+            };
+            String[] enMonths = {
+                    "Farvardin", "Ordibehesht", "Khordad", "Tir", "Mordad", "Shahrivar",
+                    "Mehr", "Aban", "Azar", "Dey", "Bahman", "Esfand"
+            };
+
+            boolean fa = false;
+            try {
+                java.util.Locale locale = java.util.Locale.getDefault();
+                fa = "fa".equalsIgnoreCase(locale.getLanguage());
+            } catch (Throwable ignore) {
+                fa = "fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
             }
-            java.util.Calendar yesterday = (java.util.Calendar) today.clone();
-            yesterday.add(java.util.Calendar.DAY_OF_YEAR, -1);
-            if (target.get(java.util.Calendar.YEAR) == yesterday.get(java.util.Calendar.YEAR)
-                    && target.get(java.util.Calendar.DAY_OF_YEAR) == yesterday.get(java.util.Calendar.DAY_OF_YEAR)) {
-                return LocaleController.getString(R.string.Yesterday);
+
+            String date = String.format(java.util.Locale.US, "%d %s %d",
+                    jd, fa ? faMonths[jm - 1] : enMonths[jm - 1], jy);
+            if (fa) {
+                date = toPersianDigits(date);
             }
-            String full = formatSolarDate(unixSeconds);
-            if (full.length() == 0) return full;
-            String todayFull = formatSolarDate(today.getTimeInMillis() / 1000L);
-            String targetYear = full.substring(full.lastIndexOf(' ') + 1);
-            String todayYear = todayFull.substring(todayFull.lastIndexOf(' ') + 1);
-            if (targetYear.equals(todayYear)) {
-                int lastSpace = full.lastIndexOf(' ');
-                if (lastSpace > 0) return full.substring(0, lastSpace);
+            // a11y-fork: append the time-of-day the same way Telegram's own
+            // formatDateAtTime does for an older message ("<date> at <time>"),
+            // using Telegram's own time formatter/localization for the time part.
+            try {
+                String time = org.telegram.messenger.LocaleController.getInstance()
+                        .getFormatterDay().format(new java.util.Date(unixSeconds * 1000L));
+                if (time != null && time.length() > 0) {
+                    date = org.telegram.messenger.LocaleController.formatString(
+                            "formatDateAtTime", org.telegram.messenger.R.string.formatDateAtTime, date, time);
+                }
+            } catch (Throwable ignore) {
             }
-            return full;
+            return date;
         } catch (Throwable ignore) {
             return "";
         }
