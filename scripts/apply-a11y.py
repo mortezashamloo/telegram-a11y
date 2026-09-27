@@ -236,7 +236,7 @@ def patch_a11y_localization() -> None:
             'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
             '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
             '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
-            'parent.announceForAccessibility(step + " percent");': 'parent.announceForAccessibility(LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));',
+            'parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));': 'parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));',
         }
         for old, new in replacements.items():
             t = t.replace(old, new)
@@ -318,12 +318,26 @@ def install_a11y_config() -> None:
             String[] en={"Farvardin","Ordibehesht","Khordad","Tir","Mordad","Shahrivar","Mehr","Aban","Azar","Dey","Bahman","Esfand"};
             boolean isFa="fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
             String month=(isFa ? fa : en)[jm-1];
-            if (isFa) {
-                String value=String.format(java.util.Locale.US, "%d %s %d", jd, month, jy);
-                return LocaleController.formatString(R.string.A11ySolarDate, toPersianDigits(value));
+            // Match Telegram's date navigation convention: the current Solar year
+            // is omitted; older/newer years include the year.
+            java.util.Calendar now=java.util.Calendar.getInstance();
+            int nowGy=now.get(java.util.Calendar.YEAR);
+            int nowGm=now.get(java.util.Calendar.MONTH)+1;
+            int nowGd=now.get(java.util.Calendar.DAY_OF_MONTH);
+            int nowJy;
+            if (nowGy > 1600) { nowJy=979; nowGy-=1600; } else { nowJy=0; nowGy-=621; }
+            int nowGy2=nowGm > 2 ? nowGy+1 : nowGy;
+            int nowDays=365*nowGy+(nowGy2+3)/4-(nowGy2+99)/100+(nowGy2+399)/400-80+nowGd+gdm[nowGm-1];
+            nowJy+=33*(nowDays/12053); nowDays%=12053;
+            nowJy+=4*(nowDays/1461); nowDays%=1461;
+            if (nowDays > 365) { nowJy+=(nowDays-1)/365; nowDays=(nowDays-1)%365; }
+            String value;
+            if (jy == nowJy) {
+                value=String.format(java.util.Locale.US, "%d %s", jd, month);
+            } else {
+                value=String.format(java.util.Locale.US, "%d %s %d", jd, month, jy);
             }
-            String value=String.format(java.util.Locale.US, "%d %s %d", jd, month, jy);
-            return LocaleController.formatString(R.string.A11ySolarDate, value);
+            return LocaleController.formatString(R.string.A11ySolarDate, isFa ? toPersianDigits(value) : value);
         } catch (Throwable ignore) { return ""; }
     }
 
@@ -338,6 +352,25 @@ def _inject_progress_announce(java_path: Path) -> None:
         print(f"WARN: {java_path.name} missing")
         return
     t = java_path.read_text(encoding="utf-8")
+    # Cached Telegram trees can already contain an older accessibility patch.
+    # Normalize that stale block instead of returning early, otherwise an old
+    # unqualified LocaleController/R reference can survive into the build.
+    stale_patterns = [
+        'LocaleController.formatString("A11yPercent", R.string.A11yPercent, step)',
+        'parent.announceForAccessibility(step + " percent");',
+    ]
+    fixed_call = 'org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step)'
+    changed_stale = False
+    for stale in stale_patterns:
+        if stale in t:
+            if stale.startswith('parent.announceForAccessibility'):
+                t = t.replace(stale, 'parent.announceForAccessibility(' + fixed_call + ');')
+            else:
+                t = t.replace(stale, fixed_call)
+            changed_stale = True
+    if changed_stale:
+        java_path.write_text(t, encoding="utf-8")
+        print(f"{java_path.name} stale progress references normalized")
     if "a11y-fork: announce progress only if focused" in t:
         print(f"{java_path.name} already patched (focus-aware)")
         return
@@ -929,54 +962,6 @@ def patch_chat_message_cell_float_coordinates() -> None:
         print("ChatMessageCell float coordinate fix already OK/not needed")
 
 
-def patch_locale_controller_solar_date_chat() -> None:
-    """Solar Hijri support for the chat's own date-separator headers (the
-    floating "21 September" / "25 December, 2025" dividers between messages
-    from different days) -- this is what TalkBack actually reads when moving
-    between messages and landing on a date divider, not the per-message
-    sent/received time. Deliberately NOT applied to DialogCell's chat-list
-    preview -- native Telegram doesn't speak a full date there either for the
-    common case, so that stays untouched (see patch_dialogcell_preview_muted_status).
-    Patches the single shared LocaleController.formatDateChat() rather than each
-    of its ~10 call sites individually, so Solar Hijri applies consistently
-    everywhere Telegram shows this kind of date (chat dividers, Stars
-    subscription dates, browser history headers, etc.) once the setting is on.
-    """
-    lc = JAVA / "org/telegram/messenger/LocaleController.java"
-    if not lc.exists():
-        print("WARN: LocaleController missing (solar date chat)")
-        return
-    t = lc.read_text(encoding="utf-8")
-    marker = "a11y-fork: solar date chat"
-    if marker in t:
-        print("LocaleController solar date-chat already patched")
-        return
-    old = (
-        "    public static String formatDateChat(long date, boolean checkYear) {\n"
-        "        try {\n"
-    )
-    new = (
-        "    public static String formatDateChat(long date, boolean checkYear) {\n"
-        "        try {\n"
-        "            // " + marker + "\n"
-        "            try {\n"
-        "                if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n"
-        "                    String a11ySolar = org.telegram.messenger.A11yConfig.formatSolarDateChat(date, checkYear);\n"
-        "                    if (a11ySolar != null && a11ySolar.length() > 0) {\n"
-        "                        return a11ySolar;\n"
-        "                    }\n"
-        "                }\n"
-        "            } catch (Throwable ignoreSolar) {\n"
-        "            }\n"
-    )
-    if old not in t:
-        print("WARN: formatDateChat anchor not found (solar date chat)")
-        return
-    t = t.replace(old, new, 1)
-    lc.write_text(t, encoding="utf-8")
-    print("LocaleController solar date-chat OK")
-
-
 def patch_recording_beep() -> None:
     """Recording start feedback: unconditional short vibration + an optional beep.
 
@@ -1068,6 +1053,45 @@ def patch_recording_beep() -> None:
     t = t.replace(needle, replacement, 1)
     mc.write_text(t, encoding="utf-8")
     print("MediaController bundled WAV recording-start beep OK")
+
+def patch_solar_calendar_preview() -> None:
+    """
+    When enabled, append the converted Solar Hijri/Jalali date to the
+    TalkBack chat-list preview. Disabled by default via A11yConfig.
+    """
+    dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
+    if not dc.exists():
+        print("WARN: DialogCell missing (solar calendar)")
+        return
+    t = dc.read_text(encoding="utf-8")
+    marker = "a11y-fork: solar-calendar"
+    if marker in t:
+        print("DialogCell solar calendar already patched")
+        return
+
+    old = """        sb.append(a11yClockTime);
+        sb.append(". ");
+        event.setContentDescription(sb);"""
+    new = """        sb.append(a11yClockTime);
+        sb.append(". ");
+        // a11y-fork: solar-calendar
+        try {
+            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {
+                String solarDate = org.telegram.messenger.A11yConfig.formatSolarDate(lastDate);
+                if (solarDate != null && solarDate.length() > 0) {
+                    sb.append(solarDate);
+                    sb.append(". ");
+                }
+            }
+        } catch (Throwable ignore) {
+        }
+        event.setContentDescription(sb);"""
+    if old not in t:
+        print("WARN: DialogCell time tail anchor not found (solar calendar)")
+        return
+    t = t.replace(old, new, 1)
+    dc.write_text(t, encoding="utf-8")
+    print("DialogCell solar calendar preview OK")
 
 def patch_settings_menu() -> None:
     sa = JAVA / "org/telegram/ui/SettingsActivity.java"
@@ -1162,55 +1186,8 @@ def patch_dialogcell_preview_muted_status() -> None:
     else:
         t = t.replace(old_len, new_len)
 
-    # Move the sent/received time announcement from its early position to
-    # the very end (after the sender name and message preview), reworded
-    # to "receive @5:55pm" / "sent @5:55pm".
-    old_date_block = (
-        "        String date = LocaleController.formatDateAudio(lastDate, true);\n"
-        "        if (message.isOut()) {\n"
-        "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date));\n"
-        "        } else {\n"
-        "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, date));\n"
-        "        }\n"
-        "        sb.append(\". \");\n"
-    )
-    if old_date_block not in t:
-        print("WARN: DialogCell sent/received date block not found")
-    else:
-        t = t.replace(old_date_block, "", 1)
-        old_tail = (
-            "        event.setContentDescription(sb);\n"
-            "        setContentDescription(sb);\n"
-            "    }\n"
-            "\n"
-            "    private MessageObject getCaptionMessage() {"
-        )
-        new_tail = (
-            "        // a11y-fork: sent/received time read last -- kept 100% native\n"
-            "        // (Telegram's own AccDescrSentDate/AccDescrReceivedDate wording and\n"
-            "        // time format). Deliberately NOT solar-converted here -- native\n"
-            "        // Telegram doesn't speak a calendar date in the chat-list preview\n"
-            "        // either (formatDateAudio just says \"Today/Yesterday at HH:MM\" for\n"
-            "        // the common case), so Solar Hijri is applied where the user actually\n"
-            "        // hears a real date instead: the in-chat date-separator headers (see\n"
-            "        // patch_locale_controller_solar_date_chat).\n"
-            "        String a11yDateValue = LocaleController.formatDateAudio(lastDate, true);\n"
-            "        if (message.isOut()) {\n"
-            "            sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, a11yDateValue));\n"
-            "        } else {\n"
-            "            sb.append(LocaleController.formatString(\"AccDescrReceivedDate\", R.string.AccDescrReceivedDate, a11yDateValue));\n"
-            "        }\n"
-            "        sb.append(\". \");\n"
-            "        event.setContentDescription(sb);\n"
-            "        setContentDescription(sb);\n"
-            "    }\n"
-            "\n"
-            "    private MessageObject getCaptionMessage() {"
-        )
-        if old_tail not in t:
-            print("WARN: DialogCell tail anchor not found (sent/received time)")
-        else:
-            t = t.replace(old_tail, new_tail, 1)
+    # Keep Telegram's native preview date/time block untouched.
+    # Solar Hijri applies only to message-focus accessibility in ChatMessageCell.
 
     dc.write_text(t, encoding="utf-8")
     print("DialogCell muted removed / status announce / preview-300 / time-last OK")
@@ -1783,6 +1760,50 @@ def patch_chat_message_cell_granularity_navigation() -> None:
     print("ChatMessageCell granularity navigation v1 OK")
 
 
+def patch_chat_message_solar_date() -> None:
+    """Use Solar Hijri for ChatMessageCell message-focus dates while preserving Telegram relative-day wording."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists():
+        print("WARN: ChatMessageCell missing (chat solar date)")
+        return
+    t = cmc.read_text(encoding="utf-8")
+    marker = "a11y-fork: ChatMessageCell solar date v3"
+    if marker in t:
+        return
+    pattern = re.compile(
+        r'(?P<indent>\s*)String date = LocaleController\.formatDateAudio\((?P<expr>[^,]+), true\);\s*'
+        r'(?P<body>if \(messageObject\.isOut\(\)\) \{[\s\S]{0,1200}?R\.string\.AccDescrReceivedDate[\s\S]{0,500}?\})'
+    )
+    m = pattern.search(t)
+    if not m:
+        print("WARN: ChatMessageCell native accessibility date block not found")
+        return
+    indent = m.group("indent")
+    expr = m.group("expr")
+    body = m.group("body")
+    repl = (
+        f"{indent}// {marker}\n"
+        f"{indent}String date = LocaleController.formatDateAudio({expr}, true);\n"
+        f"{indent}try {{\n"
+        f"{indent}    if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {{\n"
+        f"{indent}        java.util.Calendar msgCal = java.util.Calendar.getInstance();\n"
+        f"{indent}        msgCal.setTimeInMillis(((long) ({expr})) * 1000L);\n"
+        f"{indent}        java.util.Calendar nowCal = java.util.Calendar.getInstance();\n"
+        f"{indent}        boolean sameDay = msgCal.get(java.util.Calendar.ERA) == nowCal.get(java.util.Calendar.ERA) && msgCal.get(java.util.Calendar.YEAR) == nowCal.get(java.util.Calendar.YEAR) && msgCal.get(java.util.Calendar.DAY_OF_YEAR) == nowCal.get(java.util.Calendar.DAY_OF_YEAR);\n"
+        f"{indent}        nowCal.add(java.util.Calendar.DAY_OF_YEAR, -1);\n"
+        f"{indent}        boolean yesterday = msgCal.get(java.util.Calendar.ERA) == nowCal.get(java.util.Calendar.ERA) && msgCal.get(java.util.Calendar.YEAR) == nowCal.get(java.util.Calendar.YEAR) && msgCal.get(java.util.Calendar.DAY_OF_YEAR) == nowCal.get(java.util.Calendar.DAY_OF_YEAR);\n"
+        f"{indent}        if (!sameDay && !yesterday) {{\n"
+        f"{indent}            String solar = org.telegram.messenger.A11yConfig.formatSolarDate({expr});\n"
+        f"{indent}            if (solar != null && solar.length() > 0) date = solar;\n"
+        f"{indent}        }}\n"
+        f"{indent}    }}\n"
+        f"{indent}}} catch (Throwable ignore) {{}}\n"
+        + body
+    )
+    t = t[:m.start()] + repl + t[m.end():]
+    cmc.write_text(t, encoding="utf-8")
+    print("ChatMessageCell Solar date v3 OK (Today/Yesterday preserved)")
+
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
@@ -1986,9 +2007,8 @@ def main() -> int:
     print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
     install_a11y_config()
-    patch_radial_progress()
-    patch_settings_menu()
     patch_a11y_localization()
+    patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
     patch_forward_menu_extras()
@@ -1996,8 +2016,8 @@ def main() -> int:
     patch_longpress_message_menu()
     patch_reactions_as_menu()
     patch_voice_bitrate()
+    patch_settings_menu()
     patch_recording_beep()
-    patch_locale_controller_solar_date_chat()
     patch_dialogcell_preview_muted_status()
     patch_chat_message_cell_float_coordinates()
     patch_hide_sponsor_channel()
@@ -2007,6 +2027,7 @@ def main() -> int:
     patch_reorder_a11y_menu_items()
     patch_go_to_first_message()
     patch_file_description_spacing()
+    patch_chat_message_solar_date()
     patch_chat_message_cell_accessibility_long_click()
     patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
