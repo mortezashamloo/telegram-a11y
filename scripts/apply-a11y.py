@@ -119,8 +119,11 @@ def _patch_a11y_string_resources() -> None:
         "A11yRecordingBeepLabel": "Recording start beep: %s",
         "A11ySolarCalendarLabel": "Solar calendar: %s",
         "A11yBlockSmallFilesLabel": "Do not auto-download small files: %s",
+        "A11yNoAutoDownloadLabel": "Do not auto-download files: %s",
+        "A11yVoiceOnlyAutoDownloadLabel": "Do not auto-download files except voice messages: %s",
         "A11yOn": "On", "A11yOff": "Off", "A11yCancel": "Cancel",
         "A11ySolarDate": "%1$s",
+        "A11yAt": "at",
         "A11yAccessibleSettings": "Accessible settings",
         "A11yProgressAnnounce": "Progress announce",
         "A11yVoiceQuality": "Voice quality",
@@ -139,6 +142,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yLinks": "Links", "A11yLinksLabel": "Links: %s", "A11yNoLinks": "No links",
         "A11yBotNumber": "Bot %1$d",
         "A11yPercent": "%1$d percent",
+        "A11yDownloaded": "Downloaded",
     }
     fa = {
         "A11yAccessibleSettingsTitle": "تنظیمات دسترس‌پذیری",
@@ -159,8 +163,11 @@ def _patch_a11y_string_resources() -> None:
         "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
         "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
         "A11yBlockSmallFilesLabel": "دانلود خودکار فایل‌های کم‌حجم را متوقف کن: %s",
+        "A11yNoAutoDownloadLabel": "دانلود خودکار هیچ فایلی: %s",
+        "A11yVoiceOnlyAutoDownloadLabel": "دانلود خودکار فایل‌ها به‌جز پیام‌های صوتی: %s",
         "A11yOn": "روشن", "A11yOff": "خاموش", "A11yCancel": "لغو",
         "A11ySolarDate": "%1$s",
+        "A11yAt": "در",
         "A11yAccessibleSettings": "تنظیمات دسترس‌پذیری",
         "A11yProgressAnnounce": "اعلام پیشرفت", "A11yVoiceQuality": "کیفیت صدا",
         "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
@@ -175,6 +182,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yBotButtons": "دکمه‌های ربات", "A11yGoToFirstMessage": "رفتن به اولین پیام",
         "A11yLinks": "لینک‌ها", "A11yLinksLabel": "لینک‌ها: %s", "A11yNoLinks": "لینکی وجود ندارد",
         "A11yBotNumber": "ربات %1$d", "A11yPercent": "%1$d درصد",
+        "A11yDownloaded": "دانلود شد",
     }
     for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
         path = RES / rel
@@ -498,9 +506,16 @@ def _inject_progress_announce(java_path: Path) -> None:
                         try { stepSize = org.telegram.messenger.A11yConfig.getProgressStep(); } catch (Throwable ignore2) {}
                         if (stepSize <= 0) stepSize = 5;
                         int step = (pct / stepSize) * stepSize;
-                        if (step != a11yLastAnnouncedPercent) {
+                        if (pct >= 100) {
+                            if (a11yLastAnnouncedPercent != 100) {
+                                a11yLastAnnouncedPercent = 100;
+                                parent.announceForAccessibility(org.telegram.messenger.LocaleController.getString(
+                                        org.telegram.messenger.R.string.A11yDownloaded));
+                            }
+                        } else if (step != a11yLastAnnouncedPercent) {
                             a11yLastAnnouncedPercent = step;
-                            parent.announceForAccessibility(step + " percent");
+                            parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString(
+                                    "A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));
                         }
                         if (pct == 0) a11yLastAnnouncedPercent = -1;
                     }
@@ -1023,6 +1038,81 @@ def patch_longpress_message_menu() -> None:
 
 
 
+def patch_a11y_download_settings() -> None:
+    """Add explicit all-download and voice-only download controls."""
+    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
+    if not cfg.exists():
+        print("WARN: A11yConfig.java missing (download settings)")
+        return
+    t = cfg.read_text(encoding="utf-8")
+    if "PREF_NO_AUTO_DOWNLOAD" not in t:
+        t=t.replace(
+            'public static final String PREF_BLOCK_SMALL_AUTO_DOWNLOADS = "a11y_block_small_auto_downloads";',
+            'public static final String PREF_BLOCK_SMALL_AUTO_DOWNLOADS = "a11y_block_small_auto_downloads";\n'
+            '    public static final String PREF_NO_AUTO_DOWNLOAD = "a11y_no_auto_download";\n'
+            '    public static final String PREF_VOICE_ONLY_AUTO_DOWNLOAD = "a11y_voice_only_auto_download";',1)
+    if "getNoAutoDownload()" not in t:
+        anchor='    public static boolean getSolarCalendar() {'
+        methods='''    public static boolean getNoAutoDownload() {
+        try { return MessagesController.getGlobalMainSettings().getBoolean(PREF_NO_AUTO_DOWNLOAD, false); }
+        catch (Throwable ignore) { return false; }
+    }
+
+    public static void setNoAutoDownload(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit()
+                    .putBoolean(PREF_NO_AUTO_DOWNLOAD, value)
+                    .putBoolean(PREF_VOICE_ONLY_AUTO_DOWNLOAD, false)
+                    .apply();
+            try { org.telegram.messenger.DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}
+        } catch (Throwable ignore) {}
+    }
+
+    public static boolean getVoiceOnlyAutoDownload() {
+        try { return MessagesController.getGlobalMainSettings().getBoolean(PREF_VOICE_ONLY_AUTO_DOWNLOAD, true); }
+        catch (Throwable ignore) { return true; }
+    }
+
+    public static void setVoiceOnlyAutoDownload(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit()
+                    .putBoolean(PREF_VOICE_ONLY_AUTO_DOWNLOAD, value)
+                    .putBoolean(PREF_NO_AUTO_DOWNLOAD, false)
+                    .apply();
+            try { org.telegram.messenger.DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}
+        } catch (Throwable ignore) {}
+    }
+
+'''
+        if anchor in t: t=t.replace(anchor,methods+anchor,1)
+    small='LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads()))'
+    if 'R.string.A11yNoAutoDownloadLabel' not in t and small in t:
+        t=t.replace(small, small+',\n                    LocaleController.formatString(R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())),\n                    LocaleController.formatString(R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload()))',1)
+    if 'which == 10' not in t and 'which == 9' in t:
+        h='''                        } else if (which == 9) {
+                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));
+                        }
+'''
+        r='''                        } else if (which == 9) {
+                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));
+                        } else if (which == 10) {
+                            setNoAutoDownload(!getNoAutoDownload());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())));
+                        } else if (which == 11) {
+                            setVoiceOnlyAutoDownload(!getVoiceOnlyAutoDownload());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload())));
+                        }
+'''
+        if h in t: t=t.replace(h,r,1)
+    cfg.write_text(t,encoding='utf-8')
+    print('A11y download settings: all-download + voice-only controls OK')
+
 def patch_auto_download_policy() -> None:
     """Default automatic downloads OFF for photo/video/document on all networks;
     voice messages remain enabled. User changes are not overridden after first run.
@@ -1078,6 +1168,24 @@ def patch_auto_download_policy() -> None:
         return (type == AUTODOWNLOAD_TYPE_PHOTO || size != 0 && size <= maxSize) && (type == AUTODOWNLOAD_TYPE_AUDIO || (mask & type) != 0);"""
         generic_repl = """        long maxSize = preset.sizes[typeToIndex(type)];
         // a11y-fork: block small automatic downloads (generic type/size path)
+        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
+            return false;
+        }
+        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
+                && type != AUTODOWNLOAD_TYPE_AUDIO) {
+            return false;
+        }
+        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
+                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
+            return false;
+        }
+        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
+            return false;
+        }
+        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
+                && type != AUTODOWNLOAD_TYPE_AUDIO) {
+            return false;
+        }
         if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
                 && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
             return false;
@@ -1090,6 +1198,13 @@ def patch_auto_download_policy() -> None:
         if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
         b="""        long size = MessageObject.getMessageSize(message);
         // a11y-fork: block small automatic downloads
+        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
+            return 0;
+        }
+        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
+                && type != AUTODOWNLOAD_TYPE_AUDIO) {
+            return 0;
+        }
         if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
                 && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
             return 0;
@@ -1101,6 +1216,13 @@ def patch_auto_download_policy() -> None:
         if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
         b2="""        final long size = overrideSize;
         // a11y-fork: block small automatic downloads (override-size path)
+        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
+            return 0;
+        }
+        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
+                && type != AUTODOWNLOAD_TYPE_AUDIO) {
+            return 0;
+        }
         if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
                 && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
             return 0;
@@ -1112,6 +1234,13 @@ def patch_auto_download_policy() -> None:
         if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
         b3="""        long size = MessageObject.getMediaSize(media);
         // a11y-fork: block small automatic downloads (media path)
+        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
+            return 0;
+        }
+        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
+                && type != AUTODOWNLOAD_TYPE_AUDIO) {
+            return 0;
+        }
         if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
                 && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
             return 0;
@@ -1204,10 +1333,8 @@ def patch_recording_beep() -> None:
     """Recording start feedback: unconditional short vibration + an optional beep.
 
     Vibration fires every time recording starts (no setting, always on -- it's
-    the primary non-visual cue). The bundled WAV tone additionally plays through
-    Android's accessibility audio stream, but only when A11yConfig.getRecordingBeep()
-    is on; that setting defaults to OFF (see install_a11y_config) and the user turns
-    it on themselves from Accessible Settings.
+    the primary non-visual cue). The bundled WAV tone and ToneGenerator additionally
+    play when A11yConfig.getRecordingBeep() is on; the setting defaults to ON.
     """
     raw_dir = RES / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -1236,9 +1363,10 @@ def patch_recording_beep() -> None:
     t = mc.read_text(encoding="utf-8")
     marker = "a11y-fork: recording-start beep-wav-v1"
     tone_marker = "a11y-fork: recording-tone-generator-v1"
+    # Do not return on an older patched tree: upgrade the existing beep block
+    # so a previously built/broken ToneGenerator implementation is repaired too.
     if marker in t and tone_marker in t:
-        print("MediaController recording-start beep already patched")
-        return
+        print("MediaController recording-start beep found; upgrading/normalizing it")
     needle = "try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
     if needle not in t:
         print("WARN: MediaController record-start anchor not found (recording beep)")
@@ -1267,9 +1395,11 @@ def patch_recording_beep() -> None:
                             // MediaPlayer while microphone recording is active.
                             try {
                                 android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(
-                                        android.media.AudioManager.STREAM_NOTIFICATION, 80);
-                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100);
-                                a11yTone.release();
+                                        android.media.AudioManager.STREAM_MUSIC, 100);
+                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 140);
+                                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                    try { a11yTone.release(); } catch (Throwable ignoreRelease) {}
+                                }, 180);
                             } catch (Throwable ignoreTone) {
                             }
                             // a11y-fork: WAV fallback; set AudioAttributes BEFORE prepare(). -- MediaPlayer.create()
@@ -1310,13 +1440,30 @@ def patch_recording_beep() -> None:
                             // a11y-fork: recording-tone-generator-v1
                             try {
                                 android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(
-                                        android.media.AudioManager.STREAM_NOTIFICATION, 80);
-                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100);
-                                a11yTone.release();
+                                        android.media.AudioManager.STREAM_MUSIC, 100);
+                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 140);
+                                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                    try { a11yTone.release(); } catch (Throwable ignoreRelease) {}
+                                }, 180);
                             } catch (Throwable ignoreTone) {
                             }"""
         if beep_anchor in t:
             t = t.replace(beep_anchor, tone_block, 1)
+
+    # Normalize an already-patched old ToneGenerator block too. Releasing the
+    # generator immediately after startTone() can cut the sound off on Android.
+    old_tone='''android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(
+                                        android.media.AudioManager.STREAM_NOTIFICATION, 80);
+                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100);
+                                a11yTone.release();'''
+    new_tone='''android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(
+                                        android.media.AudioManager.STREAM_MUSIC, 100);
+                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 140);
+                                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                    try { a11yTone.release(); } catch (Throwable ignoreRelease) {}
+                                }, 180);'''
+    if old_tone in t:
+        t=t.replace(old_tone,new_tone,1)
 
     mc.write_text(t, encoding="utf-8")
     print("MediaController recording-start beep + ToneGenerator OK")
@@ -2068,48 +2215,44 @@ def patch_chat_message_cell_granularity_navigation() -> None:
 
 
 def patch_chat_message_solar_date() -> None:
-    """Use Solar Hijri for ChatMessageCell message-focus dates while preserving Telegram relative-day wording."""
+    """Use Solar Hijri in ChatMessageCell accessibility dates only."""
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
         print("WARN: ChatMessageCell missing (chat solar date)")
         return
     t = cmc.read_text(encoding="utf-8")
-    marker = "a11y-fork: ChatMessageCell solar date v3"
+    marker = "a11y-fork: ChatMessageCell solar date v4"
     if marker in t:
         return
-    pattern = re.compile(
-        r'(?P<indent>\s*)String date = LocaleController\.formatDateAudio\((?P<expr>[^,]+), true\);\s*'
-        r'(?P<body>if \(messageObject\.isOut\(\)\) \{[\s\S]{0,1200}?R\.string\.AccDescrReceivedDate[\s\S]{0,500}?\})'
-    )
-    m = pattern.search(t)
-    if not m:
-        print("WARN: ChatMessageCell native accessibility date block not found")
+    sent_old='formatString("AccDescrSentDate", R.string.AccDescrSentDate, getString("TodayAt", R.string.TodayAt) + " " + currentTimeString)'
+    recv_old='formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, getString("TodayAt", R.string.TodayAt) + " " + currentTimeString)'
+    if sent_old not in t or recv_old not in t:
+        print("WARN: ChatMessageCell official Sent/Received accessibility date anchors not found")
         return
-    indent = m.group("indent")
-    expr = m.group("expr")
-    body = m.group("body")
-    repl = (
-        f"{indent}// {marker}\n"
-        f"{indent}String date = LocaleController.formatDateAudio({expr}, true);\n"
-        f"{indent}try {{\n"
-        f"{indent}    if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {{\n"
-        f"{indent}        java.util.Calendar msgCal = java.util.Calendar.getInstance();\n"
-        f"{indent}        msgCal.setTimeInMillis(((long) ({expr})) * 1000L);\n"
-        f"{indent}        java.util.Calendar nowCal = java.util.Calendar.getInstance();\n"
-        f"{indent}        boolean sameDay = msgCal.get(java.util.Calendar.ERA) == nowCal.get(java.util.Calendar.ERA) && msgCal.get(java.util.Calendar.YEAR) == nowCal.get(java.util.Calendar.YEAR) && msgCal.get(java.util.Calendar.DAY_OF_YEAR) == nowCal.get(java.util.Calendar.DAY_OF_YEAR);\n"
-        f"{indent}        nowCal.add(java.util.Calendar.DAY_OF_YEAR, -1);\n"
-        f"{indent}        boolean yesterday = msgCal.get(java.util.Calendar.ERA) == nowCal.get(java.util.Calendar.ERA) && msgCal.get(java.util.Calendar.YEAR) == nowCal.get(java.util.Calendar.YEAR) && msgCal.get(java.util.Calendar.DAY_OF_YEAR) == nowCal.get(java.util.Calendar.DAY_OF_YEAR);\n"
-        f"{indent}        if (!sameDay && !yesterday) {{\n"
-        f"{indent}            String solar = org.telegram.messenger.A11yConfig.formatSolarDate({expr});\n"
-        f"{indent}            if (solar != null && solar.length() > 0) date = solar;\n"
-        f"{indent}        }}\n"
-        f"{indent}    }}\n"
-        f"{indent}}} catch (Throwable ignore) {{}}\n"
-        + body
-    )
-    t = t[:m.start()] + repl + t[m.end():]
-    cmc.write_text(t, encoding="utf-8")
-    print("ChatMessageCell Solar date v3 OK (Today/Yesterday preserved)")
+    anchor='                    if (currentMessageObject.isOut()) {'
+    inject='''                    // a11y-fork: ChatMessageCell solar date v4
+                    // This is the message accessibility description only; DialogCell
+                    // preview remains untouched. The date follows Telegram's own
+                    // Sent/Received accessibility resources and current time.
+                    String a11ySolarDateTime = getString("TodayAt", R.string.TodayAt) + " " + currentTimeString;
+                    try {
+                        if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {
+                            String a11ySolarDate = org.telegram.messenger.A11yConfig.formatSolarDate(currentMessageObject.messageOwner.date);
+                            if (a11ySolarDate != null && !a11ySolarDate.isEmpty()) {
+                                a11ySolarDateTime = a11ySolarDate + " " + LocaleController.getString(R.string.A11yAt) + " " + currentTimeString;
+                            }
+                        }
+                    } catch (Throwable ignore) {}
+'''
+    if anchor not in t:
+        print("WARN: ChatMessageCell sent/received branch missing")
+        return
+    t=t.replace(anchor,inject+anchor,1)
+    t=t.replace(sent_old,'formatString("AccDescrSentDate", R.string.AccDescrSentDate, a11ySolarDateTime)',1)
+    t=t.replace(recv_old,'formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, a11ySolarDateTime)',1)
+    cmc.write_text(t,encoding="utf-8")
+    print("ChatMessageCell Solar date v4 OK")
+
 
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
@@ -2314,6 +2457,7 @@ def main() -> int:
     print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
     install_a11y_config()
+    patch_a11y_download_settings()
     patch_a11y_localization()
     patch_radial_progress()
     patch_dialogcell_name_then_type()
