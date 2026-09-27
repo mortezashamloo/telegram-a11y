@@ -118,6 +118,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yForwardSavedNoQuoteLabel": "Forward to Saved Messages with no quote: %s",
         "A11yRecordingBeepLabel": "Recording start beep: %s",
         "A11ySolarCalendarLabel": "Solar calendar: %s",
+        "A11yBlockSmallFilesLabel": "Do not auto-download small files: %s",
         "A11yOn": "On", "A11yOff": "Off", "A11yCancel": "Cancel",
         "A11ySolarDate": "%1$s",
         "A11yAccessibleSettings": "Accessible settings",
@@ -157,6 +158,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yForwardSavedNoQuoteLabel": "فوروارد به پیام‌های ذخیره‌شده بدون نقل‌قول: %s",
         "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
         "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
+        "A11yBlockSmallFilesLabel": "دانلود خودکار فایل‌های کم‌حجم را متوقف کن: %s",
         "A11yOn": "روشن", "A11yOff": "خاموش", "A11yCancel": "لغو",
         "A11ySolarDate": "%1$s",
         "A11yAccessibleSettings": "تنظیمات دسترس‌پذیری",
@@ -259,11 +261,39 @@ def install_a11y_config() -> None:
     # default) -- the user turns it on themselves from Accessible Settings. Recording
     # vibration (patch_recording_beep) is unconditional and independent of this setting.
     cfg = cfg.replace("getBoolean(PREF_SOLAR_CALENDAR, false)", "getBoolean(PREF_SOLAR_CALENDAR, true)")
+    cfg = cfg.replace("getBoolean(PREF_RECORDING_BEEP, false)", "getBoolean(PREF_RECORDING_BEEP, true)")
     if "PREF_LINKS_MENU" not in cfg:
         cfg = cfg.replace(
             'public static final String PREF_SOLAR_CALENDAR = "a11y_solar_calendar";',
             'public static final String PREF_SOLAR_CALENDAR = "a11y_solar_calendar";\n    public static final String PREF_LINKS_MENU = "a11y_links_menu";'
         )
+    if "PREF_BLOCK_SMALL_AUTO_DOWNLOADS" not in cfg:
+        cfg = cfg.replace(
+            'public static final String PREF_LINKS_MENU = "a11y_links_menu";',
+            'public static final String PREF_LINKS_MENU = "a11y_links_menu";\n    public static final String PREF_BLOCK_SMALL_AUTO_DOWNLOADS = "a11y_block_small_auto_downloads";'
+        )
+    if "getBlockSmallAutoDownloads()" not in cfg:
+        anchor = "    public static boolean getSolarCalendar() {"
+        methods = (
+            "    // a11y-fork: optional protection against automatic downloads of very small files.\n"
+            "    // Default OFF; voice messages are exempt in DownloadController.\n"
+            "    public static boolean getBlockSmallAutoDownloads() {\n"
+            "        try {\n"
+            "            return MessagesController.getGlobalMainSettings().getBoolean(PREF_BLOCK_SMALL_AUTO_DOWNLOADS, false);\n"
+            "        } catch (Throwable ignore) {\n"
+            "            return false;\n"
+            "        }\n"
+            "    }\n\n"
+            "    public static void setBlockSmallAutoDownloads(boolean value) {\n"
+            "        try {\n"
+            "            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_BLOCK_SMALL_AUTO_DOWNLOADS, value).apply();\n"
+            "            try { org.telegram.messenger.DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}\n"
+            "        } catch (Throwable ignore) {\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        if anchor in cfg:
+            cfg = cfg.replace(anchor, methods + anchor, 1)
     if "getLinksMenuEnabled()" not in cfg:
         anchor = "    public static boolean getSolarCalendar() {"
         methods = (
@@ -283,68 +313,115 @@ def install_a11y_config() -> None:
         )
         if anchor in cfg:
             cfg = cfg.replace(anchor, methods + anchor, 1)
-    if "which == 8" not in cfg:
-        old_items = "                    LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar()))\n            };"
-        new_items = "                    LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())),\n                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))\n            };"
-        cfg = cfg.replace(old_items, new_items, 1)
-        old_handler = "                        } else if (which == 7) {\n                            setSolarCalendar(!getSolarCalendar());\n                            announce(activity, LocaleController.formatString(\n                                    R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));\n                        }\n"
-        new_handler = "                        } else if (which == 7) {\n                            setSolarCalendar(!getSolarCalendar());\n                            announce(activity, LocaleController.formatString(\n                                    R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));\n                        } else if (which == 8) {\n                            setLinksMenuEnabled(!getLinksMenuEnabled());\n                            announce(activity, LocaleController.formatString(\n                                    R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));\n                        }\n"
-        cfg = cfg.replace(old_handler, new_handler, 1)
-    dst.write_text(cfg, encoding="utf-8")
-    print("A11yConfig.java installed + recording beep OFF by default (vibration unconditional) + Jalali default ON + Links toggle")
-    # a11y-fork: locale-independent Solar Hijri date in YYYY/MM/DD form.
-    solar_start=cfg.find("    public static String formatSolarDate(int unixSeconds) {")
-    if solar_start >= 0:
-        solar_end=cfg.find("    private static String toPersianDigits",solar_start)
-        if solar_end > solar_start:
-            solar_method="""    public static String formatSolarDate(int unixSeconds) {
-        try {
-            java.util.Calendar cal=java.util.Calendar.getInstance();
-            cal.setTimeInMillis(((long) unixSeconds)*1000L);
-            int gy=cal.get(java.util.Calendar.YEAR);
-            int gm=cal.get(java.util.Calendar.MONTH)+1;
-            int gd=cal.get(java.util.Calendar.DAY_OF_MONTH);
-            int jy;
-            if (gy > 1600) { jy=979; gy-=1600; } else { jy=0; gy-=621; }
-            int[] gdm={0,31,59,90,120,151,181,212,243,273,304,334};
-            int gy2=gm > 2 ? gy+1 : gy;
-            int days=365*gy+(gy2+3)/4-(gy2+99)/100+(gy2+399)/400-80+gd+gdm[gm-1];
-            jy+=33*(days/12053); days%=12053;
-            jy+=4*(days/1461); days%=1461;
-            if (days > 365) { jy+=(days-1)/365; days=(days-1)%365; }
-            int jm=days < 186 ? 1+days/31 : 7+(days-186)/30;
-            int jd=1+(days < 186 ? days%31 : (days-186)%30);
-            String[] fa={"فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"};
-            String[] en={"Farvardin","Ordibehesht","Khordad","Tir","Mordad","Shahrivar","Mehr","Aban","Azar","Dey","Bahman","Esfand"};
-            boolean isFa="fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());
-            String month=(isFa ? fa : en)[jm-1];
-            // Match Telegram's date navigation convention: the current Solar year
-            // is omitted; older/newer years include the year.
-            java.util.Calendar now=java.util.Calendar.getInstance();
-            int nowGy=now.get(java.util.Calendar.YEAR);
-            int nowGm=now.get(java.util.Calendar.MONTH)+1;
-            int nowGd=now.get(java.util.Calendar.DAY_OF_MONTH);
-            int nowJy;
-            if (nowGy > 1600) { nowJy=979; nowGy-=1600; } else { nowJy=0; nowGy-=621; }
-            int nowGy2=nowGm > 2 ? nowGy+1 : nowGy;
-            int nowDays=365*nowGy+(nowGy2+3)/4-(nowGy2+99)/100+(nowGy2+399)/400-80+nowGd+gdm[nowGm-1];
-            nowJy+=33*(nowDays/12053); nowDays%=12053;
-            nowJy+=4*(nowDays/1461); nowDays%=1461;
-            if (nowDays > 365) { nowJy+=(nowDays-1)/365; nowDays=(nowDays-1)%365; }
-            String value;
-            if (jy == nowJy) {
-                value=String.format(java.util.Locale.US, "%d %s", jd, month);
-            } else {
-                value=String.format(java.util.Locale.US, "%d %s %d", jd, month, jy);
-            }
-            return LocaleController.formatString(R.string.A11ySolarDate, isFa ? toPersianDigits(value) : value);
-        } catch (Throwable ignore) { return ""; }
-    }
+    if "which == 9" not in cfg and "getBlockSmallAutoDownloads()" in cfg:
+        links_item = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))'
+        if links_item in cfg and "A11yBlockSmallFilesLabel" not in cfg:
+            cfg = cfg.replace(
+                links_item,
+                links_item + ',\n                    LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads()))',
+                1,
+            )
+        elif "A11yBlockSmallFilesLabel" not in cfg:
+            solar_item = '                    LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar()))'
+            if solar_item in cfg:
+                cfg = cfg.replace(
+                    solar_item,
+                    solar_item + ',\n                    LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads()))',
+                    1,
+                )
 
-"""
-            cfg=cfg[:solar_start]+solar_method+cfg[solar_end:]
-    dst.write_text(cfg,encoding="utf-8")
-    print("A11yConfig.java installed + recording beep OFF by default (vibration unconditional) + Jalali default ON + locale-independent solar date")
+        links_handler = (
+            "                        } else if (which == 8) {\n"
+            "                            setLinksMenuEnabled(!getLinksMenuEnabled());\n"
+            "                            announce(activity, LocaleController.formatString(\n"
+            "                                    R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));\n"
+            "                        }\n"
+        )
+        if links_handler in cfg:
+            cfg = cfg.replace(
+                links_handler,
+                links_handler.replace(
+                    "                        }\n",
+                    "                        } else if (which == 9) {\n"
+                    "                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());\n"
+                    "                            announce(activity, LocaleController.formatString(\n"
+                    "                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));\n"
+                    "                        }\n",
+                    1,
+                ),
+                1,
+            )
+        else:
+            solar_handler = (
+                "                        } else if (which == 7) {\n"
+                "                            setSolarCalendar(!getSolarCalendar());\n"
+                "                            announce(activity, LocaleController.formatString(\n"
+                "                                    R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));\n"
+                "                        }\n"
+            )
+            if solar_handler in cfg:
+                cfg = cfg.replace(
+                    solar_handler,
+                    solar_handler.replace(
+                        "                        }\n",
+                        "                        } else if (which == 9) {\n"
+                        "                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());\n"
+                        "                            announce(activity, LocaleController.formatString(\n"
+                        "                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));\n"
+                        "                        }\n",
+                        1,
+                    ),
+                    1,
+                )
+
+
+    # a11y-fork: Solar date replacement supports both old int and current long signatures.
+    # It is date-only: Telegram's surrounding formatter controls the time-of-day.
+    solar_start = cfg.find("    public static String formatSolarDate(")
+    if solar_start >= 0:
+        solar_end = cfg.find("    private static String toPersianDigits", solar_start)
+        if solar_end > solar_start:
+            solar_method = (
+                "    public static String formatSolarDate(long unixSeconds) {\n"
+                "        try {\n"
+                "            java.util.Calendar cal = java.util.Calendar.getInstance();\n"
+                "            cal.setTimeInMillis(unixSeconds * 1000L);\n"
+                "            int gy = cal.get(java.util.Calendar.YEAR);\n"
+                "            int gm = cal.get(java.util.Calendar.MONTH) + 1;\n"
+                "            int gd = cal.get(java.util.Calendar.DAY_OF_MONTH);\n"
+                "            int jy;\n"
+                "            if (gy > 1600) { jy = 979; gy -= 1600; } else { jy = 0; gy -= 621; }\n"
+                "            int[] gdm = {0,31,59,90,120,151,181,212,243,273,304,334};\n"
+                "            int gy2 = gm > 2 ? gy + 1 : gy;\n"
+                "            int days = 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 - 80 + gd + gdm[gm - 1];\n"
+                "            jy += 33 * (days / 12053); days %= 12053;\n"
+                "            jy += 4 * (days / 1461); days %= 1461;\n"
+                "            if (days > 365) { jy += (days - 1) / 365; days = (days - 1) % 365; }\n"
+                "            int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;\n"
+                "            int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);\n"
+                "            String[] faMonths = {\"فروردین\",\"اردیبهشت\",\"خرداد\",\"تیر\",\"مرداد\",\"شهریور\",\"مهر\",\"آبان\",\"آذر\",\"دی\",\"بهمن\",\"اسفند\"};\n"
+                "            String[] enMonths = {\"Farvardin\",\"Ordibehesht\",\"Khordad\",\"Tir\",\"Mordad\",\"Shahrivar\",\"Mehr\",\"Aban\",\"Azar\",\"Dey\",\"Bahman\",\"Esfand\"};\n"
+                "            boolean isFa = \"fa\".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());\n"
+                "            String month = (isFa ? faMonths : enMonths)[jm - 1];\n"
+                "            java.util.Calendar now = java.util.Calendar.getInstance();\n"
+                "            int nowGy = now.get(java.util.Calendar.YEAR);\n"
+                "            int nowGm = now.get(java.util.Calendar.MONTH) + 1;\n"
+                "            int nowGd = now.get(java.util.Calendar.DAY_OF_MONTH);\n"
+                "            int nowJy;\n"
+                "            if (nowGy > 1600) { nowJy = 979; nowGy -= 1600; } else { nowJy = 0; nowGy -= 621; }\n"
+                "            int nowGy2 = nowGm > 2 ? nowGy + 1 : nowGy;\n"
+                "            int nowDays = 365 * nowGy + (nowGy2 + 3) / 4 - (nowGy2 + 99) / 100 + (nowGy2 + 399) / 400 - 80 + nowGd + gdm[nowGm - 1];\n"
+                "            nowJy += 33 * (nowDays / 12053); nowDays %= 12053;\n"
+                "            nowJy += 4 * (nowDays / 1461); nowDays %= 1461;\n"
+                "            if (nowDays > 365) { nowJy += (nowDays - 1) / 365; }\n"
+                "            String value = jy == nowJy ? String.format(java.util.Locale.US, \"%d %s\", jd, month) : String.format(java.util.Locale.US, \"%d %s %d\", jd, month, jy);\n"
+                "            return LocaleController.formatString(R.string.A11ySolarDate, isFa ? toPersianDigits(value) : value);\n"
+                "        } catch (Throwable ignore) { return \"\"; }\n"
+                "    }\n\n"
+            )
+            cfg = cfg[:solar_start] + solar_method + cfg[solar_end:]
+    dst.write_text(cfg, encoding="utf-8")
+    print("A11yConfig.java installed + Solar date fixed/date-only + small-file setting added")
 
 
 def _inject_progress_announce(java_path: Path) -> None:
@@ -628,6 +705,45 @@ def patch_forward_menu_extras() -> None:
     ca.write_text(t,encoding="utf-8")
     print("Forward option handlers v2 OK")
 
+
+def patch_photo_longpress_message_options() -> None:
+    """Force TalkBack long-press on photo-only/no-caption messages into Message Options."""
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity missing (photo long-press)")
+        return
+    t = ca.read_text(encoding="utf-8")
+    marker = "a11y-fork: photo-no-caption longpress v1"
+    if marker in t:
+        return
+    needle = """            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null && ((ChatMessageCell) view).getMessageObject().type != MessageObject.TYPE_JOINED_CHANNEL)) {
+"""
+    if needle not in t:
+        print("WARN: ChatActivity message long-press anchor not found (photo case)")
+        return
+    insert = """            // a11y-fork: photo-no-caption longpress v1
+            if (view instanceof ChatMessageCell && !actionBar.isActionModeShowed()) {
+                try {
+                    MessageObject a11yPhotoMessage = ((ChatMessageCell) view).getMessageObject();
+                    boolean a11yPhotoOnly = a11yPhotoMessage != null
+                            && MessageObject.isPhoto(a11yPhotoMessage.messageOwner)
+                            && android.text.TextUtils.isEmpty(a11yPhotoMessage.messageOwner.message);
+                    android.view.accessibility.AccessibilityManager a11yPhotoAm =
+                            (android.view.accessibility.AccessibilityManager) getParentActivity()
+                                    .getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);
+                    if (a11yPhotoOnly && a11yPhotoAm != null && a11yPhotoAm.isEnabled()) {
+                        result = createMenu(view, true, false, x, y, true);
+                        return true;
+                    }
+                } catch (Throwable ignore) {
+                }
+            }
+
+"""
+    t=t.replace(needle,insert+needle,1)
+    ca.write_text(t,encoding="utf-8")
+    print("Photo-only/no-caption TalkBack long-press -> Message Options OK")
+
 def patch_reactions_as_menu() -> None:
     """
     Accessibility-fork: put the emoji reactions row behind a "Reactions"
@@ -806,21 +922,43 @@ def patch_longpress_message_menu() -> None:
         "            startMultiselect(chatListView.getChildAdapterPosition(cell));"
     )
     new_dlp = (
-        "            createMenu(cell, false, false, x, y, false);\n"
-        "            // a11y-fork: do not auto-start multi-select under TalkBack\n"
+        "            // a11y-fork: under TalkBack, long-press must open the full\n"
+        "            // single-message Message Options menu for every ChatMessageCell\n"
+        "            // type (text, photo, video, document/file, voice, etc.).\n"
         "            boolean a11yOn2 = false;\n"
         "            try {\n"
         "                android.view.accessibility.AccessibilityManager am2 = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n"
         "                a11yOn2 = am2 != null && am2.isEnabled();\n"
         "            } catch (Throwable ignore) {}\n"
-        "            if (!a11yOn2 || actionBar.isActionModeShowed()) {\n"
+        "            if (a11yOn2) {\n"
+        "                createMenu(cell, true, false, x, y, true);\n"
+        "            } else {\n"
+        "                createMenu(cell, false, false, x, y, false);\n"
         "                startMultiselect(chatListView.getChildAdapterPosition(cell));\n"
         "            }"
     )
-    if "a11y-fork: do not auto-start multi-select under TalkBack" not in t:
+    if "a11y-fork: under TalkBack, long-press must open the full" not in t:
         if old_dlp in t:
             t = t.replace(old_dlp, new_dlp, 1)
-            print("didLongPress skip startMultiselect OK")
+            print("didLongPress universal TalkBack Message Options OK")
+        elif "a11y-fork: do not auto-start multi-select under TalkBack" in t:
+            old_v1 = (
+                "            createMenu(cell, false, false, x, y, false);\n"
+                "            // a11y-fork: do not auto-start multi-select under TalkBack\n"
+                "            boolean a11yOn2 = false;\n"
+                "            try {\n"
+                "                android.view.accessibility.AccessibilityManager am2 = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n"
+                "                a11yOn2 = am2 != null && am2.isEnabled();\n"
+                "            } catch (Throwable ignore) {}\n"
+                "            if (!a11yOn2 || actionBar.isActionModeShowed()) {\n"
+                "                startMultiselect(chatListView.getChildAdapterPosition(cell));\n"
+                "            }"
+            )
+            if old_v1 in t:
+                t = t.replace(old_v1, new_dlp, 1)
+                print("didLongPress universal TalkBack Message Options upgraded OK")
+            else:
+                print("WARN: didLongPress v1 block not found")
         else:
             print("WARN: didLongPress block not found")
 
@@ -883,6 +1021,106 @@ def patch_longpress_message_menu() -> None:
             print("WARN: OPTION_RETRY case not found")
     ca.write_text(t, encoding="utf-8")
 
+
+
+def patch_auto_download_policy() -> None:
+    """Default automatic downloads OFF for photo/video/document on all networks;
+    voice messages remain enabled. User changes are not overridden after first run.
+    """
+    dc = JAVA / "org/telegram/messenger/DownloadController.java"
+    if not dc.exists():
+        print("WARN: DownloadController missing (auto-download policy)")
+        return
+    t = dc.read_text(encoding="utf-8")
+    marker = "a11y-fork: default auto-download policy v1"
+    if marker not in t:
+        anchor = "    public DownloadController(int instance) {"
+        helper = (
+            "    // " + marker + "\n"
+            "    private void applyA11yDefaultAutoDownloadPolicy() {\n"
+            "        try {\n"
+            "            android.content.SharedPreferences prefs = MessagesController.getMainSettings(currentAccount);\n"
+            "            if (prefs.getBoolean(\"a11y_auto_download_defaults_applied_v1\", false)) return;\n"
+            "            int voiceOnlyMask = AUTODOWNLOAD_TYPE_AUDIO;\n"
+            "            for (int i = 0; i < 4; i++) {\n"
+            "                mobilePreset.mask[i] = voiceOnlyMask; wifiPreset.mask[i] = voiceOnlyMask; roamingPreset.mask[i] = voiceOnlyMask;\n"
+            "            }\n"
+            "            mobilePreset.enabled = true; wifiPreset.enabled = true; roamingPreset.enabled = true;\n"
+            "            mobilePreset.preloadVideo = false; wifiPreset.preloadVideo = false; roamingPreset.preloadVideo = false;\n"
+            "            mobilePreset.preloadMusic = false; wifiPreset.preloadMusic = false; roamingPreset.preloadMusic = false;\n"
+            "            currentMobilePreset = 3; currentWifiPreset = 3; currentRoamingPreset = 3;\n"
+            "            prefs.edit().putString(\"mobilePreset\", mobilePreset.toString()).putString(\"wifiPreset\", wifiPreset.toString()).putString(\"roamingPreset\", roamingPreset.toString())\n"
+            "                    .putInt(\"currentMobilePreset\", 3).putInt(\"currentWifiPreset\", 3).putInt(\"currentRoamingPreset\", 3)\n"
+            "                    .putBoolean(\"a11y_auto_download_defaults_applied_v1\", true).commit();\n"
+            "            checkAutodownloadSettings();\n"
+            "        } catch (Throwable e) { FileLog.e(e); }\n"
+            "    }\n\n"
+        )
+        if anchor in t:
+            t=t.replace(anchor,helper+anchor,1)
+        else:
+            print("WARN: DownloadController constructor anchor not found")
+            return
+        anchor2 = """        if (getUserConfig().isClientActivated()) {
+            checkAutodownloadSettings();
+        }
+"""
+        repl2 = """        // a11y-fork: default auto-download policy v1
+        applyA11yDefaultAutoDownloadPolicy();
+        if (getUserConfig().isClientActivated()) {
+            checkAutodownloadSettings();
+        }
+"""
+        if anchor2 in t: t=t.replace(anchor2,repl2,1)
+        else: print("WARN: DownloadController post-constructor anchor not found")
+    if "a11y-fork: block small automatic downloads" not in t:
+        generic_anchor = """        long maxSize = preset.sizes[typeToIndex(type)];
+        return (type == AUTODOWNLOAD_TYPE_PHOTO || size != 0 && size <= maxSize) && (type == AUTODOWNLOAD_TYPE_AUDIO || (mask & type) != 0);"""
+        generic_repl = """        long maxSize = preset.sizes[typeToIndex(type)];
+        // a11y-fork: block small automatic downloads (generic type/size path)
+        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
+                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
+            return false;
+        }
+        return (type == AUTODOWNLOAD_TYPE_PHOTO || size != 0 && size <= maxSize) && (type == AUTODOWNLOAD_TYPE_AUDIO || (mask & type) != 0);"""
+        if generic_anchor in t:
+            t=t.replace(generic_anchor,generic_repl,1)
+
+        a="""        long size = MessageObject.getMessageSize(message);
+        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
+        b="""        long size = MessageObject.getMessageSize(message);
+        // a11y-fork: block small automatic downloads
+        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
+                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
+            return 0;
+        }
+        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
+        if a in t: t=t.replace(a,b,1)
+        else: print("WARN: DownloadController message-size anchor not found")
+        a2="""        final long size = overrideSize;
+        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
+        b2="""        final long size = overrideSize;
+        // a11y-fork: block small automatic downloads (override-size path)
+        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
+                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
+            return 0;
+        }
+        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
+        if a2 in t: t=t.replace(a2,b2,1)
+        else: print("WARN: DownloadController override-size anchor not found")
+        a3="""        long size = MessageObject.getMediaSize(media);
+        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
+        b3="""        long size = MessageObject.getMediaSize(media);
+        // a11y-fork: block small automatic downloads (media path)
+        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
+                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
+            return 0;
+        }
+        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
+        if a3 in t: t=t.replace(a3,b3,1)
+        else: print("WARN: DownloadController media-size anchor not found")
+    dc.write_text(t,encoding="utf-8")
+    print("DownloadController default auto-download OFF except voice + small-file guard OK")
 
 def patch_voice_bitrate() -> None:
     audio = ROOT / "jni/audio.c"
@@ -997,8 +1235,9 @@ def patch_recording_beep() -> None:
         return
     t = mc.read_text(encoding="utf-8")
     marker = "a11y-fork: recording-start beep-wav-v1"
-    if marker in t:
-        print("MediaController WAV recording beep already patched")
+    tone_marker = "a11y-fork: recording-tone-generator-v1"
+    if marker in t and tone_marker in t:
+        print("MediaController recording-start beep already patched")
         return
     needle = "try { org.telegram.messenger.A11yConfig.applyVoiceBitrateToNative(); } catch (Throwable ignore) {}"
     if needle not in t:
@@ -1023,7 +1262,17 @@ def patch_recording_beep() -> None:
                         } catch (Throwable ignoreVib) {
                         }
                         if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
-                            // a11y-fork: set AudioAttributes BEFORE prepare() -- MediaPlayer.create()
+                            // a11y-fork: recording-tone-generator-v1
+                            // Primary short beep. ToneGenerator is more reliable than
+                            // MediaPlayer while microphone recording is active.
+                            try {
+                                android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(
+                                        android.media.AudioManager.STREAM_NOTIFICATION, 80);
+                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100);
+                                a11yTone.release();
+                            } catch (Throwable ignoreTone) {
+                            }
+                            // a11y-fork: WAV fallback; set AudioAttributes BEFORE prepare(). -- MediaPlayer.create()
                             // prepares internally with default attributes first, and changing
                             // attributes afterward is unreliable on many OEMs (silent/wrong stream).
                             final android.media.MediaPlayer a11yBeep = new android.media.MediaPlayer();
@@ -1050,9 +1299,27 @@ def patch_recording_beep() -> None:
                     } catch (Throwable e) {
                         org.telegram.messenger.FileLog.e(e);
                     }"""
-    t = t.replace(needle, replacement, 1)
+    if marker not in t:
+        t = t.replace(needle, replacement, 1)
+
+    # Upgrade an already-patched older build: add the ToneGenerator once inside
+    # the existing getRecordingBeep() block, without duplicating the WAV block.
+    if marker in t and tone_marker not in t:
+        beep_anchor = "                        if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {"
+        tone_block = """                        if (org.telegram.messenger.A11yConfig.getRecordingBeep()) {
+                            // a11y-fork: recording-tone-generator-v1
+                            try {
+                                android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(
+                                        android.media.AudioManager.STREAM_NOTIFICATION, 80);
+                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100);
+                                a11yTone.release();
+                            } catch (Throwable ignoreTone) {
+                            }"""
+        if beep_anchor in t:
+            t = t.replace(beep_anchor, tone_block, 1)
+
     mc.write_text(t, encoding="utf-8")
-    print("MediaController bundled WAV recording-start beep OK")
+    print("MediaController recording-start beep + ToneGenerator OK")
 
 def patch_solar_calendar_preview() -> None:
     """
@@ -1192,6 +1459,46 @@ def patch_dialogcell_preview_muted_status() -> None:
     dc.write_text(t, encoding="utf-8")
     print("DialogCell muted removed / status announce / preview-300 / time-last OK")
 
+
+
+def patch_dialogcell_time_last() -> None:
+    """Move receive/send time to the final item in the chat-list preview."""
+    dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
+    if not dc.exists():
+        print("WARN: DialogCell missing (time-last)")
+        return
+    t = dc.read_text(encoding="utf-8")
+    marker = "a11y-fork: preview time last v1"
+    if marker in t:
+        return
+    patterns = [
+        r'(?m)^(?P<i>\s*)sb\.append\(a11yClockTime\);\s*\n(?P=i)sb\.append\("\. "\);\s*\n',
+        r'(?m)^(?P<i>\s*)sb\.append\(a11yClockTime\);\s*\n',
+    ]
+    removed = False
+    for pattern in patterns:
+        t2, n = re.subn(pattern, "", t, count=1)
+        if n:
+            t = t2
+            removed = True
+            break
+    if not removed:
+        print("WARN: DialogCell a11yClockTime append not found")
+        return
+    m = re.search(r'(?m)^(?P<i>\s*)event\.setContentDescription\(sb\);', t)
+    if not m:
+        print("WARN: DialogCell contentDescription anchor not found (time-last)")
+        return
+    indent = m.group("i")
+    replacement = (
+        indent + "// a11y-fork: preview time last v1\n"
+        + indent + "sb.append(a11yClockTime);\n"
+        + indent + "sb.append(\". \");\n"
+        + indent + "event.setContentDescription(sb);"
+    )
+    t = t[:m.start()] + replacement + t[m.end():]
+    dc.write_text(t,encoding="utf-8")
+    print("DialogCell preview receive/send time moved to LAST OK")
 
 def patch_hide_sponsor_channel() -> None:
     """
@@ -2014,11 +2321,14 @@ def main() -> int:
     patch_forward_menu_extras()
     # Shared end-anchor order: Bot Buttons -> Reactions -> Select (Select last).
     patch_longpress_message_menu()
+    patch_photo_longpress_message_options()
     patch_reactions_as_menu()
     patch_voice_bitrate()
     patch_settings_menu()
+    patch_auto_download_policy()
     patch_recording_beep()
     patch_dialogcell_preview_muted_status()
+    patch_dialogcell_time_last()
     patch_chat_message_cell_float_coordinates()
     patch_hide_sponsor_channel()
     patch_ghost_mode()
