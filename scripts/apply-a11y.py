@@ -1536,9 +1536,25 @@ def patch_dialogcell_time_last() -> None:
         print("WARN: DialogCell official sent/received date block not found (time-last)")
         return
     i = m.group("i")
+    # Keep the value at DialogCell scope. Telegram's preview content-description
+    # builder can span nested blocks, so a method-local declaration can fall out
+    # of scope before the final event.setContentDescription(...) call.
+    field_marker = "a11y-fork: preview sent-received field"
+    if field_marker not in t:
+        class_anchor = "public class DialogCell extends BaseCell {"
+        if class_anchor in t:
+            t = t.replace(
+                class_anchor,
+                class_anchor + "\n    // " + field_marker + "\n    private String a11yPreviewSentReceivedDate;",
+                1,
+            )
+        else:
+            print("WARN: DialogCell class anchor not found (time-last)")
+            return
+
     replacement = (
         i + "String date = LocaleController.formatDateAudio(lastDate, true);\n"
-        + i + "String a11yPreviewSentReceivedDate;\n"
+        + i + "a11yPreviewSentReceivedDate = null;\n"
         + i + "if (message.isOut()) {\n"
         + i + "    a11yPreviewSentReceivedDate = LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, date);\n"
         + i + "} else {\n"
