@@ -1534,68 +1534,71 @@ def patch_dialogcell_preview_muted_status() -> None:
 
 
 def patch_dialogcell_time_last() -> None:
-    """Keep sent/received as the final Preview item and use Solar calendar for DialogCell dates."""
+    """Move Telegram's sent/received sentence to the absolute end of DialogCell Preview."""
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (time-last)")
         return
     t = dc.read_text(encoding="utf-8")
-    # Remove stale field from an earlier cached attempt.
     t = re.sub(r'\n\s*// a11y-fork: preview sent-received field(?: v[0-9]+)?\n\s*private String a11yPreviewSentReceivedDate;\n', '\n', t, count=1)
-
-    field_marker = "a11y-fork: preview sent-received field v3"
+    field_marker = "a11y-fork: preview sent-received field v4"
     if field_marker not in t:
         cm = re.search(r'(public class DialogCell extends BaseCell[^\{]*\{)', t)
         if not cm:
             print("WARN: DialogCell class declaration not found (time-last)")
             return
         t = t[:cm.end()] + "\n    // " + field_marker + "\n    private String a11yPreviewSentReceivedDate;" + t[cm.end():]
-
-    pattern = re.compile(
-        r'(?m)^(?P<i>\s*)String date = LocaleController\.formatDateAudio\(lastDate, true\);\n'
-        r'(?P=i)if \(message\.isOut\(\)\) \{\n'
-        r'(?P=i)    sb\.append\(LocaleController\.formatString\("AccDescrSentDate", R\.string\.AccDescrSentDate, date\)\);\n'
-        r'(?P=i)\} else \{\n'
-        r'(?P=i)    sb\.append\(LocaleController\.formatString\("AccDescrReceivedDate", R\.string\.AccDescrReceivedDate, date\)\);\n'
-        r'(?P=i)\}\n'
-        r'(?P=i)sb\.append\("\. "\);'
-    )
-    m = pattern.search(t)
+    t = re.sub(r'(?m)^\s*// a11y-fork: preview sent-received-last[^\n]*\n\s*if \(a11yPreviewSentReceivedDate != null && a11yPreviewSentReceivedDate\.length\(\) > 0\) \{\n\s*sb\.append\(a11yPreviewSentReceivedDate\);\n\s*sb\.append\(\"\. \"\);\n\s*\}\n', '', t, count=1)
+    pattern = re.compile(r'(?m)^(?P<i>\s*)String date = LocaleController\.formatDateAudio\(lastDate, true\);\n(?P=i)if \(message\.isOut\(\)\) \{\n(?P=i)    sb\.append\(LocaleController\.formatString\(\"AccDescrSentDate\", R\.string\.AccDescrSentDate, date\)\);\n(?P=i)\} else \{\n(?P=i)    sb\.append\(LocaleController\.formatString\(\"AccDescrReceivedDate\", R\.string\.AccDescrReceivedDate, date\)\);\n(?P=i)\}\n(?P=i)sb\.append\(\"\. \"\);')
+    m=pattern.search(t)
     if not m:
-        print("WARN: DialogCell sent/received date block not found (time-last)")
+        print("WARN: DialogCell native sent/received date block not found (time-last)")
         return
-    i = m.group("i")
-    replacement = (
-        i + 'String date = LocaleController.formatDateAudio(lastDate, true);\n'
-        + i + 'try {\n'
-        + i + '    if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n'
-        + i + '        date = org.telegram.messenger.A11yConfig.formatSolarDateAudio(lastDate);\n'
-        + i + '    }\n'
-        + i + '} catch (Throwable ignore) {}\n'
-        + i + 'a11yPreviewSentReceivedDate = message.isOut()\n'
-        + i + '        ? LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, date)\n'
-        + i + '        : LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, date);'
-    )
-    t = t[:m.start()] + replacement + t[m.end():]
-
-    # The field is appended at the last possible point, immediately before setContentDescription.
-    t = re.sub(r'(?m)^\s*// a11y-fork: preview sent-received-last v[0-9]+\n\s*if \(a11yPreviewSentReceivedDate != null && !?a11yPreviewSentReceivedDate(?:\.length\(\) > 0|\.isEmpty\(\))\) \{\n\s*sb\.append\(a11yPreviewSentReceivedDate\);\n\s*sb\.append\("\. "\);\n\s*\}\n', '', t, count=1)
-    final = re.search(r'(?m)^(?P<i>\s*)event\.setContentDescription\(sb\);', t)
+    i=m.group("i")
+    replacement=(i+'String date = LocaleController.formatDateAudio(lastDate, true);\n'+i+'try {\n'+i+'    if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n'+i+'        String a11ySolarPreviewDate = org.telegram.messenger.A11yConfig.formatSolarDateAudio(lastDate);\n'+i+'        if (a11ySolarPreviewDate != null && !a11ySolarPreviewDate.isEmpty()) date = a11ySolarPreviewDate;\n'+i+'    }\n'+i+'} catch (Throwable ignore) {}\n'+i+'a11yPreviewSentReceivedDate = message.isOut()\n'+i+'        ? LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, date)\n'+i+'        : LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, date);')
+    t=t[:m.start()]+replacement+t[m.end():]
+    final=re.search(r'(?m)^(?P<i>\s*)event\.setContentDescription\(sb\);',t)
     if not final:
         print("WARN: DialogCell final contentDescription anchor not found (time-last)")
         return
-    i = final.group("i")
-    tail = (
-        i + '// a11y-fork: preview sent-received-last v3\n'
-        + i + 'if (a11yPreviewSentReceivedDate != null && !a11yPreviewSentReceivedDate.isEmpty()) {\n'
-        + i + '    sb.append(a11yPreviewSentReceivedDate);\n'
-        + i + '    sb.append(". ");\n'
-        + i + '}\n'
-        + i + 'event.setContentDescription(sb);'
-    )
-    t = t[:final.start()] + tail + t[final.end():]
-    dc.write_text(t, encoding="utf-8")
-    print("DialogCell Solar date + sent/received LAST Preview v3 OK")
+    i=final.group("i")
+    tail=(i+'// a11y-fork: preview sent-received-last v4\n'+i+'if (a11yPreviewSentReceivedDate != null && a11yPreviewSentReceivedDate.length() > 0) {\n'+i+'    sb.append(a11yPreviewSentReceivedDate);\n'+i+'    sb.append(". ");\n'+i+'}\n'+i+'event.setContentDescription(sb);')
+    t=t[:final.start()]+tail+t[final.end():]
+    dc.write_text(t,encoding="utf-8")
+    print("DialogCell sent/received LAST + Solar date OK")
+
+
+def patch_chat_action_solar_date_header() -> None:
+    """Replace Telegram's Gregorian chat date-separator heading with Jalali while preserving native year logic."""
+    ca=JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
+    if not ca.exists():
+        print("WARN: ChatActionCell missing (solar date header)")
+        return
+    t=ca.read_text(encoding="utf-8")
+    marker="a11y-fork: solar date separator header v1"
+    if marker in t: return
+    old='            newText = LocaleController.formatDateChat(date);'
+    new='''            // a11y-fork: solar date separator header v1
+            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {
+                String a11ySolarHeader = org.telegram.messenger.A11yConfig.formatSolarDateChat(date, false);
+                newText = a11ySolarHeader != null && !a11ySolarHeader.isEmpty()
+                        ? a11ySolarHeader
+                        : LocaleController.formatDateChat(date);
+            } else {
+                newText = LocaleController.formatDateChat(date);
+            }'''
+    if old not in t:
+        print("WARN: ChatActionCell date-separator anchor not found")
+        return
+    t=t.replace(old,new,1)
+    t=t.replace('    public void setCustomDate(int date, boolean scheduled, boolean inLayout) {','    // '+marker+'\n    public void setCustomDate(int date, boolean scheduled, boolean inLayout) {',1)
+    ca.write_text(t,encoding="utf-8")
+    print("ChatActionCell Solar date separator header OK")
+
+
+def patch_chat_message_solar_date() -> None:
+    """ChatMessageCell does not own the date separator; ChatActionCell does."""
+    print("ChatMessageCell Solar date skipped; ChatActionCell owns date-separator behavior")
 
 def patch_hide_sponsor_channel() -> None:
     """
@@ -2373,12 +2376,14 @@ def patch_small_file_localization() -> None:
         "A11ySmallFilesAuto": "Auto-download small files",
         "A11ySmallFilesVoiceOnly": "Do not download small files except voice messages",
         "A11ySmallFilesOff": "Do not download small files",
+        "A11ySmallFilesPickerTitle": "Small files auto-download",
     }
     fa = {
         "A11ySmallFilesModeLabel": "دانلود خودکار فایل‌های کم‌حجم: %s",
         "A11ySmallFilesAuto": "دانلود خودکار فایل‌های کم‌حجم",
         "A11ySmallFilesVoiceOnly": "دانلود نکردن فایل‌های کم‌حجم به‌جز پیام‌های صوتی",
         "A11ySmallFilesOff": "دانلود نکردن فایل‌های کم‌حجم",
+        "A11ySmallFilesPickerTitle": "دانلود خودکار فایل‌های کم‌حجم",
     }
     for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
         path = RES / rel
@@ -2387,6 +2392,77 @@ def patch_small_file_localization() -> None:
         for name, value in values.items():
             _set_string(path, name, value)
     print("Small-file 3-state localization OK")
+
+def patch_small_file_radio_settings() -> None:
+    """Present the three small-file modes as one mutually-exclusive radio-button setting."""
+    cfg=JAVA / "org/telegram/messenger/A11yConfig.java"
+    if not cfg.exists():
+        print("WARN: A11yConfig.java missing (small-file radio settings)")
+        return
+    t=cfg.read_text(encoding="utf-8")
+    marker="a11y-fork: small-file radio settings v1"
+    if marker in t: return
+    t=t.replace('MessagesController.getGlobalMainSettings().getInt("a11y_small_files_mode", SMALL_FILES_AUTO)','MessagesController.getGlobalMainSettings().getInt("a11y_small_files_mode", SMALL_FILES_VOICE_ONLY)',1)
+    # Remove the two obsolete independent toggle entries; keep one summary item.
+    t=t.replace('                    LocaleController.formatString(R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())),\n','')
+    t=t.replace('                    LocaleController.formatString(R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload())),\n','')
+    if 'getSmallFilesAutoDownloadModeAnnouncement()' not in t:
+        anchor='                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))'
+        if anchor in t:
+            t=t.replace(anchor,anchor+',\n                    getSmallFilesAutoDownloadModeAnnouncement()',1)
+    old='''                        } else if (which == 9) {
+                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));
+                        } else if (which == 10) {
+                            setNoAutoDownload(!getNoAutoDownload());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())));
+                        } else if (which == 11) {
+                            setVoiceOnlyAutoDownload(!getVoiceOnlyAutoDownload());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload())));
+                        }'''
+    if old in t:
+        t=t.replace(old,'''                        } else if (which == 9) {
+                            showSmallFilesModePicker(activity);
+                        }''',1)
+    cycle_handler = """                        } else if (which == 9) {
+                            int a11ySmallFilesMode = cycleSmallFilesAutoDownloadMode();
+                            announce(activity, getSmallFilesAutoDownloadModeAnnouncement());
+                        }"""
+    if cycle_handler in t:
+        t=t.replace(cycle_handler, """                        } else if (which == 9) {
+                            showSmallFilesModePicker(activity);
+                        }""", 1)
+    if 'private static void showSmallFilesModePicker(Activity activity)' not in t:
+        anchor='    private static void announce(Activity activity, String text) {'
+        method='''    // a11y-fork: small-file radio settings v1
+    private static void showSmallFilesModePicker(Activity activity) {
+        final String[] labels = new String[]{
+                LocaleController.getString(R.string.A11ySmallFilesAuto),
+                LocaleController.getString(R.string.A11ySmallFilesVoiceOnly),
+                LocaleController.getString(R.string.A11ySmallFilesOff)
+        };
+        int checked = getSmallFilesAutoDownloadMode();
+        if (checked < SMALL_FILES_AUTO || checked > SMALL_FILES_OFF) checked = SMALL_FILES_VOICE_ONLY;
+        new AlertDialog.Builder(activity)
+                .setTitle(LocaleController.getString(R.string.A11ySmallFilesPickerTitle))
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    setSmallFilesAutoDownloadMode(which);
+                    d.dismiss();
+                    announce(activity, getSmallFilesAutoDownloadModeAnnouncement());
+                })
+                .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
+                .show();
+    }
+
+'''
+        if anchor in t: t=t.replace(anchor,method+anchor,1)
+    t=t.replace('    // a11y-fork: small-file radio settings v1\n', '    // '+marker+'\n',1) if '    // a11y-fork: small-file radio settings v1\n' in t else t
+    cfg.write_text(t,encoding="utf-8")
+    print("Small-file setting converted to single-choice radio buttons OK")
+
 
 def patch_small_file_three_state() -> None:
     """Upgrade the v10 small-file boolean to a localized 3-state mode without removing
@@ -2537,6 +2613,7 @@ def main() -> int:
     patch_auto_download_policy()
     patch_small_file_localization()
     patch_small_file_three_state()
+    patch_small_file_radio_settings()
     patch_exact_progress_steps()
     patch_recording_beep()
     patch_dialogcell_preview_muted_status()
@@ -2550,6 +2627,7 @@ def main() -> int:
     patch_go_to_first_message()
     patch_file_description_spacing()
     patch_chat_message_solar_date()
+    patch_chat_action_solar_date_header()
     patch_chat_message_cell_accessibility_long_click()
     patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
