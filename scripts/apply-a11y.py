@@ -1601,6 +1601,48 @@ def patch_dialogcell_time_last() -> None:
     print("DialogCell sent/received LAST v5 OK")
 
 
+
+def patch_chat_action_solar_date_accessibility() -> None:
+    """Keep Telegram's visible Gregorian date separator, but expose Jalali date to TalkBack."""
+    ca = JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
+    if not ca.exists():
+        print("WARN: ChatActionCell missing (solar accessibility)")
+        return
+    t = ca.read_text(encoding="utf-8")
+    marker = "a11y-fork: solar date accessibility v1"
+    if marker in t:
+        return
+    anchor = "    @Override\n    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {"
+    if anchor not in t:
+        print("WARN: ChatActionCell accessibility anchor not found (solar accessibility)")
+        return
+    insert = r"""    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        // a11y-fork: solar date accessibility v1
+        // Keep Telegram's visual Gregorian separator unchanged. When Solar Calendar is
+        // enabled, make the date separator's accessible text Jalali for TalkBack.
+        try {
+            if (org.telegram.messenger.A11yConfig.getSolarCalendar()
+                    && customDate != 0
+                    && !TextUtils.isEmpty(customText)) {
+                String a11ySolarDate = org.telegram.messenger.A11yConfig.formatSolarDate(customDate);
+                if (a11ySolarDate != null && !a11ySolarDate.isEmpty()) {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                        info.setContentDescription(a11ySolarDate);
+                    } else {
+                        info.setText(a11ySolarDate);
+                    }
+                }
+            }
+        } catch (Throwable ignore) {
+        }
+"""
+    before, rest = t.split(anchor,1)
+    t = before + insert + rest
+    ca.write_text(t, encoding="utf-8")
+    print("ChatActionCell Solar date accessibility override OK")
+
 def patch_chat_action_solar_date_header() -> None:
     """Replace Telegram's Gregorian chat date-separator heading with Jalali while preserving native year logic."""
     ca=JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
@@ -2518,6 +2560,10 @@ def patch_remove_obsolete_small_file_switch() -> None:
         '', t
     )
     # If a previous radio patch already owns index 9, leave its handler intact.
+    t = re.sub(
+        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\),?\s*$',
+        '', t
+    )
     cfg.write_text(t, encoding="utf-8")
     print("Obsolete small-file switch removed; radio modes are authoritative OK")
 
@@ -2687,6 +2733,7 @@ def main() -> int:
     patch_file_description_spacing()
     patch_chat_message_solar_date()
     patch_chat_action_solar_date_header()
+    patch_chat_action_solar_date_accessibility()
     patch_chat_message_cell_accessibility_long_click()
     patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
