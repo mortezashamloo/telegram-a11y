@@ -2782,6 +2782,361 @@ def patch_exact_progress_steps() -> None:
         t2 = t2.replace('new int[] {5, 10, 20, 50}', 'new int[] {1, 5, 10, 20} // a11y-fork: exact progress steps')
     cfg.write_text(t2, encoding="utf-8")
     print("Progress steps 1/5/10/20 OK")
+def patch_friend_chat_jump_focus() -> None:
+    """PR 2003: move TalkBack focus to the message Telegram just jumped to."""
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists(): return
+    t = ca.read_text(encoding="utf-8")
+    marker = "a11y-friend: focus highlighted message"
+    if marker in t: return
+    anchor = "    private int getHeightForMessage(MessageObject object, boolean withGroupCaption) {"
+    idx = t.find(anchor)
+    if idx < 0:
+        print("WARN: ChatActivity highlight-focus anchor missing")
+        return
+    block = """    // a11y-friend: focus highlighted message
+    private int accessibilityFocusedHighlightId = Integer.MAX_VALUE;
+    private Runnable focusHighlightedMessageRunnable;
+
+    private void focusHighlightedMessageForAccessibility() {
+        if (highlightMessageId == Integer.MAX_VALUE || !AndroidUtilities.isAccessibilityScreenReaderEnabled()
+                || accessibilityFocusedHighlightId == highlightMessageId || chatListView == null) return;
+        accessibilityFocusedHighlightId = highlightMessageId;
+        final int id = highlightMessageId;
+        if (focusHighlightedMessageRunnable != null) AndroidUtilities.cancelRunOnUIThread(focusHighlightedMessageRunnable);
+        focusHighlightedMessageRunnable = () -> {
+            focusHighlightedMessageRunnable = null;
+            if (highlightMessageId != id || chatListView == null) return;
+            for (int i = 0; i < chatListView.getChildCount(); i++) {
+                View child = chatListView.getChildAt(i);
+                if (child instanceof ChatMessageCell) {
+                    MessageObject mo = ((ChatMessageCell) child).getMessageObject();
+                    if (mo != null && mo.getId() == id && child.isShown()) {
+                        child.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);
+                        return;
+                    }
+                }
+            }
+        };
+        AndroidUtilities.runOnUIThread(focusHighlightedMessageRunnable, searching ? 900 : 250);
+    }
+
+"""
+    t = t[:idx] + block + t[idx:]
+    t = t.replace("            highlightMessageId = Integer.MAX_VALUE;", "            highlightMessageId = Integer.MAX_VALUE;\n            accessibilityFocusedHighlightId = Integer.MAX_VALUE;", 1)
+    anchor2 = "                if (highlightMessageId != Integer.MAX_VALUE) {\n                    startMessageUnselect();"
+    if anchor2 in t:
+        t = t.replace(anchor2, "                if (highlightMessageId != Integer.MAX_VALUE) {\n                    startMessageUnselect();\n                    if (cell.isHighlighted()) focusHighlightedMessageForAccessibility();", 1)
+    ca.write_text(t, encoding="utf-8")
+    print("Friend PR 2003 message-jump accessibility focus OK")
+
+
+def patch_friend_search_result_announcement() -> None:
+    """PR 2004: expose and announce the in-chat search result count."""
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists(): return
+    t = ca.read_text(encoding="utf-8")
+    marker = "a11y-friend: search result count"
+    if marker in t: return
+    old = """    private void updateSearchCountText() {
+        if (searchCountText != null) {
+            boolean animated = !LocaleController.isRTL;"""
+    if old not in t:
+        print("WARN: search count anchor missing")
+        return
+    t = t.replace(old, """    // a11y-friend: search result count
+    private int accessibilityAnnouncedSearchIndex = -1;
+
+    private void updateSearchCountText() {
+        if (searchCountText != null) {
+            boolean animated = !LocaleController.isRTL;""", 1)
+    needle = """            } else {
+                searchCountText.setText(LocaleController.formatString(R.string.Of, searchLastIndex + 1, searchLastCount), animated);
+            }
+"""
+    repl = needle + """            CharSequence a11yCount = searchCountText.getText();
+            searchCountText.setContentDescription(a11yCount);
+            searchCountText.setImportantForAccessibility(TextUtils.isEmpty(a11yCount) ? View.IMPORTANT_FOR_ACCESSIBILITY_NO : View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            searchCountText.setFocusable(!TextUtils.isEmpty(a11yCount));
+            if (searchLastCount > 0 && searchLastIndex != accessibilityAnnouncedSearchIndex && AndroidUtilities.isAccessibilityScreenReaderEnabled()) {
+                if (accessibilityAnnouncedSearchIndex != -1) searchCountText.announceForAccessibility(a11yCount);
+                accessibilityAnnouncedSearchIndex = searchLastIndex;
+            } else if (searchLastCount <= 0) accessibilityAnnouncedSearchIndex = -1;
+"""
+    if needle not in t:
+        print("WARN: search count body anchor missing")
+        return
+    t = t.replace(needle, repl, 1)
+    ca.write_text(t, encoding="utf-8")
+    print("Friend PR 2004 search result announcement OK")
+
+
+def patch_friend_anonymous_sender_name() -> None:
+    """PR 2037: announce anonymous/channel senders."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists(): return
+    t = cmc.read_text(encoding="utf-8")
+    marker = "a11y-friend: anonymous sender name"
+    if marker in t: return
+    anchor = "    private String getAuthorName() {"
+    idx = t.find(anchor)
+    if idx < 0:
+        print("WARN: getAuthorName anchor missing")
+        return
+    helper = """    // a11y-friend: anonymous sender name
+    private boolean isNeedAccessibilityAuthorName() {
+        if (!isChat || currentMessageObject == null || currentMessageObject.isOut()) return false;
+        if (currentUser != null) return true;
+        return currentChat != null && (isMegagroup || currentChat.signature_profiles);
+    }
+
+"""
+    t = t[:idx] + helper + t[idx:]
+    old = """                    if (isChat && currentUser != null && !currentMessageObject.isOut()) {
+                        sb.append(UserObject.getUserName(currentUser));
+                        sb.setSpan(new ProfileSpan(currentUser), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);"""
+    new = """                    if (isNeedAccessibilityAuthorName()) {
+                        sb.append(getAuthorName());
+                        if (currentUser != null) {
+                            sb.setSpan(new ProfileSpan(currentUser), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        }"""
+    if old not in t:
+        print("WARN: sender accessibility text anchor missing")
+        return
+    t = t.replace(old, new, 1)
+    cmc.write_text(t, encoding="utf-8")
+    print("Friend PR 2037 anonymous/channel sender announcement OK")
+
+
+def patch_friend_reply_navigation() -> None:
+    """PR 2044: make reply/forward strip activation follow the visual tap."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists(): return
+    t = cmc.read_text(encoding="utf-8")
+    marker = "a11y-friend: reply navigation"
+    if marker in t: return
+    old = """                    } else if (virtualViewId == REPLY) {
+                        if (delegate != null && (!isThreadChat || isMonoForum || currentMessageObject.getReplyTopMsgId() != 0) && (currentMessageObject.hasValidReplyMessageObject() || hasReplyQuote || currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.reply_to != null && currentMessageObject.messageOwner.reply_to.reply_from != null)) {
+                            delegate.didPressReplyMessage(ChatMessageCell.this, currentMessageObject.getReplyMsgId(), 0, 0, false);
+                        }"""
+    new = """                    } else if (virtualViewId == REPLY) {
+                        // a11y-friend: reply navigation
+                        if (replyPanelIsForward) {
+                            if (delegate != null) {
+                                if (currentForwardChannel != null) delegate.didPressChannelAvatar(ChatMessageCell.this, currentForwardChannel, currentMessageObject.messageOwner.fwd_from.channel_post, lastTouchX, lastTouchY, false);
+                                else if (currentForwardUser != null) delegate.didPressUserAvatar(ChatMessageCell.this, currentForwardUser, lastTouchX, lastTouchY, false);
+                                else if (currentForwardName != null) delegate.didPressHiddenForward(ChatMessageCell.this);
+                            }
+                        } else if (delegate != null && (currentMessageObject.hasValidReplyMessageObject() || currentMessageObject.isReplyToStory() || hasReplyQuote || currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.reply_to != null && currentMessageObject.messageOwner.reply_to.reply_from != null)) {
+                            delegate.didPressReplyMessage(ChatMessageCell.this, currentMessageObject.getReplyMsgId(), 0, 0, false);
+                        }"""
+    if old not in t:
+        print("WARN: reply accessibility action anchor missing")
+        return
+    t = t.replace(old, new, 1)
+    cmc.write_text(t, encoding="utf-8")
+    print("Friend PR 2044 reply navigation OK")
+
+
+def patch_friend_sender_avatar_menu() -> None:
+    """PR 2045: expose the sender-avatar long-press menu as a TalkBack action."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    ids = RES / "values/ids.xml"
+    strings = RES / "values/strings.xml"
+    if not cmc.exists() or not ca.exists(): return
+    t = cmc.read_text(encoding="utf-8")
+    marker = "a11y-friend: sender avatar menu"
+    if marker in t: return
+    anchor = "    private int getIconForCurrentState() {"
+    idx = t.find(anchor)
+    if idx < 0:
+        print("WARN: sender avatar menu anchor missing")
+        return
+    helper = """    // a11y-friend: sender avatar menu
+    private boolean hasSenderAvatarMenu() {
+        return isAvatarVisible && currentMessageObject != null && delegate != null
+                && delegate.canLongPressAvatar(ChatMessageCell.this)
+                && (currentUser != null && currentUser.id != 0 || currentChat != null);
+    }
+
+    private boolean performSenderAvatarMenu() {
+        if (!hasSenderAvatarMenu()) return false;
+        if (currentUser != null && currentUser.id != 0) {
+            return delegate.didLongPressUserAvatar(ChatMessageCell.this, currentUser, lastTouchX, lastTouchY);
+        }
+        if (currentChat != null) {
+            int id = 0;
+            if (currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.fwd_from != null) {
+                id = (currentMessageObject.messageOwner.fwd_from.flags & 16) != 0
+                        ? currentMessageObject.messageOwner.fwd_from.saved_from_msg_id
+                        : currentMessageObject.messageOwner.fwd_from.channel_post;
+            }
+            return delegate.didLongPressChannelAvatar(ChatMessageCell.this, currentChat, id, lastTouchX, lastTouchY);
+        }
+        return false;
+    }
+
+"""
+    t = t[:idx] + helper + t[idx:]
+    old = """        } else if (action == R.id.acc_action_small_button) {
+            didPressMiniButton(true);"""
+    if old in t:
+        t = t.replace(old, old + "\n        } else if (action == R.id.acc_action_sender_avatar_menu) {\n            return performSenderAvatarMenu();", 1)
+    needle = """                info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_msg_options, getString(\"AccActionMessageOptions\", R.string.AccActionMessageOptions)));"""
+    if needle in t:
+        t = t.replace(needle, needle + "\n                if (hasSenderAvatarMenu()) info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_sender_avatar_menu, getString(R.string.AccActionSenderOptions)));", 1)
+    cmc.write_text(t, encoding="utf-8")
+    cat = ca.read_text(encoding="utf-8")
+    anchor2 = """        @Override
+        public boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {"""
+    if anchor2 in cat and "boolean canLongPressAvatar(ChatMessageCell cell)" not in cat:
+        cat = cat.replace(anchor2, """        @Override
+        public boolean canLongPressAvatar(ChatMessageCell cell) {
+            return isAvatarPreviewerEnabled();
+        }
+
+""" + anchor2, 1)
+        ca.write_text(cat, encoding="utf-8")
+    it = ids.read_text(encoding="utf-8")
+    if "acc_action_sender_avatar_menu" not in it:
+        ids.write_text(it.replace('    <item name="acc_action_msg_options" type="id"/>', '    <item name="acc_action_msg_options" type="id"/>\n    <item name="acc_action_sender_avatar_menu" type="id"/>', 1), encoding="utf-8")
+    st = strings.read_text(encoding="utf-8")
+    if 'name="AccActionSenderOptions"' not in st:
+        strings.write_text(st.replace('    <string name="AccActionMessageOptions">Message options</string>', '    <string name="AccActionMessageOptions">Message options</string>\n    <string name="AccActionSenderOptions">Sender options</string>', 1), encoding="utf-8")
+    print("Friend PR 2045 sender-avatar menu OK")
+
+def patch_friend_playback_position() -> None:
+    """PR 1993: announce elapsed/total playback position."""
+    mc = JAVA / "org/telegram/messenger/MediaController.java"
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not mc.exists() or not cmc.exists(): return
+    marker = "a11y-friend: playback position"
+    t = mc.read_text(encoding="utf-8")
+    if marker not in t:
+        anchor = "    public boolean isPlayingMessage(MessageObject messageObject) {"
+        if anchor in t:
+            block = """    // a11y-friend: playback position
+    public static CharSequence getPlaybackPositionDescription(MessageObject messageObject) {
+        if (messageObject == null || !getInstance().isPlayingMessage(messageObject)) return null;
+        int duration = (int) messageObject.getDuration();
+        int position = messageObject.audioProgressSec;
+        if (duration > 0 && messageObject.audioProgress > 0) position = Math.round(messageObject.audioProgress * duration);
+        position = Math.max(0, Math.min(duration, position));
+        return LocaleController.formatString(R.string.AccDescrPlayerDuration, LocaleController.formatDuration(position), LocaleController.formatDuration(duration));
+    }
+
+"""
+            mc.write_text(t.replace(anchor, block + anchor, 1), encoding="utf-8")
+    t = cmc.read_text(encoding="utf-8")
+    if marker not in t:
+        anchor = "    @Override\n    public boolean performAccessibilityAction(int action, Bundle arguments) {"
+        idx = t.find(anchor)
+        if idx >= 0:
+            block = """    // a11y-friend: playback position
+    private void announceA11yPlaybackPosition() {
+        CharSequence p = MediaController.getPlaybackPositionDescription(currentMessageObject);
+        if (p != null) announceForAccessibility(p);
+    }
+
+"""
+            t = t[:idx] + block + t[idx:]
+            seek = """            if (seekBarAccessibilityDelegate.performAccessibilityActionInternal(action, arguments)) {
+                return true;
+            }"""
+            if seek in t:
+                t = t.replace(seek, """            if (seekBarAccessibilityDelegate.performAccessibilityActionInternal(action, arguments)) {
+                announceA11yPlaybackPosition();
+                return true;
+            }""", 1)
+            old = """                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                    info.setContentDescription(accessibilityText.toString());
+                } else {
+                    info.setText(accessibilityText);
+                }"""
+            new = """                CharSequence a11ySpokenText = accessibilityText;
+                CharSequence a11yPlayback = MediaController.getPlaybackPositionDescription(currentMessageObject);
+                if (a11yPlayback != null) a11ySpokenText = TextUtils.concat(a11yPlayback, ", ", accessibilityText);
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                    info.setContentDescription(a11ySpokenText.toString());
+                } else {
+                    info.setText(a11ySpokenText);
+                }"""
+            if old in t: t = t.replace(old, new, 1)
+            cmc.write_text(t, encoding="utf-8")
+    print("Friend PR 1993 playback-position accessibility OK")
+
+
+def patch_friend_transfer_percentage() -> None:
+    """PR 1992: announce transfer percentage while a message is being explored."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    if not cmc.exists(): return
+    t = cmc.read_text(encoding="utf-8")
+    marker = "a11y-friend: transfer percentage"
+    if marker in t: return
+    anchor = "    @Override\n    public void onProgressDownload(String fileName, long downloadedSize, long totalSize) {"
+    idx = t.find(anchor)
+    if idx < 0:
+        print("WARN: download progress anchor missing")
+        return
+    block = """    // a11y-friend: transfer percentage
+    private int a11yLastTransferPercent = -1;
+    private long a11yLastTransferAnnounceTime;
+
+    private void announceA11yTransfer(boolean upload, long loaded, long total) {
+        if (total <= 0 || currentMessageObject == null || !AndroidUtilities.isAccessibilityScreenReaderEnabled()) return;
+        int percent = Math.max(0, Math.min(100, Math.round(loaded * 100f / total)));
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (percent == a11yLastTransferPercent || now - a11yLastTransferAnnounceTime < 2500) return;
+        if (percent < 100 && percent / 10 == a11yLastTransferPercent / 10) return;
+        a11yLastTransferPercent = percent;
+        a11yLastTransferAnnounceTime = now;
+        announceForAccessibility((upload ? getString(R.string.AccDescrUploadProgress) : getString(R.string.AccDescrDownloadProgress)) + ", " + percent + "%");
+    }
+
+"""
+    t = t[:idx] + block + t[idx:]
+    t = t.replace("        currentMessageObject.loadedFileSize = downloadedSize;", "        currentMessageObject.loadedFileSize = downloadedSize;\n        announceA11yTransfer(false, downloadedSize, totalSize);", 1)
+    needle = "        createLoadingProgressLayout(uploadedSize, totalSize);"
+    if needle in t:
+        t = t.replace(needle, needle + "\n        announceA11yTransfer(true, uploadedSize, totalSize);", 1)
+    cmc.write_text(t, encoding="utf-8")
+    print("Friend PR 1992 transfer-percentage accessibility OK")
+
+def _apply_friend_pr_patch(pr_number: int, label: str) -> None:
+    """Apply an isolated upstream accessibility PR on a fresh Telegram checkout."""
+    import subprocess
+    from urllib.request import Request, urlopen
+    repo_root = ROOT.parent.parent
+    stamp = repo_root / f".a11y_friend_pr_{pr_number}"
+    if stamp.exists():
+        print(f"Friend PR {pr_number} already applied: {label}")
+        return
+    url = f"https://github.com/DrKLO/Telegram/pull/{pr_number}.patch"
+    try:
+        req = Request(url, headers={"User-Agent": "Telegram-A11y-build"})
+        patch = urlopen(req, timeout=30).read()
+        proc = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], input=patch, cwd=str(repo_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if proc.returncode == 0:
+            stamp.write_text(f"friend-pr-{pr_number}\n", encoding="utf-8")
+            print(f"Friend PR {pr_number} applied: {label}")
+        else:
+            print(f"WARN: Friend PR {pr_number} ({label}) did not apply cleanly; skipped")
+            print(proc.stdout.decode("utf-8", "replace")[-4000:])
+    except Exception as exc:
+        print(f"WARN: Friend PR {pr_number} ({label}) unavailable: {exc}")
+
+
+def patch_friend_isolated_features() -> None:
+    # These are intentionally applied before our own custom patches because they touch
+    # otherwise-independent accessibility surfaces.
+    _apply_friend_pr_patch(2007, "RecyclerView screen-reader row scrolling")
+    _apply_friend_pr_patch(2042, "Profile action buttons discoverable by touch")
+    _apply_friend_pr_patch(2039, "Chat avatar story/community action")
+    _apply_friend_pr_patch(1986, "Story viewer TalkBack controls")
+    _apply_friend_pr_patch(2025, "Story sticker sheet accessibility")
+    _apply_friend_pr_patch(2026, "Story editor button names")
+
 
 def main() -> int:
     if not Path("telegram").is_dir():
@@ -2789,6 +3144,14 @@ def main() -> int:
         return 1
     print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
+    patch_friend_isolated_features()
+    patch_friend_playback_position()
+    patch_friend_transfer_percentage()
+    patch_friend_chat_jump_focus()
+    patch_friend_search_result_announcement()
+    patch_friend_anonymous_sender_name()
+    patch_friend_reply_navigation()
+    patch_friend_sender_avatar_menu()
     install_a11y_config()
     patch_a11y_download_settings()
     patch_a11y_localization()
