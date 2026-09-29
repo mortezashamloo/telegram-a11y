@@ -1603,25 +1603,25 @@ def patch_dialogcell_time_last() -> None:
 
 
 def patch_chat_action_solar_date_accessibility() -> None:
-    """Keep Telegram's visible Gregorian date separator, but expose Jalali date to TalkBack."""
+    """Override ChatActionCell's FINAL accessibility text with Jalali after Telegram sets it."""
     ca = JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
     if not ca.exists():
         print("WARN: ChatActionCell missing (solar accessibility)")
         return
     t = ca.read_text(encoding="utf-8")
-    marker = "a11y-fork: solar date accessibility v1"
+    marker = "a11y-fork: solar date accessibility v2"
     if marker in t:
         return
-    anchor = "    @Override\n    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {"
-    if anchor not in t:
-        print("WARN: ChatActionCell accessibility anchor not found (solar accessibility)")
-        return
-    insert = r"""    @Override
-    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
-        super.onInitializeAccessibilityNodeInfo(info);
-        // a11y-fork: solar date accessibility v1
-        // Keep Telegram's visual Gregorian separator unchanged. When Solar Calendar is
-        // enabled, make the date separator's accessible text Jalali for TalkBack.
+
+    # v18 inserted the override immediately after the method signature. Telegram's
+    # original method then continued and overwrote it with accessibilityText, so
+    # TalkBack still received the Gregorian date. In v19 we inject at the VERY END
+    # of the existing method, after info.setEnabled(true), so the Jalali value wins.
+    old = "        info.setEnabled(true);\n    }"
+    new = """        info.setEnabled(true);
+        // a11y-fork: solar date accessibility v2
+        // IMPORTANT: this must be after Telegram's native info.setText()/setContentDescription()
+        // so the Gregorian separator text cannot overwrite the Jalali accessibility text.
         try {
             if (org.telegram.messenger.A11yConfig.getSolarCalendar()
                     && customDate != 0
@@ -1637,11 +1637,13 @@ def patch_chat_action_solar_date_accessibility() -> None:
             }
         } catch (Throwable ignore) {
         }
-"""
-    before, rest = t.split(anchor,1)
-    t = before + insert + rest
+    }"""
+    if old not in t:
+        print("WARN: ChatActionCell info.setEnabled anchor not found (solar accessibility)")
+        return
+    t = t.replace(old, new, 1)
     ca.write_text(t, encoding="utf-8")
-    print("ChatActionCell Solar date accessibility override OK")
+    print("ChatActionCell FINAL Solar date accessibility override v2 OK")
 
 def patch_chat_action_solar_date_header() -> None:
     """Replace Telegram's Gregorian chat date-separator heading with Jalali while preserving native year logic."""
@@ -2478,9 +2480,14 @@ def patch_small_file_radio_settings() -> None:
     marker="a11y-fork: small-file radio settings v1"
     if marker in t: return
     t=t.replace('MessagesController.getGlobalMainSettings().getInt("a11y_small_files_mode", SMALL_FILES_AUTO)','MessagesController.getGlobalMainSettings().getInt("a11y_small_files_mode", SMALL_FILES_VOICE_ONLY)',1)
-    # Remove the two obsolete independent toggle entries; keep one summary item.
+    # Remove all legacy small-file entries from the Accessible Settings list.
+    # patch_small_file_three_state() may have already converted the old
+    # A11yBlockSmallFilesLabel entry into getSmallFilesAutoDownloadModeAnnouncement();
+    # that became the extra option immediately after the Radio Button in v18.
     t=t.replace('                    LocaleController.formatString(R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())),\n','')
     t=t.replace('                    LocaleController.formatString(R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload())),\n','')
+    t=t.replace('                    LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())),\n','')
+    t=t.replace('                    getSmallFilesAutoDownloadModeAnnouncement(),\n','')
     if 'getSmallFilesAutoDownloadModeAnnouncement()' not in t:
         anchor='                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))'
         if anchor in t:
@@ -2566,6 +2573,25 @@ def patch_remove_obsolete_small_file_switch() -> None:
     )
     cfg.write_text(t, encoding="utf-8")
     print("Obsolete small-file switch removed; radio modes are authoritative OK")
+
+
+def patch_small_file_radio_ui_cleanup_v2() -> None:
+    """Make the three-state Radio Button the ONLY small-file setting row."""
+    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
+    if not cfg.exists():
+        print("WARN: A11yConfig.java missing (small-file radio cleanup v2)")
+        return
+    t = cfg.read_text(encoding="utf-8")
+    patterns = [
+        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\),\s*\n',
+        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yNoAutoDownloadLabel, onOff\(getNoAutoDownload\(\)\),\s*\n',
+        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yVoiceOnlyAutoDownloadLabel, onOff\(getVoiceOnlyAutoDownload\(\)\),\s*\n',
+        r'(?m)^\s*getSmallFilesAutoDownloadModeAnnouncement\(\),\s*\n',
+    ]
+    for pat in patterns:
+        t = re.sub(pat, '', t)
+    cfg.write_text(t, encoding="utf-8")
+    print("Small-file Radio Button is now the only small-file settings row OK")
 
 
 def patch_small_file_three_state() -> None:
@@ -2718,6 +2744,7 @@ def main() -> int:
     patch_small_file_localization()
     patch_small_file_three_state()
     patch_small_file_radio_settings()
+    patch_small_file_radio_ui_cleanup_v2()
     patch_remove_obsolete_small_file_switch()
     patch_exact_progress_steps()
     patch_recording_beep()
