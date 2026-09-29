@@ -269,9 +269,9 @@ def install_a11y_config() -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, dst)
     cfg = dst.read_text(encoding="utf-8")
-    # a11y-fork: recording beep stays OFF by default (matches A11yConfig.java's own
-    # default) -- the user turns it on themselves from Accessible Settings. Recording
-    # vibration (patch_recording_beep) is unconditional and independent of this setting.
+    # a11y-fork: Solar calendar and the recording-start beep are switched ON by default
+    # (both can still be turned off from Accessible Settings). Recording vibration
+    # (patch_recording_beep) is unconditional and independent of the beep setting.
     cfg = cfg.replace("getBoolean(PREF_SOLAR_CALENDAR, false)", "getBoolean(PREF_SOLAR_CALENDAR, true)")
     cfg = cfg.replace("getBoolean(PREF_RECORDING_BEEP, false)", "getBoolean(PREF_RECORDING_BEEP, true)")
     if "PREF_LINKS_MENU" not in cfg:
@@ -457,6 +457,67 @@ def install_a11y_config() -> None:
                 "    }\n\n"
             )
             cfg = cfg[:solar_start] + solar_method + cfg[solar_end:]
+    # a11y-fork: Solar Hijri for chat date separators, mirroring Telegram's own
+    # LocaleController.formatDateChat(date, checkYear) short/full-year decision exactly.
+    # Self-contained (own Jalali maths + digit conversion) so it does not depend on which
+    # helpers the user's A11yConfig.java happens to contain.
+    if "formatSolarDateChat(" not in cfg:
+        chat_method = (
+            "    // a11y-fork: solar formatDateChat\n"
+            "    public static String formatSolarDateChat(long unixSeconds, boolean checkYear) {\n"
+            "        try {\n"
+            "            long dateMs = unixSeconds * 1000L;\n"
+            "            java.util.Calendar msg = java.util.Calendar.getInstance();\n"
+            "            msg.setTimeInMillis(dateMs);\n"
+            "            int[] j = a11yGregorianToJalali(msg.get(java.util.Calendar.YEAR), msg.get(java.util.Calendar.MONTH) + 1, msg.get(java.util.Calendar.DAY_OF_MONTH));\n"
+            "            boolean shortForm;\n"
+            "            if (checkYear) {\n"
+            "                shortForm = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) == msg.get(java.util.Calendar.YEAR);\n"
+            "            } else {\n"
+            "                shortForm = Math.abs(System.currentTimeMillis() - dateMs) < 31536000000L;\n"
+            "            }\n"
+            "            java.util.Locale loc = null;\n"
+            "            try { loc = LocaleController.getInstance().getCurrentLocale(); } catch (Throwable ignore) {}\n"
+            "            if (loc == null) loc = java.util.Locale.getDefault();\n"
+            "            boolean isFa = \"fa\".equalsIgnoreCase(loc.getLanguage());\n"
+            "            String[] faMonths = {\"\\u0641\\u0631\\u0648\\u0631\\u062f\\u06cc\\u0646\",\"\\u0627\\u0631\\u062f\\u06cc\\u0628\\u0647\\u0634\\u062a\",\"\\u062e\\u0631\\u062f\\u0627\\u062f\",\"\\u062a\\u06cc\\u0631\",\"\\u0645\\u0631\\u062f\\u0627\\u062f\",\"\\u0634\\u0647\\u0631\\u06cc\\u0648\\u0631\",\"\\u0645\\u0647\\u0631\",\"\\u0622\\u0628\\u0627\\u0646\",\"\\u0622\\u0630\\u0631\",\"\\u062f\\u06cc\",\"\\u0628\\u0647\\u0645\\u0646\",\"\\u0627\\u0633\\u0641\\u0646\\u062f\"};\n"
+            "            String[] enMonths = {\"Farvardin\",\"Ordibehesht\",\"Khordad\",\"Tir\",\"Mordad\",\"Shahrivar\",\"Mehr\",\"Aban\",\"Azar\",\"Dey\",\"Bahman\",\"Esfand\"};\n"
+            "            String month = (isFa ? faMonths : enMonths)[j[1] - 1];\n"
+            "            String value = shortForm\n"
+            "                    ? j[2] + \" \" + month\n"
+            "                    : j[2] + \" \" + month + (isFa ? \"\\u060c \" : \", \") + j[0];\n"
+            "            if (isFa) {\n"
+            "                StringBuilder sb = new StringBuilder(value.length());\n"
+            "                for (int i = 0; i < value.length(); i++) {\n"
+            "                    char c = value.charAt(i);\n"
+            "                    sb.append(c >= '0' && c <= '9' ? (char) ('\\u06f0' + (c - '0')) : c);\n"
+            "                }\n"
+            "                value = sb.toString();\n"
+            "            }\n"
+            "            return value;\n"
+            "        } catch (Throwable ignore) {\n"
+            "            return \"\";\n"
+            "        }\n"
+            "    }\n\n"
+            "    private static int[] a11yGregorianToJalali(int gy, int gm, int gd) {\n"
+            "        int jy;\n"
+            "        if (gy > 1600) { jy = 979; gy -= 1600; } else { jy = 0; gy -= 621; }\n"
+            "        int[] gdm = {0,31,59,90,120,151,181,212,243,273,304,334};\n"
+            "        int gy2 = gm > 2 ? gy + 1 : gy;\n"
+            "        int days = 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 - 80 + gd + gdm[gm - 1];\n"
+            "        jy += 33 * (days / 12053); days %= 12053;\n"
+            "        jy += 4 * (days / 1461); days %= 1461;\n"
+            "        if (days > 365) { jy += (days - 1) / 365; days = (days - 1) % 365; }\n"
+            "        int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;\n"
+            "        int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);\n"
+            "        return new int[]{jy, jm, jd};\n"
+            "    }\n"
+        )
+        last_brace = cfg.rstrip().rfind("}")
+        if last_brace > 0:
+            cfg = cfg[:last_brace] + "\n" + chat_method + cfg[last_brace:]
+        else:
+            print("WARN: could not append formatSolarDateChat to A11yConfig.java")
     dst.write_text(cfg, encoding="utf-8")
     print("A11yConfig.java installed + Solar date fixed/date-only + small-file setting added")
 
@@ -1428,10 +1489,6 @@ def patch_recording_beep() -> None:
     mc.write_text(t, encoding="utf-8")
     print("MediaController recording-start beep v3 (ringtone stream) OK")
 
-def patch_solar_calendar_preview() -> None:
-    """Intentionally disabled: Solar Hijri must NOT be injected into DialogCell Preview."""
-    print("DialogCell Solar Hijri preview injection intentionally disabled")
-
 def patch_settings_menu() -> None:
     sa = JAVA / "org/telegram/ui/SettingsActivity.java"
     if not sa.exists():
@@ -1602,80 +1659,47 @@ def patch_dialogcell_time_last() -> None:
 
 
 
-def patch_chat_action_solar_date_accessibility() -> None:
-    """Override ChatActionCell's FINAL accessibility text with Jalali after Telegram sets it."""
-    ca = JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
-    if not ca.exists():
-        print("WARN: ChatActionCell missing (solar accessibility)")
+def patch_locale_controller_solar_date_chat() -> None:
+    """Solar Hijri for every chat date separator, in Telegram's own short/full format.
+
+    Telegram builds ALL of these strings (in-list date dividers, the floating date
+    header, scheduled-date text, ...) with the single shared
+    LocaleController.formatDateChat(date, checkYear). The in-list dividers are
+    ChatActionCell instances whose text comes from MessageObject.messageText, NOT from
+    ChatActionCell.setCustomDate(), so patching ChatActionCell alone (previous
+    revisions) never reached what TalkBack actually reads. Patching the one shared
+    formatter fixes every caller at once and keeps Telegram's exact "short form inside
+    the last year, full form with year otherwise" decision.
+    """
+    lc = JAVA / "org/telegram/messenger/LocaleController.java"
+    if not lc.exists():
+        print("WARN: LocaleController missing (solar date chat)")
         return
-    t = ca.read_text(encoding="utf-8")
-    marker = "a11y-fork: solar date accessibility v2"
+    t = lc.read_text(encoding="utf-8")
+    marker = "a11y-fork: solar formatDateChat v1"
     if marker in t:
+        print("LocaleController solar formatDateChat already patched")
         return
-
-    # v18 inserted the override immediately after the method signature. Telegram's
-    # original method then continued and overwrote it with accessibilityText, so
-    # TalkBack still received the Gregorian date. In v19 we inject at the VERY END
-    # of the existing method, after info.setEnabled(true), so the Jalali value wins.
-    old = "        info.setEnabled(true);\n    }"
-    new = """        info.setEnabled(true);
-        // a11y-fork: solar date accessibility v2
-        // IMPORTANT: this must be after Telegram's native info.setText()/setContentDescription()
-        // so the Gregorian separator text cannot overwrite the Jalali accessibility text.
-        try {
-            if (org.telegram.messenger.A11yConfig.getSolarCalendar()
-                    && customDate != 0
-                    && !TextUtils.isEmpty(customText)) {
-                String a11ySolarDate = org.telegram.messenger.A11yConfig.formatSolarDate(customDate);
-                if (a11ySolarDate != null && !a11ySolarDate.isEmpty()) {
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                        info.setContentDescription(a11ySolarDate);
-                    } else {
-                        info.setText(a11ySolarDate);
-                    }
-                }
-            }
-        } catch (Throwable ignore) {
-        }
-    }"""
-    if old not in t:
-        print("WARN: ChatActionCell info.setEnabled anchor not found (solar accessibility)")
+    old = "    public static String formatDateChat(long date, boolean checkYear) {\n"
+    new = (
+        old +
+        "        // " + marker + "\n"
+        "        try {\n"
+        "            if (A11yConfig.getSolarCalendar()) {\n"
+        "                String a11ySolar = A11yConfig.formatSolarDateChat(date, checkYear);\n"
+        "                if (a11ySolar != null && a11ySolar.length() > 0) {\n"
+        "                    return a11ySolar;\n"
+        "                }\n"
+        "            }\n"
+        "        } catch (Throwable ignore) {\n"
+        "        }\n"
+    )
+    if t.count(old) != 1:
+        print("WARN: LocaleController.formatDateChat(long, boolean) anchor not found exactly once")
         return
-    t = t.replace(old, new, 1)
-    ca.write_text(t, encoding="utf-8")
-    print("ChatActionCell FINAL Solar date accessibility override v2 OK")
+    lc.write_text(t.replace(old, new, 1), encoding="utf-8")
+    print("LocaleController solar formatDateChat OK")
 
-def patch_chat_action_solar_date_header() -> None:
-    """Replace Telegram's Gregorian chat date-separator heading with Jalali while preserving native year logic."""
-    ca=JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
-    if not ca.exists():
-        print("WARN: ChatActionCell missing (solar date header)")
-        return
-    t=ca.read_text(encoding="utf-8")
-    marker="a11y-fork: solar date separator header v2"
-    if marker in t: return
-    old='            newText = LocaleController.formatDateChat(date);'
-    new='''            // a11y-fork: solar date separator header v2
-            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {
-                String a11ySolarHeader = org.telegram.messenger.A11yConfig.formatSolarDate(date);
-                newText = a11ySolarHeader != null && !a11ySolarHeader.isEmpty()
-                        ? a11ySolarHeader
-                        : LocaleController.formatDateChat(date);
-            } else {
-                newText = LocaleController.formatDateChat(date);
-            }'''
-    if old not in t:
-        print("WARN: ChatActionCell date-separator anchor not found")
-        return
-    t=t.replace(old,new,1)
-    t=t.replace('    public void setCustomDate(int date, boolean scheduled, boolean inLayout) {','    // '+marker+'\n    public void setCustomDate(int date, boolean scheduled, boolean inLayout) {',1)
-    ca.write_text(t,encoding="utf-8")
-    print("ChatActionCell Solar date separator header OK")
-
-
-def patch_chat_message_solar_date() -> None:
-    """ChatMessageCell does not own the date separator; ChatActionCell does."""
-    print("ChatMessageCell Solar date skipped; ChatActionCell owns date-separator behavior")
 
 def patch_hide_sponsor_channel() -> None:
     """
@@ -1812,6 +1836,10 @@ def patch_links_as_menu() -> None:
                         int end=Math.max(s,Math.min(raw.length(),s+e.length));
                         url=raw.substring(s,end);
                         if (e instanceof TLRPC.TL_messageEntityEmail) url="mailto:"+url;
+                        else {
+                            String a11yLow = url.toLowerCase();
+                            if (!a11yLow.contains("://") && !a11yLow.startsWith("tg:") && !a11yLow.startsWith("mailto:")) url="https://"+url;
+                        }
                     } else if (e instanceof TLRPC.TL_messageEntityMention) {
                         // a11y-fork: @username mention -> t.me deep link
                         int s=Math.max(0,Math.min(raw.length(),e.offset));
@@ -1840,8 +1868,19 @@ def patch_links_as_menu() -> None:
             final String[] values=links.toArray(new String[0]);
             new AlertDialog.Builder(getParentActivity()).setTitle(LocaleController.getString(R.string.A11yLinks)).setItems(values,(dialog,which)->{
                 if(which>=0&&which<values.length) {
-                    try { getParentActivity().startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(values[which]))); }
-                    catch(Throwable e){ FileLog.e(e); }
+                    // a11y-fork: Telegram's own links (t.me / telegram.me / telegram.dog / tg://) must be
+                    // handled INSIDE Telegram (same path a normal tap on such a link takes), never handed
+                    // to the system browser. Everything else keeps the previous external behaviour.
+                    final String a11yUrl = values[which];
+                    boolean a11yInternal = false;
+                    try { a11yInternal = Browser.isInternalUrl(a11yUrl, null); } catch (Throwable ignore) {}
+                    if (a11yInternal) {
+                        try { Browser.openUrl(getParentActivity(), android.net.Uri.parse(a11yUrl)); }
+                        catch(Throwable e){ FileLog.e(e); }
+                    } else {
+                        try { getParentActivity().startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(a11yUrl))); }
+                        catch(Throwable e){ FileLog.e(e); }
+                    }
                 }
             }).setNegativeButton(LocaleController.getString(R.string.A11yCancel),null).show();
         } catch(Throwable e) { FileLog.e(e); }
@@ -2243,10 +2282,6 @@ def patch_chat_message_cell_granularity_navigation() -> None:
     cmc.write_text(t, encoding="utf-8")
     print("ChatMessageCell granularity navigation v1 OK")
 
-
-def patch_chat_message_solar_date() -> None:
-    """Keep message accessibility date behavior native; DialogCell handles Solar date."""
-    print("ChatMessageCell Solar date skipped; DialogCell owns native date behavior")
 
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
@@ -2729,7 +2764,6 @@ def main() -> int:
     patch_app_name()
     install_a11y_config()
     patch_a11y_download_settings()
-    patch_a11y_localization()
     patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
@@ -2758,12 +2792,13 @@ def main() -> int:
     patch_reorder_a11y_menu_items()
     patch_go_to_first_message()
     patch_file_description_spacing()
-    patch_chat_message_solar_date()
-    patch_chat_action_solar_date_header()
-    patch_chat_action_solar_date_accessibility()
+    patch_locale_controller_solar_date_chat()
     patch_chat_message_cell_accessibility_long_click()
     patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
+    # MUST stay last: it rewrites English text injected by the patches above
+    # (Selected / Bot Buttons / Forwarded to Saved / Accessible settings ...).
+    patch_a11y_localization()
     print("A11y REAL patches done")
     return 0
 
