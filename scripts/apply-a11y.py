@@ -1534,38 +1534,71 @@ def patch_dialogcell_preview_muted_status() -> None:
 
 
 def patch_dialogcell_time_last() -> None:
-    """Move Telegram's sent/received sentence to the absolute end of DialogCell Preview."""
+    """Move Telegram's native sent/received sentence to the absolute end of Preview.
+
+    Do not build a separate accessibility field: Telegram's own StringBuilder is
+    the content description used by both the AccessibilityEvent and the View.
+    Removing the native block and inserting the exact same block immediately
+    before those final calls guarantees TalkBack receives it as the last item.
+    Preview deliberately stays Gregorian/native; Solar Hijri is for chat-message
+    date separators only.
+    """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (time-last)")
         return
     t = dc.read_text(encoding="utf-8")
-    t = re.sub(r'\n\s*// a11y-fork: preview sent-received field(?: v[0-9]+)?\n\s*private String a11yPreviewSentReceivedDate;\n', '\n', t, count=1)
-    field_marker = "a11y-fork: preview sent-received field v4"
-    if field_marker not in t:
-        cm = re.search(r'(public class DialogCell extends BaseCell[^\{]*\{)', t)
-        if not cm:
-            print("WARN: DialogCell class declaration not found (time-last)")
-            return
-        t = t[:cm.end()] + "\n    // " + field_marker + "\n    private String a11yPreviewSentReceivedDate;" + t[cm.end():]
-    t = re.sub(r'(?m)^\s*// a11y-fork: preview sent-received-last[^\n]*\n\s*if \(a11yPreviewSentReceivedDate != null && a11yPreviewSentReceivedDate\.length\(\) > 0\) \{\n\s*sb\.append\(a11yPreviewSentReceivedDate\);\n\s*sb\.append\(\"\. \"\);\n\s*\}\n', '', t, count=1)
-    pattern = re.compile(r'(?m)^(?P<i>\s*)String date = LocaleController\.formatDateAudio\(lastDate, true\);\n(?P=i)if \(message\.isOut\(\)\) \{\n(?P=i)    sb\.append\(LocaleController\.formatString\(\"AccDescrSentDate\", R\.string\.AccDescrSentDate, date\)\);\n(?P=i)\} else \{\n(?P=i)    sb\.append\(LocaleController\.formatString\(\"AccDescrReceivedDate\", R\.string\.AccDescrReceivedDate, date\)\);\n(?P=i)\}\n(?P=i)sb\.append\(\"\. \"\);')
-    m=pattern.search(t)
+    marker = "a11y-fork: preview sent-received-last v5"
+    if marker in t:
+        print("DialogCell sent/received LAST v5 already patched")
+        return
+
+    # Remove any field-based v4 implementation from v16, if present.
+    t = re.sub(
+        r'(?m)^\s*// a11y-fork: preview sent-received field(?: v[0-9]+)?\n\s*private String a11yPreviewSentReceivedDate;\n',
+        '', t, count=1
+    )
+    t = re.sub(
+        r'(?m)^\s*// a11y-fork: preview sent-received-last[^\n]*\n'
+        r'\s*if \(a11yPreviewSentReceivedDate != null && a11yPreviewSentReceivedDate\.length\(\) > 0\) \{\n'
+        r'\s*sb\.append\(a11yPreviewSentReceivedDate\);\n'
+        r'\s*sb\.append\("\. "\);\n\s*\}\n',
+        '', t, count=1
+    )
+
+    # Remove the native early sent/received block, wherever it occurs.
+    native = re.compile(
+        r'(?m)^\s*String date = LocaleController\.formatDateAudio\(lastDate, true\);\n'
+        r'\s*if \(message\.isOut\(\)\) \{\n'
+        r'\s*sb\.append\(LocaleController\.formatString\("AccDescrSentDate", R\.string\.AccDescrSentDate, date\)\);\n'
+        r'\s*\} else \{\n'
+        r'\s*sb\.append\(LocaleController\.formatString\("AccDescrReceivedDate", R\.string\.AccDescrReceivedDate, date\)\);\n'
+        r'\s*\}\n\s*sb\.append\("\. "\);\n'
+    )
+    m = native.search(t)
     if not m:
         print("WARN: DialogCell native sent/received date block not found (time-last)")
         return
-    i=m.group("i")
-    replacement=(i+'String date = LocaleController.formatDateAudio(lastDate, true);\n'+i+'try {\n'+i+'    if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {\n'+i+'        String a11ySolarPreviewDate = org.telegram.messenger.A11yConfig.formatSolarDateAudio(lastDate);\n'+i+'        if (a11ySolarPreviewDate != null && !a11ySolarPreviewDate.isEmpty()) date = a11ySolarPreviewDate;\n'+i+'    }\n'+i+'} catch (Throwable ignore) {}\n'+i+'a11yPreviewSentReceivedDate = message.isOut()\n'+i+'        ? LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, date)\n'+i+'        : LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, date);')
-    t=t[:m.start()]+replacement+t[m.end():]
-    final=re.search(r'(?m)^(?P<i>\s*)event\.setContentDescription\(sb\);',t)
+    t = t[:m.start()] + t[m.end():]
+
+    # Insert it immediately before the final accessibility-description calls.
+    tail = (
+        '        // ' + marker + '\n'
+        '        String a11yPreviewDate = LocaleController.formatDateAudio(lastDate, true);\n'
+        '        if (message.isOut()) {\n'
+        '            sb.append(LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, a11yPreviewDate));\n'
+        '        } else {\n'
+        '            sb.append(LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, a11yPreviewDate));\n'
+        '        }\n'
+        '        sb.append(". ");\n'
+    )
+    final = re.search(r'(?m)^        event\.setContentDescription\(sb\);\n        setContentDescription\(sb\);', t)
     if not final:
-        print("WARN: DialogCell final contentDescription anchor not found (time-last)")
+        print("WARN: DialogCell final event/setContentDescription pair not found (time-last)")
         return
-    i=final.group("i")
-    tail=(i+'// a11y-fork: preview sent-received-last v4\n'+i+'if (a11yPreviewSentReceivedDate != null && a11yPreviewSentReceivedDate.length() > 0) {\n'+i+'    sb.append(a11yPreviewSentReceivedDate);\n'+i+'    sb.append(". ");\n'+i+'}\n'+i+'event.setContentDescription(sb);')
-    t=t[:final.start()]+tail+t[final.end():]
-    dc.write_text(t,encoding="utf-8")
-    print("DialogCell sent/received LAST + Solar date OK")
+    t = t[:final.start()] + tail + t[final.start():]
+    dc.write_text(t, encoding="utf-8")
+    print("DialogCell sent/received LAST v5 OK")
 
 
 def patch_chat_action_solar_date_header() -> None:
@@ -1575,12 +1608,12 @@ def patch_chat_action_solar_date_header() -> None:
         print("WARN: ChatActionCell missing (solar date header)")
         return
     t=ca.read_text(encoding="utf-8")
-    marker="a11y-fork: solar date separator header v1"
+    marker="a11y-fork: solar date separator header v2"
     if marker in t: return
     old='            newText = LocaleController.formatDateChat(date);'
-    new='''            // a11y-fork: solar date separator header v1
+    new='''            // a11y-fork: solar date separator header v2
             if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {
-                String a11ySolarHeader = org.telegram.messenger.A11yConfig.formatSolarDateChat(date, false);
+                String a11ySolarHeader = org.telegram.messenger.A11yConfig.formatSolarDate(date);
                 newText = a11ySolarHeader != null && !a11ySolarHeader.isEmpty()
                         ? a11ySolarHeader
                         : LocaleController.formatDateChat(date);
@@ -2464,6 +2497,31 @@ def patch_small_file_radio_settings() -> None:
     print("Small-file setting converted to single-choice radio buttons OK")
 
 
+def patch_remove_obsolete_small_file_switch() -> None:
+    """Remove the legacy independent small-file switch now that radio modes are authoritative."""
+    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
+    if not cfg.exists():
+        print("WARN: A11yConfig.java missing (remove obsolete small-file switch)")
+        return
+    t = cfg.read_text(encoding="utf-8")
+    marker = "a11y-fork: obsolete small-file switch removed v1"
+    if marker in t:
+        return
+    # Remove any list entry for the old boolean switch, regardless of its position.
+    t = re.sub(
+        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\),\n',
+        '', t
+    )
+    # Remove the old click handler if it survived an earlier patch.
+    t = re.sub(
+        r'(?m)^\s*\}\s*else if \(which == 9\) \{\n\s*setBlockSmallAutoDownloads\(!getBlockSmallAutoDownloads\(\)\);\n\s*announce\(activity, LocaleController\.formatString\(\n\s*R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\)\);\n\s*\}\n',
+        '', t
+    )
+    # If a previous radio patch already owns index 9, leave its handler intact.
+    cfg.write_text(t, encoding="utf-8")
+    print("Obsolete small-file switch removed; radio modes are authoritative OK")
+
+
 def patch_small_file_three_state() -> None:
     """Upgrade the v10 small-file boolean to a localized 3-state mode without removing
     the old getters/setters. Modes: 0 allow small files, 1 block small files except voice,
@@ -2614,6 +2672,7 @@ def main() -> int:
     patch_small_file_localization()
     patch_small_file_three_state()
     patch_small_file_radio_settings()
+    patch_remove_obsolete_small_file_switch()
     patch_exact_progress_steps()
     patch_recording_beep()
     patch_dialogcell_preview_muted_status()
