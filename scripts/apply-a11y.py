@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Apply accessibility patches to cloned Telegram tree (12.10.5 baseline) (cwd parent of telegram/).
 
-This revision is based on v19 in full, preserving all working accessibility features and adding the verified root Solar-date formatter fix. It preserves v10 patches and only
+This revision is intentionally based on v10 in full. It preserves v10 patches and only
 adds the requested small-file 3-state setting, exact progress steps, fresh-install
 auto-download OFF defaults, and private-chat support for Go to first message.
 
@@ -269,43 +269,15 @@ def install_a11y_config() -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, dst)
     cfg = dst.read_text(encoding="utf-8")
-    # a11y-fork: recording beep stays OFF by default (matches A11yConfig.java's own
-    # default) -- the user turns it on themselves from Accessible Settings. Recording
-    # vibration (patch_recording_beep) is unconditional and independent of this setting.
+    # a11y-fork: Solar calendar is ON by default (can be turned off from Accessible Settings).
+    # The recording-start beep stays OFF by default (A11yConfig.java's own default); the
+    # recording vibration (patch_recording_beep) is unconditional and independent of it.
     cfg = cfg.replace("getBoolean(PREF_SOLAR_CALENDAR, false)", "getBoolean(PREF_SOLAR_CALENDAR, true)")
-    cfg = cfg.replace("getBoolean(PREF_RECORDING_BEEP, false)", "getBoolean(PREF_RECORDING_BEEP, true)")
     if "PREF_LINKS_MENU" not in cfg:
         cfg = cfg.replace(
             'public static final String PREF_SOLAR_CALENDAR = "a11y_solar_calendar";',
             'public static final String PREF_SOLAR_CALENDAR = "a11y_solar_calendar";\n    public static final String PREF_LINKS_MENU = "a11y_links_menu";'
         )
-    if "PREF_BLOCK_SMALL_AUTO_DOWNLOADS" not in cfg:
-        cfg = cfg.replace(
-            'public static final String PREF_LINKS_MENU = "a11y_links_menu";',
-            'public static final String PREF_LINKS_MENU = "a11y_links_menu";\n    public static final String PREF_BLOCK_SMALL_AUTO_DOWNLOADS = "a11y_block_small_auto_downloads";'
-        )
-    if "getBlockSmallAutoDownloads()" not in cfg:
-        anchor = "    public static boolean getSolarCalendar() {"
-        methods = (
-            "    // a11y-fork: optional protection against automatic downloads of very small files.\n"
-            "    // Default OFF; voice messages are exempt in DownloadController.\n"
-            "    public static boolean getBlockSmallAutoDownloads() {\n"
-            "        try {\n"
-            "            return MessagesController.getGlobalMainSettings().getBoolean(PREF_BLOCK_SMALL_AUTO_DOWNLOADS, false);\n"
-            "        } catch (Throwable ignore) {\n"
-            "            return false;\n"
-            "        }\n"
-            "    }\n\n"
-            "    public static void setBlockSmallAutoDownloads(boolean value) {\n"
-            "        try {\n"
-            "            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_BLOCK_SMALL_AUTO_DOWNLOADS, value).apply();\n"
-            "            try { org.telegram.messenger.DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}\n"
-            "        } catch (Throwable ignore) {\n"
-            "        }\n"
-            "    }\n\n"
-        )
-        if anchor in cfg:
-            cfg = cfg.replace(anchor, methods + anchor, 1)
     if "getLinksMenuEnabled()" not in cfg:
         anchor = "    public static boolean getSolarCalendar() {"
         methods = (
@@ -325,68 +297,6 @@ def install_a11y_config() -> None:
         )
         if anchor in cfg:
             cfg = cfg.replace(anchor, methods + anchor, 1)
-    if "which == 9" not in cfg and "getBlockSmallAutoDownloads()" in cfg:
-        links_item = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))'
-        if links_item in cfg and "A11yBlockSmallFilesLabel" not in cfg:
-            cfg = cfg.replace(
-                links_item,
-                links_item + ',\n                    LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads()))',
-                1,
-            )
-        elif "A11yBlockSmallFilesLabel" not in cfg:
-            solar_item = '                    LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar()))'
-            if solar_item in cfg:
-                cfg = cfg.replace(
-                    solar_item,
-                    solar_item + ',\n                    LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads()))',
-                    1,
-                )
-
-        links_handler = (
-            "                        } else if (which == 8) {\n"
-            "                            setLinksMenuEnabled(!getLinksMenuEnabled());\n"
-            "                            announce(activity, LocaleController.formatString(\n"
-            "                                    R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));\n"
-            "                        }\n"
-        )
-        if links_handler in cfg:
-            cfg = cfg.replace(
-                links_handler,
-                links_handler.replace(
-                    "                        }\n",
-                    "                        } else if (which == 9) {\n"
-                    "                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());\n"
-                    "                            announce(activity, LocaleController.formatString(\n"
-                    "                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));\n"
-                    "                        }\n",
-                    1,
-                ),
-                1,
-            )
-        else:
-            solar_handler = (
-                "                        } else if (which == 7) {\n"
-                "                            setSolarCalendar(!getSolarCalendar());\n"
-                "                            announce(activity, LocaleController.formatString(\n"
-                "                                    R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar())));\n"
-                "                        }\n"
-            )
-            if solar_handler in cfg:
-                cfg = cfg.replace(
-                    solar_handler,
-                    solar_handler.replace(
-                        "                        }\n",
-                        "                        } else if (which == 9) {\n"
-                        "                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());\n"
-                        "                            announce(activity, LocaleController.formatString(\n"
-                        "                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));\n"
-                        "                        }\n",
-                        1,
-                    ),
-                    1,
-                )
-
-
     # a11y-fork: Solar date replacement supports both old int and current long signatures.
     # It is date-only: Telegram's surrounding formatter controls the time-of-day.
     solar_start = cfg.find("    public static String formatSolarDate(")
@@ -457,6 +367,91 @@ def install_a11y_config() -> None:
                 "    }\n\n"
             )
             cfg = cfg[:solar_start] + solar_method + cfg[solar_end:]
+    # a11y-fork: Solar Hijri for chat date separators, mirroring Telegram's own
+    # LocaleController.formatDateChat(date, checkYear) short/full-year decision exactly.
+    # Self-contained (own Jalali maths + digit conversion) so it does not depend on which
+    # helpers the user's A11yConfig.java happens to contain.
+    if "formatSolarDateChat(" not in cfg:
+        chat_method = (
+            "    // a11y-fork: solar formatDateChat\n"
+            "    public static String formatSolarDateChat(long unixSeconds, boolean checkYear) {\n"
+            "        try {\n"
+            "            long dateMs = unixSeconds * 1000L;\n"
+            "            java.util.Calendar msg = java.util.Calendar.getInstance();\n"
+            "            msg.setTimeInMillis(dateMs);\n"
+            "            int[] j = a11yGregorianToJalali(msg.get(java.util.Calendar.YEAR), msg.get(java.util.Calendar.MONTH) + 1, msg.get(java.util.Calendar.DAY_OF_MONTH));\n"
+            "            boolean shortForm;\n"
+            "            if (checkYear) {\n"
+            "                shortForm = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) == msg.get(java.util.Calendar.YEAR);\n"
+            "            } else {\n"
+            "                shortForm = Math.abs(System.currentTimeMillis() - dateMs) < 31536000000L;\n"
+            "            }\n"
+            "            java.util.Locale loc = null;\n"
+            "            try { loc = LocaleController.getInstance().getCurrentLocale(); } catch (Throwable ignore) {}\n"
+            "            if (loc == null) loc = java.util.Locale.getDefault();\n"
+            "            boolean isFa = \"fa\".equalsIgnoreCase(loc.getLanguage());\n"
+            "            String[] faMonths = {\"\\u0641\\u0631\\u0648\\u0631\\u062f\\u06cc\\u0646\",\"\\u0627\\u0631\\u062f\\u06cc\\u0628\\u0647\\u0634\\u062a\",\"\\u062e\\u0631\\u062f\\u0627\\u062f\",\"\\u062a\\u06cc\\u0631\",\"\\u0645\\u0631\\u062f\\u0627\\u062f\",\"\\u0634\\u0647\\u0631\\u06cc\\u0648\\u0631\",\"\\u0645\\u0647\\u0631\",\"\\u0622\\u0628\\u0627\\u0646\",\"\\u0622\\u0630\\u0631\",\"\\u062f\\u06cc\",\"\\u0628\\u0647\\u0645\\u0646\",\"\\u0627\\u0633\\u0641\\u0646\\u062f\"};\n"
+            "            String[] enMonths = {\"Farvardin\",\"Ordibehesht\",\"Khordad\",\"Tir\",\"Mordad\",\"Shahrivar\",\"Mehr\",\"Aban\",\"Azar\",\"Dey\",\"Bahman\",\"Esfand\"};\n"
+            "            String month = (isFa ? faMonths : enMonths)[j[1] - 1];\n"
+            "            String value = shortForm\n"
+            "                    ? j[2] + \" \" + month\n"
+            "                    : j[2] + \" \" + month + (isFa ? \"\\u060c \" : \", \") + j[0];\n"
+            "            if (isFa) {\n"
+            "                StringBuilder sb = new StringBuilder(value.length());\n"
+            "                for (int i = 0; i < value.length(); i++) {\n"
+            "                    char c = value.charAt(i);\n"
+            "                    sb.append(c >= '0' && c <= '9' ? (char) ('\\u06f0' + (c - '0')) : c);\n"
+            "                }\n"
+            "                value = sb.toString();\n"
+            "            }\n"
+            "            return value;\n"
+            "        } catch (Throwable ignore) {\n"
+            "            return \"\";\n"
+            "        }\n"
+            "    }\n\n"
+            "    private static int[] a11yGregorianToJalali(int gy, int gm, int gd) {\n"
+            "        int jy;\n"
+            "        if (gy > 1600) { jy = 979; gy -= 1600; } else { jy = 0; gy -= 621; }\n"
+            "        int[] gdm = {0,31,59,90,120,151,181,212,243,273,304,334};\n"
+            "        int gy2 = gm > 2 ? gy + 1 : gy;\n"
+            "        int days = 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 - 80 + gd + gdm[gm - 1];\n"
+            "        jy += 33 * (days / 12053); days %= 12053;\n"
+            "        jy += 4 * (days / 1461); days %= 1461;\n"
+            "        if (days > 365) { jy += (days - 1) / 365; days = (days - 1) % 365; }\n"
+            "        int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;\n"
+            "        int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);\n"
+            "        return new int[]{jy, jm, jd};\n"
+            "    }\n"
+        )
+        last_brace = cfg.rstrip().rfind("}")
+        if last_brace > 0:
+            cfg = cfg[:last_brace] + "\n" + chat_method + cfg[last_brace:]
+        else:
+            print("WARN: could not append formatSolarDateChat to A11yConfig.java")
+    # a11y-fork: decide Persian digits/month names from Telegram's OWN selected language, not the
+    # phone's system language (a Persian Telegram on an English phone otherwise got English month
+    # names and Latin digits in the Solar date).
+    if "a11yIsPersianUi()" not in cfg:
+        cfg = cfg.replace('"fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage())', "a11yIsPersianUi()")
+        cfg = cfg.replace('"fa".equalsIgnoreCase(locale.getLanguage())', "a11yIsPersianUi()")
+        helper = (
+            "    // a11y-fork: Telegram's selected UI language, falling back to the system locale\n"
+            "    private static boolean a11yIsPersianUi() {\n"
+            "        try {\n"
+            "            java.util.Locale loc = LocaleController.getInstance().getCurrentLocale();\n"
+            "            if (loc == null) loc = java.util.Locale.getDefault();\n"
+            "            return \"fa\".equalsIgnoreCase(loc.getLanguage());\n"
+            "        } catch (Throwable ignore) {\n"
+            "            return \"fa\".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        anchor = "    private static String toPersianDigits"
+        if anchor in cfg:
+            cfg = cfg.replace(anchor, helper + anchor, 1)
+        else:
+            print("WARN: toPersianDigits anchor not found (a11yIsPersianUi helper not inserted)")
+            cfg = cfg.replace("a11yIsPersianUi()", '"fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage())')
     dst.write_text(cfg, encoding="utf-8")
     print("A11yConfig.java installed + Solar date fixed/date-only + small-file setting added")
 
@@ -1009,7 +1004,7 @@ def patch_longpress_message_menu() -> None:
     # Telegram 12.10.5 uses a direct ChatMessageCellDelegate.didLongPress implementation
     # for accessibility-triggered long clicks. The older anchor above may not exist, so
     # patch the exact current delegate method as a safe fallback.
-    if "a11y-fork: 12.10.5 TalkBack didLongPress" not in t:
+    if "a11y-fork: 12.10.5 TalkBack didLongPress" not in t and "a11y-fork: under TalkBack, long-press must open the full" not in t:
         old_dlp_125 = '        public void didLongPress(ChatMessageCell cell, float x, float y) {\n            createMenu(cell, false, false, x, y, false);\n            startMultiselect(chatListView.getChildAdapterPosition(cell));\n        }'
         new_dlp_125 = '        public void didLongPress(ChatMessageCell cell, float x, float y) {\n            // a11y-fork: 12.10.5 TalkBack didLongPress\n            boolean a11yTalkBack = false;\n            try {\n                android.view.accessibility.AccessibilityManager am = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n                a11yTalkBack = am != null && am.isEnabled() && am.isTouchExplorationEnabled();\n            } catch (Throwable ignore) {}\n            if (a11yTalkBack) {\n                createMenu(cell, true, false, x, y, true);\n            } else {\n                createMenu(cell, false, false, x, y, false);\n                startMultiselect(chatListView.getChildAdapterPosition(cell));\n            }\n        }'
         if old_dlp_125 in t:
@@ -1079,81 +1074,6 @@ def patch_longpress_message_menu() -> None:
 
 
 
-def patch_a11y_download_settings() -> None:
-    """Add explicit all-download and voice-only download controls."""
-    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
-    if not cfg.exists():
-        print("WARN: A11yConfig.java missing (download settings)")
-        return
-    t = cfg.read_text(encoding="utf-8")
-    if "PREF_NO_AUTO_DOWNLOAD" not in t:
-        t=t.replace(
-            'public static final String PREF_BLOCK_SMALL_AUTO_DOWNLOADS = "a11y_block_small_auto_downloads";',
-            'public static final String PREF_BLOCK_SMALL_AUTO_DOWNLOADS = "a11y_block_small_auto_downloads";\n'
-            '    public static final String PREF_NO_AUTO_DOWNLOAD = "a11y_no_auto_download";\n'
-            '    public static final String PREF_VOICE_ONLY_AUTO_DOWNLOAD = "a11y_voice_only_auto_download";',1)
-    if "getNoAutoDownload()" not in t:
-        anchor='    public static boolean getSolarCalendar() {'
-        methods='''    public static boolean getNoAutoDownload() {
-        try { return MessagesController.getGlobalMainSettings().getBoolean(PREF_NO_AUTO_DOWNLOAD, false); }
-        catch (Throwable ignore) { return false; }
-    }
-
-    public static void setNoAutoDownload(boolean value) {
-        try {
-            MessagesController.getGlobalMainSettings().edit()
-                    .putBoolean(PREF_NO_AUTO_DOWNLOAD, value)
-                    .putBoolean(PREF_VOICE_ONLY_AUTO_DOWNLOAD, false)
-                    .apply();
-            try { org.telegram.messenger.DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}
-        } catch (Throwable ignore) {}
-    }
-
-    public static boolean getVoiceOnlyAutoDownload() {
-        try { return MessagesController.getGlobalMainSettings().getBoolean(PREF_VOICE_ONLY_AUTO_DOWNLOAD, true); }
-        catch (Throwable ignore) { return true; }
-    }
-
-    public static void setVoiceOnlyAutoDownload(boolean value) {
-        try {
-            MessagesController.getGlobalMainSettings().edit()
-                    .putBoolean(PREF_VOICE_ONLY_AUTO_DOWNLOAD, value)
-                    .putBoolean(PREF_NO_AUTO_DOWNLOAD, false)
-                    .apply();
-            try { org.telegram.messenger.DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}
-        } catch (Throwable ignore) {}
-    }
-
-'''
-        if anchor in t: t=t.replace(anchor,methods+anchor,1)
-    small='LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads()))'
-    if 'R.string.A11yNoAutoDownloadLabel' not in t and small in t:
-        t=t.replace(small, small+',\n                    LocaleController.formatString(R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())),\n                    LocaleController.formatString(R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload()))',1)
-    if 'which == 10' not in t and 'which == 9' in t:
-        h='''                        } else if (which == 9) {
-                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));
-                        }
-'''
-        r='''                        } else if (which == 9) {
-                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));
-                        } else if (which == 10) {
-                            setNoAutoDownload(!getNoAutoDownload());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())));
-                        } else if (which == 11) {
-                            setVoiceOnlyAutoDownload(!getVoiceOnlyAutoDownload());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload())));
-                        }
-'''
-        if h in t: t=t.replace(h,r,1)
-    cfg.write_text(t,encoding='utf-8')
-    print('A11y download settings: all-download + voice-only controls OK')
-
 def patch_auto_download_policy() -> None:
     """Default automatic downloads OFF for photo/video/document on all networks;
     voice messages remain enabled. User changes are not overridden after first run.
@@ -1163,7 +1083,7 @@ def patch_auto_download_policy() -> None:
         print("WARN: DownloadController missing (auto-download policy)")
         return
     t = dc.read_text(encoding="utf-8")
-    marker = "a11y-fork: default auto-download policy v1"
+    marker = "a11y-fork: default auto-download policy v2"
     if marker not in t:
         anchor = "    public DownloadController(int instance) {"
         helper = (
@@ -1171,18 +1091,22 @@ def patch_auto_download_policy() -> None:
             "    private void applyA11yDefaultAutoDownloadPolicy() {\n"
             "        try {\n"
             "            android.content.SharedPreferences prefs = MessagesController.getMainSettings(currentAccount);\n"
-            "            if (prefs.getBoolean(\"a11y_auto_download_defaults_applied_v1\", false)) return;\n"
+            "            if (prefs.getBoolean(\"a11y_auto_download_defaults_applied_v2\", false)) return;\n"
             "            int voiceOnlyMask = 0;\n"
             "            for (int i = 0; i < 4; i++) {\n"
             "                mobilePreset.mask[i] = voiceOnlyMask; wifiPreset.mask[i] = voiceOnlyMask; roamingPreset.mask[i] = voiceOnlyMask;\n"
             "            }\n"
-            "            mobilePreset.enabled = false; wifiPreset.enabled = false; roamingPreset.enabled = false;\n"
+            "            // enabled MUST stay true: Telegram checks preset.enabled BEFORE anything else, so with\n"
+            "            // enabled=false even voice messages (which bypass the mask) never auto-download and the\n"
+            "            // small-files radio setting could not do anything. The mask (0) already keeps photo /\n"
+            "            // video / document from auto-downloading.\n"
+            "            mobilePreset.enabled = true; wifiPreset.enabled = true; roamingPreset.enabled = true;\n"
             "            mobilePreset.preloadVideo = false; wifiPreset.preloadVideo = false; roamingPreset.preloadVideo = false;\n"
             "            mobilePreset.preloadMusic = false; wifiPreset.preloadMusic = false; roamingPreset.preloadMusic = false;\n"
             "            currentMobilePreset = 3; currentWifiPreset = 3; currentRoamingPreset = 3;\n"
             "            prefs.edit().putString(\"mobilePreset\", mobilePreset.toString()).putString(\"wifiPreset\", wifiPreset.toString()).putString(\"roamingPreset\", roamingPreset.toString())\n"
             "                    .putInt(\"currentMobilePreset\", 3).putInt(\"currentWifiPreset\", 3).putInt(\"currentRoamingPreset\", 3)\n"
-            "                    .putBoolean(\"a11y_auto_download_defaults_applied_v1\", true).commit();\n"
+            "                    .putBoolean(\"a11y_auto_download_defaults_applied_v2\", true).commit();\n"
             "            checkAutodownloadSettings();\n"
             "        } catch (Throwable e) { FileLog.e(e); }\n"
             "    }\n\n"
@@ -1196,7 +1120,7 @@ def patch_auto_download_policy() -> None:
             checkAutodownloadSettings();
         }
 """
-        repl2 = """        // a11y-fork: default auto-download policy v1
+        repl2 = """        // a11y-fork: default auto-download policy v2
         applyA11yDefaultAutoDownloadPolicy();
         if (getUserConfig().isClientActivated()) {
             checkAutodownloadSettings();
@@ -1204,93 +1128,8 @@ def patch_auto_download_policy() -> None:
 """
         if anchor2 in t: t=t.replace(anchor2,repl2,1)
         else: print("WARN: DownloadController post-constructor anchor not found")
-    if "a11y-fork: block small automatic downloads" not in t:
-        generic_anchor = """        long maxSize = preset.sizes[typeToIndex(type)];
-        return (type == AUTODOWNLOAD_TYPE_PHOTO || size != 0 && size <= maxSize) && (type == AUTODOWNLOAD_TYPE_AUDIO || (mask & type) != 0);"""
-        generic_repl = """        long maxSize = preset.sizes[typeToIndex(type)];
-        // a11y-fork: block small automatic downloads (generic type/size path)
-        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
-            return false;
-        }
-        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
-                && type != AUTODOWNLOAD_TYPE_AUDIO) {
-            return false;
-        }
-        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return false;
-        }
-        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
-            return false;
-        }
-        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
-                && type != AUTODOWNLOAD_TYPE_AUDIO) {
-            return false;
-        }
-        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return false;
-        }
-        return (type == AUTODOWNLOAD_TYPE_PHOTO || size != 0 && size <= maxSize) && (type == AUTODOWNLOAD_TYPE_AUDIO || (mask & type) != 0);"""
-        if generic_anchor in t:
-            t=t.replace(generic_anchor,generic_repl,1)
-
-        a="""        long size = MessageObject.getMessageSize(message);
-        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
-        b="""        long size = MessageObject.getMessageSize(message);
-        // a11y-fork: block small automatic downloads
-        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
-            return 0;
-        }
-        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
-                && type != AUTODOWNLOAD_TYPE_AUDIO) {
-            return 0;
-        }
-        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return 0;
-        }
-        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
-        if a in t: t=t.replace(a,b,1)
-        else: print("WARN: DownloadController message-size anchor not found")
-        a2="""        final long size = overrideSize;
-        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
-        b2="""        final long size = overrideSize;
-        // a11y-fork: block small automatic downloads (override-size path)
-        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
-            return 0;
-        }
-        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
-                && type != AUTODOWNLOAD_TYPE_AUDIO) {
-            return 0;
-        }
-        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return 0;
-        }
-        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
-        if a2 in t: t=t.replace(a2,b2,1)
-        else: print("WARN: DownloadController override-size anchor not found")
-        a3="""        long size = MessageObject.getMediaSize(media);
-        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
-        b3="""        long size = MessageObject.getMediaSize(media);
-        // a11y-fork: block small automatic downloads (media path)
-        if (org.telegram.messenger.A11yConfig.getNoAutoDownload()) {
-            return 0;
-        }
-        if (org.telegram.messenger.A11yConfig.getVoiceOnlyAutoDownload()
-                && type != AUTODOWNLOAD_TYPE_AUDIO) {
-            return 0;
-        }
-        if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return 0;
-        }
-        if (isVideo && preset.preloadVideo && size > maxSize && maxSize > 2 * 1024 * 1024) {"""
-        if a3 in t: t=t.replace(a3,b3,1)
-        else: print("WARN: DownloadController media-size anchor not found")
     dc.write_text(t,encoding="utf-8")
-    print("DownloadController default auto-download OFF except voice + small-file guard OK")
+    print("DownloadController first-run auto-download defaults OK")
 
 def patch_voice_bitrate() -> None:
     audio = ROOT / "jni/audio.c"
@@ -1427,10 +1266,6 @@ def patch_recording_beep() -> None:
     t = t[:m.end()] + block + t[m.end():]
     mc.write_text(t, encoding="utf-8")
     print("MediaController recording-start beep v3 (ringtone stream) OK")
-
-def patch_solar_calendar_preview() -> None:
-    """Intentionally disabled: Solar Hijri must NOT be injected into DialogCell Preview."""
-    print("DialogCell Solar Hijri preview injection intentionally disabled")
 
 def patch_settings_menu() -> None:
     sa = JAVA / "org/telegram/ui/SettingsActivity.java"
@@ -1602,124 +1437,47 @@ def patch_dialogcell_time_last() -> None:
 
 
 
-
 def patch_locale_controller_solar_date_chat() -> None:
-    """Patch Telegram's shared chat-date formatter for the Solar Calendar.
+    """Solar Hijri for every chat date separator, in Telegram's own short/full format.
 
-    The date separator can reach ChatActionCell through MessageObject.messageText,
-    so changing only ChatActionCell.setCustomDate() does not reliably affect what
-    TalkBack reads. Telegram 12.10.5 centralizes the separator formatting in
-    LocaleController.formatDateChat(long, boolean).
-
-    We preserve Telegram's original checkYear/one-year decision by passing the
-    same flag to A11yConfig.formatSolarDateChat(). The notification/chat-list
-    preview path is intentionally not modified because this patch touches only
-    formatDateChat(), not DialogCell's preview description.
+    Telegram builds ALL of these strings (in-list date dividers, the floating date
+    header, scheduled-date text, ...) with the single shared
+    LocaleController.formatDateChat(date, checkYear). The in-list dividers are
+    ChatActionCell instances whose text comes from MessageObject.messageText, NOT from
+    ChatActionCell.setCustomDate(), so patching ChatActionCell alone (previous
+    revisions) never reached what TalkBack actually reads. Patching the one shared
+    formatter fixes every caller at once and keeps Telegram's exact "short form inside
+    the last year, full form with year otherwise" decision.
     """
     lc = JAVA / "org/telegram/messenger/LocaleController.java"
     if not lc.exists():
-        print("WARN: LocaleController missing (solar chat-date formatter)")
+        print("WARN: LocaleController missing (solar date chat)")
         return
     t = lc.read_text(encoding="utf-8")
     marker = "a11y-fork: solar formatDateChat v1"
     if marker in t:
+        print("LocaleController solar formatDateChat already patched")
         return
-
     old = "    public static String formatDateChat(long date, boolean checkYear) {\n"
     new = (
-        old
-        + "        // " + marker + "\n"
-        + "        try {\n"
-        + "            if (A11yConfig.getSolarCalendar()) {\n"
-        + "                String a11ySolar = A11yConfig.formatSolarDateChat(date, checkYear);\n"
-        + "                if (a11ySolar != null && !a11ySolar.isEmpty()) {\n"
-        + "                    return a11ySolar;\n"
-        + "                }\n"
-        + "            }\n"
-        + "        } catch (Throwable ignore) {\n"
-        + "        }\n"
+        old +
+        "        // " + marker + "\n"
+        "        try {\n"
+        "            if (A11yConfig.getSolarCalendar()) {\n"
+        "                String a11ySolar = A11yConfig.formatSolarDateChat(date, checkYear);\n"
+        "                if (a11ySolar != null && a11ySolar.length() > 0) {\n"
+        "                    return a11ySolar;\n"
+        "                }\n"
+        "            }\n"
+        "        } catch (Throwable ignore) {\n"
+        "        }\n"
     )
     if t.count(old) != 1:
-        print("WARN: LocaleController.formatDateChat anchor not found exactly once")
+        print("WARN: LocaleController.formatDateChat(long, boolean) anchor not found exactly once")
         return
     lc.write_text(t.replace(old, new, 1), encoding="utf-8")
-    print("LocaleController Solar formatDateChat root fix OK")
+    print("LocaleController solar formatDateChat OK")
 
-
-def patch_chat_action_solar_date_accessibility() -> None:
-    """Override ChatActionCell's FINAL accessibility text with Jalali after Telegram sets it."""
-    ca = JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
-    if not ca.exists():
-        print("WARN: ChatActionCell missing (solar accessibility)")
-        return
-    t = ca.read_text(encoding="utf-8")
-    marker = "a11y-fork: solar date accessibility v2"
-    if marker in t:
-        return
-
-    # v18 inserted the override immediately after the method signature. Telegram's
-    # original method then continued and overwrote it with accessibilityText, so
-    # TalkBack still received the Gregorian date. In v19 we inject at the VERY END
-    # of the existing method, after info.setEnabled(true), so the Jalali value wins.
-    old = "        info.setEnabled(true);\n    }"
-    new = """        info.setEnabled(true);
-        // a11y-fork: solar date accessibility v2
-        // IMPORTANT: this must be after Telegram's native info.setText()/setContentDescription()
-        // so the Gregorian separator text cannot overwrite the Jalali accessibility text.
-        try {
-            if (org.telegram.messenger.A11yConfig.getSolarCalendar()
-                    && customDate != 0
-                    && !TextUtils.isEmpty(customText)) {
-                String a11ySolarDate = org.telegram.messenger.A11yConfig.formatSolarDate(customDate);
-                if (a11ySolarDate != null && !a11ySolarDate.isEmpty()) {
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                        info.setContentDescription(a11ySolarDate);
-                    } else {
-                        info.setText(a11ySolarDate);
-                    }
-                }
-            }
-        } catch (Throwable ignore) {
-        }
-    }"""
-    if old not in t:
-        print("WARN: ChatActionCell info.setEnabled anchor not found (solar accessibility)")
-        return
-    t = t.replace(old, new, 1)
-    ca.write_text(t, encoding="utf-8")
-    print("ChatActionCell FINAL Solar date accessibility override v2 OK")
-
-def patch_chat_action_solar_date_header() -> None:
-    """Replace Telegram's Gregorian chat date-separator heading with Jalali while preserving native year logic."""
-    ca=JAVA / "org/telegram/ui/Cells/ChatActionCell.java"
-    if not ca.exists():
-        print("WARN: ChatActionCell missing (solar date header)")
-        return
-    t=ca.read_text(encoding="utf-8")
-    marker="a11y-fork: solar date separator header v2"
-    if marker in t: return
-    old='            newText = LocaleController.formatDateChat(date);'
-    new='''            // a11y-fork: solar date separator header v2
-            if (org.telegram.messenger.A11yConfig.getSolarCalendar()) {
-                String a11ySolarHeader = org.telegram.messenger.A11yConfig.formatSolarDate(date);
-                newText = a11ySolarHeader != null && !a11ySolarHeader.isEmpty()
-                        ? a11ySolarHeader
-                        : LocaleController.formatDateChat(date);
-            } else {
-                newText = LocaleController.formatDateChat(date);
-            }'''
-    if old not in t:
-        print("WARN: ChatActionCell date-separator anchor not found")
-        return
-    t=t.replace(old,new,1)
-    t=t.replace('    public void setCustomDate(int date, boolean scheduled, boolean inLayout) {','    // '+marker+'\n    public void setCustomDate(int date, boolean scheduled, boolean inLayout) {',1)
-    ca.write_text(t,encoding="utf-8")
-    print("ChatActionCell Solar date separator header OK")
-
-
-def patch_chat_message_solar_date() -> None:
-    """ChatMessageCell does not own the date separator; ChatActionCell does."""
-    print("ChatMessageCell Solar date skipped; ChatActionCell owns date-separator behavior")
 
 def patch_hide_sponsor_channel() -> None:
     """
@@ -1856,6 +1614,10 @@ def patch_links_as_menu() -> None:
                         int end=Math.max(s,Math.min(raw.length(),s+e.length));
                         url=raw.substring(s,end);
                         if (e instanceof TLRPC.TL_messageEntityEmail) url="mailto:"+url;
+                        else {
+                            String a11yLow = url.toLowerCase();
+                            if (!a11yLow.contains("://") && !a11yLow.startsWith("tg:") && !a11yLow.startsWith("mailto:")) url="https://"+url;
+                        }
                     } else if (e instanceof TLRPC.TL_messageEntityMention) {
                         // a11y-fork: @username mention -> t.me deep link
                         int s=Math.max(0,Math.min(raw.length(),e.offset));
@@ -1884,8 +1646,19 @@ def patch_links_as_menu() -> None:
             final String[] values=links.toArray(new String[0]);
             new AlertDialog.Builder(getParentActivity()).setTitle(LocaleController.getString(R.string.A11yLinks)).setItems(values,(dialog,which)->{
                 if(which>=0&&which<values.length) {
-                    try { getParentActivity().startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(values[which]))); }
-                    catch(Throwable e){ FileLog.e(e); }
+                    // a11y-fork: Telegram's own links (t.me / telegram.me / telegram.dog / tg://) must be
+                    // handled INSIDE Telegram (same path a normal tap on such a link takes), never handed
+                    // to the system browser. Everything else keeps the previous external behaviour.
+                    final String a11yUrl = values[which];
+                    boolean a11yInternal = false;
+                    try { a11yInternal = Browser.isInternalUrl(a11yUrl, null); } catch (Throwable ignore) {}
+                    if (a11yInternal) {
+                        try { Browser.openUrl(getParentActivity(), android.net.Uri.parse(a11yUrl)); }
+                        catch(Throwable e){ FileLog.e(e); }
+                    } else {
+                        try { getParentActivity().startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(a11yUrl))); }
+                        catch(Throwable e){ FileLog.e(e); }
+                    }
                 }
             }).setNegativeButton(LocaleController.getString(R.string.A11yCancel),null).show();
         } catch(Throwable e) { FileLog.e(e); }
@@ -2288,10 +2061,6 @@ def patch_chat_message_cell_granularity_navigation() -> None:
     print("ChatMessageCell granularity navigation v1 OK")
 
 
-def patch_chat_message_solar_date() -> None:
-    """Keep ChatMessageCell unchanged; Solar date is handled by the shared chat-date formatter."""
-    print("ChatMessageCell Solar date skipped; DialogCell owns native date behavior")
-
 def patch_chat_message_cell_accessibility_long_click() -> None:
     """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
@@ -2323,7 +2092,7 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
     prov = "            if (virtualViewId == HOST_VIEW_ID) {\n                performAccessibilityAction(action, arguments);\n            } else {\n"
     prov_new = (
         "            if (virtualViewId == HOST_VIEW_ID) {\n"
-        "                return performAccessibilityAction(action, arguments);\n"
+        "                performAccessibilityAction(action, arguments);\n"
         "            } else {\n"
         "                // " + marker + " virtual node\n"
         "                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
@@ -2347,47 +2116,46 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
     print("ChatMessageCell accessibility long-click v2 OK")
 
 def patch_stuck_together_bubbles_long_press() -> None:
-    """Accessibility-fork: fix long-press on grouped/bubble-clustered messages."""
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
-    if not cmc.exists():
-        print("WARN: ChatMessageCell missing (stuck bubbles long press)")
+    """Accessibility-fork: keep long-press coordinates inside the cell.
+
+    The accessibility long-click path passes lastTouchX/lastTouchY (possibly stale, from an
+    earlier touch on a different/recycled cell, or from a neighbouring bubble of a
+    stuck-together cluster). The real ChatMessageCellDelegate.didLongPress implementation
+    lives in ChatActivity -- ChatMessageCell only declares an EMPTY default method, which is
+    where the previous revision looked (so it never applied and warned on every build).
+    """
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity missing (long-press coordinate clamp)")
         return
-    t = cmc.read_text(encoding="utf-8")
+    t = ca.read_text(encoding="utf-8")
     marker = "a11y-fork: clamp long-press coordinates"
     if marker in t:
-        print("ChatMessageCell clamp long-press already patched")
+        print("ChatActivity clamp long-press already patched")
         return
-
-    m = re.search(
-        r"(?m)^([ \t]*)public void didLongPress\(ChatMessageCell cell, float x, float y\) \{",
-        t,
-    )
-    if not m:
-        print("WARN: didLongPress(cell,x,y) not found (stuck bubbles long press)")
+    ms = list(re.finditer(
+        r"(?m)^([ \t]*)public void didLongPress\(ChatMessageCell cell, float x, float y\) \{\n", t))
+    if len(ms) != 1:
+        print("WARN: ChatActivity didLongPress(ChatMessageCell,x,y) implementation not found exactly once:", len(ms))
         return
-
-    indent = m.group(1)
-    inner = indent + "    "
+    m = ms[0]
+    inner = m.group(1) + "    "
     clamp = (
         f"{inner}// {marker}\n"
         f"{inner}if (cell != null) {{\n"
-        f"{inner}    int w = cell.getWidth();\n"
-        f"{inner}    int h = cell.getHeight();\n"
-        f"{inner}    if (w > 0 && (x < 0f || x >= (float) w)) {{\n"
-        f"{inner}        x = Math.max(1f, Math.min((float) w - 2f, x));\n"
+        f"{inner}    int a11yW = cell.getWidth();\n"
+        f"{inner}    int a11yH = cell.getHeight();\n"
+        f"{inner}    if (a11yW > 0 && (x < 0f || x >= (float) a11yW)) {{\n"
+        f"{inner}        x = Math.max(1f, Math.min((float) a11yW - 2f, x));\n"
         f"{inner}    }}\n"
-        f"{inner}    if (h > 0 && (y < 0f || y >= (float) h)) {{\n"
-        f"{inner}        y = Math.max(1f, Math.min((float) h - 2f, y));\n"
+        f"{inner}    if (a11yH > 0 && (y < 0f || y >= (float) a11yH)) {{\n"
+        f"{inner}        y = Math.max(1f, Math.min((float) a11yH - 2f, y));\n"
         f"{inner}    }}\n"
         f"{inner}}}\n"
     )
-
-    insert_at = m.end() + 1
-    while insert_at < len(t) and t[insert_at] == "\n":
-        insert_at += 1
-    t = t[:insert_at] + clamp + t[insert_at:]
-    cmc.write_text(t, encoding="utf-8")
-    print("ChatMessageCell clamp long-press OK")
+    t = t[:m.end()] + clamp + t[m.end():]
+    ca.write_text(t, encoding="utf-8")
+    print("ChatActivity clamp long-press OK")
 
 def patch_reorder_a11y_menu_items() -> None:
     """Move Select / Reactions / Bot Buttons / Links out of their original
@@ -2514,67 +2282,108 @@ def patch_small_file_localization() -> None:
             _set_string(path, name, value)
     print("Small-file 3-state localization OK")
 
-def patch_small_file_radio_settings() -> None:
-    """Present the three small-file modes as one mutually-exclusive radio-button setting."""
-    cfg=JAVA / "org/telegram/messenger/A11yConfig.java"
-    if not cfg.exists():
-        print("WARN: A11yConfig.java missing (small-file radio settings)")
+def patch_small_file_download_mode() -> None:
+    """One clean, authoritative 3-state "small files" auto-download setting.
+
+    0 SMALL_FILES_AUTO       small files (<=512 KB) auto-download of every type, on networks where
+                             Telegram's own auto-download master switch is on
+    1 SMALL_FILES_VOICE_ONLY block small (<=512 KB) auto-downloads except voice messages (default)
+    2 SMALL_FILES_OFF        block ALL small (<=512 KB) auto-downloads, voice included
+
+    Replaces the old stack of overlapping v10..v20 patches. Those left the settings row
+    labelled with the legacy "voice-only: On/Off" text while its click opened the radio
+    picker, kept two dead click handlers, and -- worst -- kept a legacy voice-only flag whose
+    default was TRUE and which blocked every non-voice auto-download regardless of the radio
+    choice (so "Auto-download small files" could never work).
+    All blocking logic now lives in ONE method, A11yConfig.blockAutoDownload(type, size),
+    called from every DownloadController decision point.
+    """
+    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
+    dc = JAVA / "org/telegram/messenger/DownloadController.java"
+    if not cfg.exists() or not dc.exists():
+        print("WARN: A11yConfig/DownloadController missing (small-file download mode)")
         return
-    t=cfg.read_text(encoding="utf-8")
-    marker="a11y-fork: small-file radio settings v1"
-    if marker in t: return
-    t=t.replace('MessagesController.getGlobalMainSettings().getInt("a11y_small_files_mode", SMALL_FILES_AUTO)','MessagesController.getGlobalMainSettings().getInt("a11y_small_files_mode", SMALL_FILES_VOICE_ONLY)',1)
-    # Remove all legacy small-file entries from the Accessible Settings list.
-    # patch_small_file_three_state() may have already converted the old
-    # A11yBlockSmallFilesLabel entry into getSmallFilesAutoDownloadModeAnnouncement();
-    # that became the extra option immediately after the Radio Button in v18.
-    t=t.replace('                    LocaleController.formatString(R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())),\n','')
-    t=t.replace('                    LocaleController.formatString(R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload())),\n','')
-    t=t.replace('                    LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())),\n','')
-    t=t.replace('                    getSmallFilesAutoDownloadModeAnnouncement(),\n','')
-    if 'getSmallFilesAutoDownloadModeAnnouncement()' not in t:
-        anchor='                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))'
-        if anchor in t:
-            t=t.replace(anchor,anchor+',\n                    getSmallFilesAutoDownloadModeAnnouncement()',1)
-    old='''                        } else if (which == 9) {
-                            setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));
-                        } else if (which == 10) {
-                            setNoAutoDownload(!getNoAutoDownload());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yNoAutoDownloadLabel, onOff(getNoAutoDownload())));
-                        } else if (which == 11) {
-                            setVoiceOnlyAutoDownload(!getVoiceOnlyAutoDownload());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yVoiceOnlyAutoDownloadLabel, onOff(getVoiceOnlyAutoDownload())));
-                        }'''
-    if old in t:
-        t=t.replace(old,'''                        } else if (which == 9) {
-                            showSmallFilesModePicker(activity);
-                        }''',1)
-    cycle_handler = """                        } else if (which == 9) {
-                            int a11ySmallFilesMode = cycleSmallFilesAutoDownloadMode();
-                            announce(activity, getSmallFilesAutoDownloadModeAnnouncement());
-                        }"""
-    if cycle_handler in t:
-        t=t.replace(cycle_handler, """                        } else if (which == 9) {
-                            showSmallFilesModePicker(activity);
-                        }""", 1)
-    if 'private static void showSmallFilesModePicker(Activity activity)' not in t:
-        anchor='    private static void announce(Activity activity, String text) {'
-        method='''    // a11y-fork: small-file radio settings v1
+
+    # ---------- A11yConfig.java ----------
+    c = cfg.read_text(encoding="utf-8")
+    marker = "a11y-fork: small-file download mode v3"
+    if marker not in c:
+        methods = r"""    // a11y-fork: small-file download mode v3
+    // 0 = fork adds no restriction, 1 = block small files except voice (default),
+    // 2 = block all small files (voice included).
+    public static final int SMALL_FILES_AUTO = 0;
+    public static final int SMALL_FILES_VOICE_ONLY = 1;
+    public static final int SMALL_FILES_OFF = 2;
+    public static final long SMALL_FILE_MAX_SIZE = 512 * 1024;
+    private static final String PREF_SMALL_FILES_MODE = "a11y_small_files_mode";
+
+    public static int getSmallFilesAutoDownloadMode() {
+        try {
+            int mode = MessagesController.getGlobalMainSettings().getInt(PREF_SMALL_FILES_MODE, SMALL_FILES_VOICE_ONLY);
+            return mode < SMALL_FILES_AUTO || mode > SMALL_FILES_OFF ? SMALL_FILES_VOICE_ONLY : mode;
+        } catch (Throwable ignore) {
+            return SMALL_FILES_VOICE_ONLY;
+        }
+    }
+
+    public static void setSmallFilesAutoDownloadMode(int mode) {
+        if (mode < SMALL_FILES_AUTO || mode > SMALL_FILES_OFF) mode = SMALL_FILES_VOICE_ONLY;
+        try {
+            MessagesController.getGlobalMainSettings().edit().putInt(PREF_SMALL_FILES_MODE, mode).apply();
+            try { DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}
+        } catch (Throwable ignore) {
+        }
+    }
+
+    public static String getSmallFilesAutoDownloadModeLabel() {
+        switch (getSmallFilesAutoDownloadMode()) {
+            case SMALL_FILES_AUTO:
+                return LocaleController.getString(R.string.A11ySmallFilesAuto);
+            case SMALL_FILES_OFF:
+                return LocaleController.getString(R.string.A11ySmallFilesOff);
+            default:
+                return LocaleController.getString(R.string.A11ySmallFilesVoiceOnly);
+        }
+    }
+
+    public static String getSmallFilesAutoDownloadModeAnnouncement() {
+        return LocaleController.formatString(R.string.A11ySmallFilesModeLabel, getSmallFilesAutoDownloadModeLabel());
+    }
+
+    /** True when the fork must veto an automatic download of this type/size. */
+    public static boolean blockAutoDownload(int type, long size) {
+        try {
+            int mode = getSmallFilesAutoDownloadMode();
+            if (mode == SMALL_FILES_AUTO || size > SMALL_FILE_MAX_SIZE) {
+                return false;
+            }
+            if (mode == SMALL_FILES_OFF) {
+                return true;
+            }
+            return type != DownloadController.AUTODOWNLOAD_TYPE_AUDIO;
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    /** True when the fork must let this small automatic download through (AUTO mode only). */
+    public static boolean allowSmallAutoDownload(int type, long size) {
+        try {
+            return getSmallFilesAutoDownloadMode() == SMALL_FILES_AUTO && size > 0 && size <= SMALL_FILE_MAX_SIZE;
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
     private static void showSmallFilesModePicker(Activity activity) {
         final String[] labels = new String[]{
                 LocaleController.getString(R.string.A11ySmallFilesAuto),
                 LocaleController.getString(R.string.A11ySmallFilesVoiceOnly),
                 LocaleController.getString(R.string.A11ySmallFilesOff)
         };
-        int checked = getSmallFilesAutoDownloadMode();
-        if (checked < SMALL_FILES_AUTO || checked > SMALL_FILES_OFF) checked = SMALL_FILES_VOICE_ONLY;
         new AlertDialog.Builder(activity)
                 .setTitle(LocaleController.getString(R.string.A11ySmallFilesPickerTitle))
-                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                .setSingleChoiceItems(labels, getSmallFilesAutoDownloadMode(), (d, which) -> {
                     setSmallFilesAutoDownloadMode(which);
                     d.dismiss();
                     announce(activity, getSmallFilesAutoDownloadModeAnnouncement());
@@ -2583,188 +2392,68 @@ def patch_small_file_radio_settings() -> None:
                 .show();
     }
 
-'''
-        if anchor in t: t=t.replace(anchor,method+anchor,1)
-    t=t.replace('    // a11y-fork: small-file radio settings v1\n', '    // '+marker+'\n',1) if '    // a11y-fork: small-file radio settings v1\n' in t else t
-    cfg.write_text(t,encoding="utf-8")
-    print("Small-file setting converted to single-choice radio buttons OK")
-
-
-def patch_remove_obsolete_small_file_switch() -> None:
-    """Remove the legacy independent small-file switch now that radio modes are authoritative."""
-    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
-    if not cfg.exists():
-        print("WARN: A11yConfig.java missing (remove obsolete small-file switch)")
-        return
-    t = cfg.read_text(encoding="utf-8")
-    marker = "a11y-fork: obsolete small-file switch removed v1"
-    if marker in t:
-        return
-    # Remove any list entry for the old boolean switch, regardless of its position.
-    t = re.sub(
-        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\),\n',
-        '', t
-    )
-    # Remove the old click handler if it survived an earlier patch.
-    t = re.sub(
-        r'(?m)^\s*\}\s*else if \(which == 9\) \{\n\s*setBlockSmallAutoDownloads\(!getBlockSmallAutoDownloads\(\)\);\n\s*announce\(activity, LocaleController\.formatString\(\n\s*R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\)\);\n\s*\}\n',
-        '', t
-    )
-    # If a previous radio patch already owns index 9, leave its handler intact.
-    t = re.sub(
-        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\),?\s*$',
-        '', t
-    )
-    cfg.write_text(t, encoding="utf-8")
-    print("Obsolete small-file switch removed; radio modes are authoritative OK")
-
-
-def patch_small_file_radio_ui_cleanup_v3() -> None:
-    """Make the 3-state Radio Button the only small-file settings row."""
-    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
-    if not cfg.exists():
-        print("WARN: A11yConfig.java missing (small-file radio cleanup v3)")
-        return
-    t = cfg.read_text(encoding="utf-8")
-    marker = "a11y-fork: small-file radio cleanup v3"
-    # Remove legacy independent rows and the legacy announcement row from the
-    # settings array. Keep the resource strings themselves for compatibility.
-    patterns = [
-        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\),?\s*\n',
-        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yNoAutoDownloadLabel, onOff\(getNoAutoDownload\(\)\)\),?\s*\n',
-        r'(?m)^\s*LocaleController\.formatString\(R\.string\.A11yVoiceOnlyAutoDownloadLabel, onOff\(getVoiceOnlyAutoDownload\(\)\)\),?\s*\n',
-        r'(?m)^\s*getSmallFilesAutoDownloadModeAnnouncement\(\),?\s*\n',
-    ]
-    for pat in patterns:
-        t = re.sub(pat, '', t)
-
-    # Remove legacy small-file click handlers if they still exist. Do not touch
-    # the authoritative radio-picker handler.
-    t = re.sub(
-        r'(?ms)^\s*\}\s*else if \(which == 9\) \{\s*'
-        r'setBlockSmallAutoDownloads\(!getBlockSmallAutoDownloads\(\)\);\s*'
-        r'announce\(activity, LocaleController\.formatString\(\s*'
-        r'R\.string\.A11yBlockSmallFilesLabel, onOff\(getBlockSmallAutoDownloads\(\)\)\)\);\s*'
-        r'\}\s*',
-        '\n',
-        t,
-    )
-    if marker not in t:
-        t += "\n    // " + marker + "\n"
-    cfg.write_text(t, encoding="utf-8")
-    print("Small-file Radio Button cleanup v3 OK")
-
-
-
-def patch_small_file_three_state() -> None:
-    """Upgrade the v10 small-file boolean to a localized 3-state mode without removing
-    the old getters/setters. Modes: 0 allow small files, 1 block small files except voice,
-    2 block all small files. Existing larger-file auto-download policy remains unchanged.
-    """
-    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
-    dc = JAVA / "org/telegram/messenger/DownloadController.java"
-    if not cfg.exists() or not dc.exists():
-        print("WARN: A11yConfig/DownloadController missing (small-file 3-state)")
-        return
-    c = cfg.read_text(encoding="utf-8")
-    marker = "a11y-fork: small-file three-state mode v1"
-    if marker not in c:
-        anchor = "    public static boolean getBlockSmallAutoDownloads() {"
-        if anchor in c:
-            methods = r"""    // a11y-fork: small-file three-state mode v1
-    // 0 = auto-download small files, 1 = do not download small files except voice,
-    // 2 = do not download small files at all.
-    public static final int SMALL_FILES_AUTO = 0;
-    public static final int SMALL_FILES_VOICE_ONLY = 1;
-    public static final int SMALL_FILES_OFF = 2;
-
-    public static int getSmallFilesAutoDownloadMode() {
-        try {
-            int mode = MessagesController.getGlobalMainSettings().getInt("a11y_small_files_mode", SMALL_FILES_AUTO);
-            return mode < SMALL_FILES_AUTO || mode > SMALL_FILES_OFF ? SMALL_FILES_AUTO : mode;
-        } catch (Throwable ignore) {
-            return SMALL_FILES_AUTO;
-        }
-    }
-
-    public static void setSmallFilesAutoDownloadMode(int mode) {
-        if (mode < SMALL_FILES_AUTO || mode > SMALL_FILES_OFF) mode = SMALL_FILES_AUTO;
-        try {
-            MessagesController.getGlobalMainSettings().edit().putInt("a11y_small_files_mode", mode).apply();
-            try { org.telegram.messenger.DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}
-        } catch (Throwable ignore) {
-        }
-    }
-
-    public static int cycleSmallFilesAutoDownloadMode() {
-        int mode = (getSmallFilesAutoDownloadMode() + 1) % 3;
-        setSmallFilesAutoDownloadMode(mode);
-        return mode;
-    }
-
-    public static String getSmallFilesAutoDownloadModeLabel() {
-        switch (getSmallFilesAutoDownloadMode()) {
-            case SMALL_FILES_VOICE_ONLY:
-                return LocaleController.getString(R.string.A11ySmallFilesVoiceOnly);
-            case SMALL_FILES_OFF:
-                return LocaleController.getString(R.string.A11ySmallFilesOff);
-            default:
-                return LocaleController.getString(R.string.A11ySmallFilesAuto);
-        }
-    }
-
-    public static String getSmallFilesAutoDownloadModeAnnouncement() {
-        return LocaleController.formatString(R.string.A11ySmallFilesModeLabel,
-                getSmallFilesAutoDownloadModeLabel());
-    }
-
 """
-            c = c.replace(anchor, methods + anchor, 1)
-    c = c.replace('LocaleController.formatString(R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads()))',
-                  'getSmallFilesAutoDownloadModeAnnouncement()')
-    old_handler = """setBlockSmallAutoDownloads(!getBlockSmallAutoDownloads());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yBlockSmallFilesLabel, onOff(getBlockSmallAutoDownloads())));"""
-    new_handler = """int a11ySmallFilesMode = cycleSmallFilesAutoDownloadMode();
-                            announce(activity, getSmallFilesAutoDownloadModeAnnouncement());"""
-    c = c.replace(old_handler, new_handler)
+        anchor = "    public static void showSettingsDialog(Activity activity) {"
+        if anchor not in c:
+            print("WARN: showSettingsDialog anchor not found (small-file download mode)")
+            return
+        c = c.replace(anchor, methods + anchor, 1)
+
+        # settings-dialog row: appended after the LAST existing row, index = its position
+        m = re.search(r'final String\[\] items = new String\[\]\{(.*?)\n            \};', c, re.S)
+        if not m:
+            print("WARN: settings items array not found (small-file download mode)")
+            return
+        body = m.group(1)
+        row_count = body.count("LocaleController.formatString(") + body.count("getSmallFilesAutoDownloadModeAnnouncement()")
+        new_body = body.rstrip() + ",\n                    getSmallFilesAutoDownloadModeAnnouncement()"
+        c = c[:m.start(1)] + new_body + c[m.end(1):]
+        handler_anchor = "                    })\n                    .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)\n                    .show();\n        } catch (Throwable ignore) {\n        }\n    }\n\n    private static void announce("
+        # the items click-listener closes with `}` right before `})`
+        hm = re.search(r'(\n                        \}\n)(                    \}\)\n                    \.setNegativeButton)', c)
+        if not hm:
+            print("WARN: settings click handler end not found (small-file download mode)")
+            return
+        c = c[:hm.start(1)] + (
+            "\n                        } else if (which == %d) {\n"
+            "                            showSmallFilesModePicker(activity);\n"
+            "                        }\n" % row_count
+        ) + c[hm.end(1):]
     cfg.write_text(c, encoding="utf-8")
 
+    # ---------- DownloadController.java ----------
     d = dc.read_text(encoding="utf-8")
-    if marker not in d:
-        old = """if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return false;
-        }"""
-        new = """if (org.telegram.messenger.A11yConfig.getSmallFilesAutoDownloadMode()
-                == org.telegram.messenger.A11yConfig.SMALL_FILES_VOICE_ONLY
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return false;
-        }
-        if (org.telegram.messenger.A11yConfig.getSmallFilesAutoDownloadMode()
-                == org.telegram.messenger.A11yConfig.SMALL_FILES_OFF
-                && size > 0 && size <= 512 * 1024) {
-            return false;
-        }"""
-        d = d.replace(old, new)
-        old0 = """if (org.telegram.messenger.A11yConfig.getBlockSmallAutoDownloads()
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return 0;
-        }"""
-        new0 = """if (org.telegram.messenger.A11yConfig.getSmallFilesAutoDownloadMode()
-                == org.telegram.messenger.A11yConfig.SMALL_FILES_VOICE_ONLY
-                && type != AUTODOWNLOAD_TYPE_AUDIO && size > 0 && size <= 512 * 1024) {
-            return 0;
-        }
-        if (org.telegram.messenger.A11yConfig.getSmallFilesAutoDownloadMode()
-                == org.telegram.messenger.A11yConfig.SMALL_FILES_OFF
-                && size > 0 && size <= 512 * 1024) {
-            return 0;
-        }"""
-        d = d.replace(old0, new0)
-        d = '// ' + marker + '\n' + d
+    if "a11y-fork: small-file hook v3" not in d:
+        # every decision point ends in the same generic return, in 4 typed variants
+        generic_bool = ("        long maxSize = preset.sizes[typeToIndex(type)];\n"
+                        "        return (type == AUTODOWNLOAD_TYPE_PHOTO || size != 0 && size <= maxSize) && (type == AUTODOWNLOAD_TYPE_AUDIO || (mask & type) != 0);")
+        if generic_bool in d:
+            d = d.replace(generic_bool,
+                "        // a11y-fork: small-file hook v3 (type/size path)\n"
+                "        if (A11yConfig.blockAutoDownload(type, size)) {\n"
+                "            return false;\n"
+                "        }\n"
+                "        if (A11yConfig.allowSmallAutoDownload(type, size)) {\n"
+                "            return true;\n"
+                "        }\n" + generic_bool, 1)
+        else:
+            print("WARN: DownloadController generic canDownloadMedia(type,size) anchor not found")
+        ret_re = re.compile(r'(?m)^(            return \(type == AUTODOWNLOAD_TYPE_PHOTO \|\| size != 0 && size <= maxSize\) && \(type == AUTODOWNLOAD_TYPE_AUDIO \|\| \(mask & type\) != 0\) \? 1 : 0;)$')
+        n_sites = len(ret_re.findall(d))
+        d = ret_re.sub(
+            "            // a11y-fork: small-file hook v3\n"
+            "            if (A11yConfig.blockAutoDownload(type, size)) {\n"
+            "                return 0;\n"
+            "            }\n"
+            "            if (A11yConfig.allowSmallAutoDownload(type, size)) {\n"
+            "                return 1;\n"
+            "            }\n"
+            r"\1", d)
+        print(f"DownloadController small-file hook installed at {n_sites} message/media sites + generic path")
+        if n_sites != 4:
+            print("WARN: expected 4 message/media decision sites in DownloadController, found", n_sites)
     dc.write_text(d, encoding="utf-8")
-    print("Small-file 3-state mode OK")
+    print("Small-file 3-state download mode v2 OK")
 
 
 def patch_exact_progress_steps() -> None:
@@ -2782,361 +2471,6 @@ def patch_exact_progress_steps() -> None:
         t2 = t2.replace('new int[] {5, 10, 20, 50}', 'new int[] {1, 5, 10, 20} // a11y-fork: exact progress steps')
     cfg.write_text(t2, encoding="utf-8")
     print("Progress steps 1/5/10/20 OK")
-def patch_friend_chat_jump_focus() -> None:
-    """PR 2003: move TalkBack focus to the message Telegram just jumped to."""
-    ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    if not ca.exists(): return
-    t = ca.read_text(encoding="utf-8")
-    marker = "a11y-friend: focus highlighted message"
-    if marker in t: return
-    anchor = "    private int getHeightForMessage(MessageObject object, boolean withGroupCaption) {"
-    idx = t.find(anchor)
-    if idx < 0:
-        print("WARN: ChatActivity highlight-focus anchor missing")
-        return
-    block = """    // a11y-friend: focus highlighted message
-    private int accessibilityFocusedHighlightId = Integer.MAX_VALUE;
-    private Runnable focusHighlightedMessageRunnable;
-
-    private void focusHighlightedMessageForAccessibility() {
-        if (highlightMessageId == Integer.MAX_VALUE || !AndroidUtilities.isAccessibilityScreenReaderEnabled()
-                || accessibilityFocusedHighlightId == highlightMessageId || chatListView == null) return;
-        accessibilityFocusedHighlightId = highlightMessageId;
-        final int id = highlightMessageId;
-        if (focusHighlightedMessageRunnable != null) AndroidUtilities.cancelRunOnUIThread(focusHighlightedMessageRunnable);
-        focusHighlightedMessageRunnable = () -> {
-            focusHighlightedMessageRunnable = null;
-            if (highlightMessageId != id || chatListView == null) return;
-            for (int i = 0; i < chatListView.getChildCount(); i++) {
-                View child = chatListView.getChildAt(i);
-                if (child instanceof ChatMessageCell) {
-                    MessageObject mo = ((ChatMessageCell) child).getMessageObject();
-                    if (mo != null && mo.getId() == id && child.isShown()) {
-                        child.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);
-                        return;
-                    }
-                }
-            }
-        };
-        AndroidUtilities.runOnUIThread(focusHighlightedMessageRunnable, searching ? 900 : 250);
-    }
-
-"""
-    t = t[:idx] + block + t[idx:]
-    t = t.replace("            highlightMessageId = Integer.MAX_VALUE;", "            highlightMessageId = Integer.MAX_VALUE;\n            accessibilityFocusedHighlightId = Integer.MAX_VALUE;", 1)
-    anchor2 = "                if (highlightMessageId != Integer.MAX_VALUE) {\n                    startMessageUnselect();"
-    if anchor2 in t:
-        t = t.replace(anchor2, "                if (highlightMessageId != Integer.MAX_VALUE) {\n                    startMessageUnselect();\n                    if (cell.isHighlighted()) focusHighlightedMessageForAccessibility();", 1)
-    ca.write_text(t, encoding="utf-8")
-    print("Friend PR 2003 message-jump accessibility focus OK")
-
-
-def patch_friend_search_result_announcement() -> None:
-    """PR 2004: expose and announce the in-chat search result count."""
-    ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    if not ca.exists(): return
-    t = ca.read_text(encoding="utf-8")
-    marker = "a11y-friend: search result count"
-    if marker in t: return
-    old = """    private void updateSearchCountText() {
-        if (searchCountText != null) {
-            boolean animated = !LocaleController.isRTL;"""
-    if old not in t:
-        print("WARN: search count anchor missing")
-        return
-    t = t.replace(old, """    // a11y-friend: search result count
-    private int accessibilityAnnouncedSearchIndex = -1;
-
-    private void updateSearchCountText() {
-        if (searchCountText != null) {
-            boolean animated = !LocaleController.isRTL;""", 1)
-    needle = """            } else {
-                searchCountText.setText(LocaleController.formatString(R.string.Of, searchLastIndex + 1, searchLastCount), animated);
-            }
-"""
-    repl = needle + """            CharSequence a11yCount = searchCountText.getText();
-            searchCountText.setContentDescription(a11yCount);
-            searchCountText.setImportantForAccessibility(TextUtils.isEmpty(a11yCount) ? View.IMPORTANT_FOR_ACCESSIBILITY_NO : View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-            searchCountText.setFocusable(!TextUtils.isEmpty(a11yCount));
-            if (searchLastCount > 0 && searchLastIndex != accessibilityAnnouncedSearchIndex && AndroidUtilities.isAccessibilityScreenReaderEnabled()) {
-                if (accessibilityAnnouncedSearchIndex != -1) searchCountText.announceForAccessibility(a11yCount);
-                accessibilityAnnouncedSearchIndex = searchLastIndex;
-            } else if (searchLastCount <= 0) accessibilityAnnouncedSearchIndex = -1;
-"""
-    if needle not in t:
-        print("WARN: search count body anchor missing")
-        return
-    t = t.replace(needle, repl, 1)
-    ca.write_text(t, encoding="utf-8")
-    print("Friend PR 2004 search result announcement OK")
-
-
-def patch_friend_anonymous_sender_name() -> None:
-    """PR 2037: announce anonymous/channel senders."""
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
-    if not cmc.exists(): return
-    t = cmc.read_text(encoding="utf-8")
-    marker = "a11y-friend: anonymous sender name"
-    if marker in t: return
-    anchor = "    private String getAuthorName() {"
-    idx = t.find(anchor)
-    if idx < 0:
-        print("WARN: getAuthorName anchor missing")
-        return
-    helper = """    // a11y-friend: anonymous sender name
-    private boolean isNeedAccessibilityAuthorName() {
-        if (!isChat || currentMessageObject == null || currentMessageObject.isOut()) return false;
-        if (currentUser != null) return true;
-        return currentChat != null && (isMegagroup || currentChat.signature_profiles);
-    }
-
-"""
-    t = t[:idx] + helper + t[idx:]
-    old = """                    if (isChat && currentUser != null && !currentMessageObject.isOut()) {
-                        sb.append(UserObject.getUserName(currentUser));
-                        sb.setSpan(new ProfileSpan(currentUser), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);"""
-    new = """                    if (isNeedAccessibilityAuthorName()) {
-                        sb.append(getAuthorName());
-                        if (currentUser != null) {
-                            sb.setSpan(new ProfileSpan(currentUser), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        }"""
-    if old not in t:
-        print("WARN: sender accessibility text anchor missing")
-        return
-    t = t.replace(old, new, 1)
-    cmc.write_text(t, encoding="utf-8")
-    print("Friend PR 2037 anonymous/channel sender announcement OK")
-
-
-def patch_friend_reply_navigation() -> None:
-    """PR 2044: make reply/forward strip activation follow the visual tap."""
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
-    if not cmc.exists(): return
-    t = cmc.read_text(encoding="utf-8")
-    marker = "a11y-friend: reply navigation"
-    if marker in t: return
-    old = """                    } else if (virtualViewId == REPLY) {
-                        if (delegate != null && (!isThreadChat || isMonoForum || currentMessageObject.getReplyTopMsgId() != 0) && (currentMessageObject.hasValidReplyMessageObject() || hasReplyQuote || currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.reply_to != null && currentMessageObject.messageOwner.reply_to.reply_from != null)) {
-                            delegate.didPressReplyMessage(ChatMessageCell.this, currentMessageObject.getReplyMsgId(), 0, 0, false);
-                        }"""
-    new = """                    } else if (virtualViewId == REPLY) {
-                        // a11y-friend: reply navigation
-                        if (replyPanelIsForward) {
-                            if (delegate != null) {
-                                if (currentForwardChannel != null) delegate.didPressChannelAvatar(ChatMessageCell.this, currentForwardChannel, currentMessageObject.messageOwner.fwd_from.channel_post, lastTouchX, lastTouchY, false);
-                                else if (currentForwardUser != null) delegate.didPressUserAvatar(ChatMessageCell.this, currentForwardUser, lastTouchX, lastTouchY, false);
-                                else if (currentForwardName != null) delegate.didPressHiddenForward(ChatMessageCell.this);
-                            }
-                        } else if (delegate != null && (currentMessageObject.hasValidReplyMessageObject() || currentMessageObject.isReplyToStory() || hasReplyQuote || currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.reply_to != null && currentMessageObject.messageOwner.reply_to.reply_from != null)) {
-                            delegate.didPressReplyMessage(ChatMessageCell.this, currentMessageObject.getReplyMsgId(), 0, 0, false);
-                        }"""
-    if old not in t:
-        print("WARN: reply accessibility action anchor missing")
-        return
-    t = t.replace(old, new, 1)
-    cmc.write_text(t, encoding="utf-8")
-    print("Friend PR 2044 reply navigation OK")
-
-
-def patch_friend_sender_avatar_menu() -> None:
-    """PR 2045: expose the sender-avatar long-press menu as a TalkBack action."""
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
-    ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    ids = RES / "values/ids.xml"
-    strings = RES / "values/strings.xml"
-    if not cmc.exists() or not ca.exists(): return
-    t = cmc.read_text(encoding="utf-8")
-    marker = "a11y-friend: sender avatar menu"
-    if marker in t: return
-    anchor = "    private int getIconForCurrentState() {"
-    idx = t.find(anchor)
-    if idx < 0:
-        print("WARN: sender avatar menu anchor missing")
-        return
-    helper = """    // a11y-friend: sender avatar menu
-    private boolean hasSenderAvatarMenu() {
-        return isAvatarVisible && currentMessageObject != null && delegate != null
-                && (currentUser != null && currentUser.id != 0 || currentChat != null);
-    }
-
-    private boolean performSenderAvatarMenu() {
-        if (!hasSenderAvatarMenu()) return false;
-        if (currentUser != null && currentUser.id != 0) {
-            return delegate.didLongPressUserAvatar(ChatMessageCell.this, currentUser, lastTouchX, lastTouchY);
-        }
-        if (currentChat != null) {
-            int id = 0;
-            if (currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.fwd_from != null) {
-                id = (currentMessageObject.messageOwner.fwd_from.flags & 16) != 0
-                        ? currentMessageObject.messageOwner.fwd_from.saved_from_msg_id
-                        : currentMessageObject.messageOwner.fwd_from.channel_post;
-            }
-            return delegate.didLongPressChannelAvatar(ChatMessageCell.this, currentChat, id, lastTouchX, lastTouchY);
-        }
-        return false;
-    }
-
-"""
-    t = t[:idx] + helper + t[idx:]
-    old = """        } else if (action == R.id.acc_action_small_button) {
-            didPressMiniButton(true);"""
-    if old in t:
-        t = t.replace(old, old + "\n        } else if (action == R.id.acc_action_sender_avatar_menu) {\n            return performSenderAvatarMenu();", 1)
-    needle = """                info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_msg_options, getString(\"AccActionMessageOptions\", R.string.AccActionMessageOptions)));"""
-    if needle in t:
-        t = t.replace(needle, needle + "\n                if (hasSenderAvatarMenu()) info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_sender_avatar_menu, getString(R.string.AccActionSenderOptions)));", 1)
-    cmc.write_text(t, encoding="utf-8")
-    cat = ca.read_text(encoding="utf-8")
-    # Telegram 12.10.5 ChatMessageCellDelegate has no canLongPressAvatar() method.
-    # Do not add a fake interface override; the accessibility action itself is
-    # guarded by the actual avatar/user/chat state above.
-    cat = cat.replace("""        @Override
-        public boolean canLongPressAvatar(ChatMessageCell cell) {
-            return isAvatarPreviewerEnabled();
-        }
-
-""", "", 1)
-    ca.write_text(cat, encoding="utf-8")
-    it = ids.read_text(encoding="utf-8")
-    if "acc_action_sender_avatar_menu" not in it:
-        ids.write_text(it.replace('    <item name="acc_action_msg_options" type="id"/>', '    <item name="acc_action_msg_options" type="id"/>\n    <item name="acc_action_sender_avatar_menu" type="id"/>', 1), encoding="utf-8")
-    st = strings.read_text(encoding="utf-8")
-    if 'name="AccActionSenderOptions"' not in st:
-        strings.write_text(st.replace('    <string name="AccActionMessageOptions">Message options</string>', '    <string name="AccActionMessageOptions">Message options</string>\n    <string name="AccActionSenderOptions">Sender options</string>', 1), encoding="utf-8")
-    print("Friend PR 2045 sender-avatar menu OK")
-
-def patch_friend_playback_position() -> None:
-    """PR 1993: announce elapsed/total playback position."""
-    mc = JAVA / "org/telegram/messenger/MediaController.java"
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
-    if not mc.exists() or not cmc.exists(): return
-    marker = "a11y-friend: playback position"
-    t = mc.read_text(encoding="utf-8")
-    if marker not in t:
-        anchor = "    public boolean isPlayingMessage(MessageObject messageObject) {"
-        if anchor in t:
-            block = """    // a11y-friend: playback position
-    public static CharSequence getPlaybackPositionDescription(MessageObject messageObject) {
-        if (messageObject == null || !getInstance().isPlayingMessage(messageObject)) return null;
-        int duration = (int) messageObject.getDuration();
-        int position = messageObject.audioProgressSec;
-        if (duration > 0 && messageObject.audioProgress > 0) position = Math.round(messageObject.audioProgress * duration);
-        position = Math.max(0, Math.min(duration, position));
-        return LocaleController.formatString(R.string.AccDescrPlayerDuration, LocaleController.formatDuration(position), LocaleController.formatDuration(duration));
-    }
-
-"""
-            mc.write_text(t.replace(anchor, block + anchor, 1), encoding="utf-8")
-    t = cmc.read_text(encoding="utf-8")
-    if marker not in t:
-        anchor = "    @Override\n    public boolean performAccessibilityAction(int action, Bundle arguments) {"
-        idx = t.find(anchor)
-        if idx >= 0:
-            block = """    // a11y-friend: playback position
-    private void announceA11yPlaybackPosition() {
-        CharSequence p = MediaController.getPlaybackPositionDescription(currentMessageObject);
-        if (p != null) announceForAccessibility(p);
-    }
-
-"""
-            t = t[:idx] + block + t[idx:]
-            seek = """            if (seekBarAccessibilityDelegate.performAccessibilityActionInternal(action, arguments)) {
-                return true;
-            }"""
-            if seek in t:
-                t = t.replace(seek, """            if (seekBarAccessibilityDelegate.performAccessibilityActionInternal(action, arguments)) {
-                announceA11yPlaybackPosition();
-                return true;
-            }""", 1)
-            old = """                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                    info.setContentDescription(accessibilityText.toString());
-                } else {
-                    info.setText(accessibilityText);
-                }"""
-            new = """                CharSequence a11ySpokenText = accessibilityText;
-                CharSequence a11yPlayback = MediaController.getPlaybackPositionDescription(currentMessageObject);
-                if (a11yPlayback != null) a11ySpokenText = TextUtils.concat(a11yPlayback, ", ", accessibilityText);
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                    info.setContentDescription(a11ySpokenText.toString());
-                } else {
-                    info.setText(a11ySpokenText);
-                }"""
-            if old in t: t = t.replace(old, new, 1)
-            cmc.write_text(t, encoding="utf-8")
-    print("Friend PR 1993 playback-position accessibility OK")
-
-
-def patch_friend_transfer_percentage() -> None:
-    """PR 1992: announce transfer percentage while a message is being explored."""
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
-    if not cmc.exists(): return
-    t = cmc.read_text(encoding="utf-8")
-    marker = "a11y-friend: transfer percentage"
-    if marker in t: return
-    anchor = "    @Override\n    public void onProgressDownload(String fileName, long downloadedSize, long totalSize) {"
-    idx = t.find(anchor)
-    if idx < 0:
-        print("WARN: download progress anchor missing")
-        return
-    block = """    // a11y-friend: transfer percentage
-    private int a11yLastTransferPercent = -1;
-    private long a11yLastTransferAnnounceTime;
-
-    private void announceA11yTransfer(boolean upload, long loaded, long total) {
-        if (total <= 0 || currentMessageObject == null || !AndroidUtilities.isAccessibilityScreenReaderEnabled()) return;
-        int percent = Math.max(0, Math.min(100, Math.round(loaded * 100f / total)));
-        long now = android.os.SystemClock.elapsedRealtime();
-        if (percent == a11yLastTransferPercent || now - a11yLastTransferAnnounceTime < 2500) return;
-        if (percent < 100 && percent / 10 == a11yLastTransferPercent / 10) return;
-        a11yLastTransferPercent = percent;
-        a11yLastTransferAnnounceTime = now;
-        announceForAccessibility((upload ? getString(R.string.AccDescrUploadProgress) : getString(R.string.AccDescrDownloadProgress)) + ", " + percent + "%");
-    }
-
-"""
-    t = t[:idx] + block + t[idx:]
-    t = t.replace("        currentMessageObject.loadedFileSize = downloadedSize;", "        currentMessageObject.loadedFileSize = downloadedSize;\n        announceA11yTransfer(false, downloadedSize, totalSize);", 1)
-    needle = "        createLoadingProgressLayout(uploadedSize, totalSize);"
-    if needle in t:
-        t = t.replace(needle, needle + "\n        announceA11yTransfer(true, uploadedSize, totalSize);", 1)
-    cmc.write_text(t, encoding="utf-8")
-    print("Friend PR 1992 transfer-percentage accessibility OK")
-
-def _apply_friend_pr_patch(pr_number: int, label: str) -> None:
-    """Apply an isolated upstream accessibility PR on a fresh Telegram checkout."""
-    import subprocess
-    from urllib.request import Request, urlopen
-    repo_root = ROOT.parent.parent
-    patch_root = ROOT.parent  # telegram/; PR paths start with TMessagesProj/
-    stamp = repo_root / f".a11y_friend_pr_{pr_number}"
-    if stamp.exists():
-        print(f"Friend PR {pr_number} already applied: {label}")
-        return
-    url = f"https://github.com/DrKLO/Telegram/pull/{pr_number}.patch"
-    try:
-        req = Request(url, headers={"User-Agent": "Telegram-A11y-build"})
-        patch = urlopen(req, timeout=30).read()
-        proc = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], input=patch, cwd=str(patch_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        if proc.returncode == 0:
-            stamp.write_text(f"friend-pr-{pr_number}\n", encoding="utf-8")
-            print(f"Friend PR {pr_number} applied: {label}")
-        else:
-            print(f"WARN: Friend PR {pr_number} ({label}) did not apply cleanly; skipped")
-            print(proc.stdout.decode("utf-8", "replace")[-4000:])
-    except Exception as exc:
-        print(f"WARN: Friend PR {pr_number} ({label}) unavailable: {exc}")
-
-
-def patch_friend_isolated_features() -> None:
-    # These are intentionally applied before our own custom patches because they touch
-    # otherwise-independent accessibility surfaces.
-    _apply_friend_pr_patch(2007, "RecyclerView screen-reader row scrolling")
-    _apply_friend_pr_patch(2042, "Profile action buttons discoverable by touch")
-    _apply_friend_pr_patch(2039, "Chat avatar story/community action")
-    _apply_friend_pr_patch(1986, "Story viewer TalkBack controls")
-    _apply_friend_pr_patch(2025, "Story sticker sheet accessibility")
-    _apply_friend_pr_patch(2026, "Story editor button names")
-
 
 def main() -> int:
     if not Path("telegram").is_dir():
@@ -3144,17 +2478,7 @@ def main() -> int:
         return 1
     print("Using scripts dir:", SCRIPTS.resolve())
     patch_app_name()
-    patch_friend_isolated_features()
-    patch_friend_playback_position()
-    patch_friend_transfer_percentage()
-    patch_friend_chat_jump_focus()
-    patch_friend_search_result_announcement()
-    patch_friend_anonymous_sender_name()
-    patch_friend_reply_navigation()
-    patch_friend_sender_avatar_menu()
     install_a11y_config()
-    patch_a11y_download_settings()
-    patch_a11y_localization()
     patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
@@ -3167,10 +2491,7 @@ def main() -> int:
     patch_settings_menu()
     patch_auto_download_policy()
     patch_small_file_localization()
-    patch_small_file_three_state()
-    patch_small_file_radio_settings()
-    patch_small_file_radio_ui_cleanup_v3()
-    patch_remove_obsolete_small_file_switch()
+    patch_small_file_download_mode()
     patch_exact_progress_steps()
     patch_recording_beep()
     patch_dialogcell_preview_muted_status()
@@ -3183,14 +2504,13 @@ def main() -> int:
     patch_reorder_a11y_menu_items()
     patch_go_to_first_message()
     patch_file_description_spacing()
-    patch_chat_message_solar_date()
-    patch_chat_action_solar_date_header()
-    patch_chat_action_solar_date_accessibility()
     patch_locale_controller_solar_date_chat()
     patch_chat_message_cell_accessibility_long_click()
     patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
-    print("Friend PR integration path fixed: git apply runs inside telegram/ for TMessagesProj paths")
+    # MUST stay last: it rewrites English text injected by the patches above
+    # (Selected / Bot Buttons / Forwarded to Saved / Accessible settings ...).
+    patch_a11y_localization()
     print("A11y REAL patches done")
     return 0
 
