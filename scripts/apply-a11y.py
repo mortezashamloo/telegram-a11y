@@ -2960,7 +2960,6 @@ def patch_friend_sender_avatar_menu() -> None:
     helper = """    // a11y-friend: sender avatar menu
     private boolean hasSenderAvatarMenu() {
         return isAvatarVisible && currentMessageObject != null && delegate != null
-                && delegate.canLongPressAvatar(ChatMessageCell.this)
                 && (currentUser != null && currentUser.id != 0 || currentChat != null);
     }
 
@@ -2992,16 +2991,16 @@ def patch_friend_sender_avatar_menu() -> None:
         t = t.replace(needle, needle + "\n                if (hasSenderAvatarMenu()) info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_sender_avatar_menu, getString(R.string.AccActionSenderOptions)));", 1)
     cmc.write_text(t, encoding="utf-8")
     cat = ca.read_text(encoding="utf-8")
-    # Telegram 12.10.5 ChatMessageCellDelegate has no canLongPressAvatar() method.
-    # Do not add a fake interface override: the accessibility action itself is
-    # guarded by the actual avatar/user/chat state above.
-    cat = cat.replace("""        @Override
+    anchor2 = """        @Override
+        public boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {"""
+    if anchor2 in cat and "boolean canLongPressAvatar(ChatMessageCell cell)" not in cat:
+        cat = cat.replace(anchor2, """        @Override
         public boolean canLongPressAvatar(ChatMessageCell cell) {
             return isAvatarPreviewerEnabled();
         }
 
-""", "", 1)
-    ca.write_text(cat, encoding="utf-8")
+""" + anchor2, 1)
+        ca.write_text(cat, encoding="utf-8")
     it = ids.read_text(encoding="utf-8")
     if "acc_action_sender_avatar_menu" not in it:
         ids.write_text(it.replace('    <item name="acc_action_msg_options" type="id"/>', '    <item name="acc_action_msg_options" type="id"/>\n    <item name="acc_action_sender_avatar_menu" type="id"/>', 1), encoding="utf-8")
@@ -3077,7 +3076,6 @@ def _apply_friend_pr_patch(pr_number: int, label: str) -> None:
     import subprocess
     from urllib.request import Request, urlopen
     repo_root = ROOT.parent.parent
-    patch_root = ROOT.parent  # telegram/; PR paths start with TMessagesProj/
     stamp = repo_root / f".a11y_friend_pr_{pr_number}"
     if stamp.exists():
         print(f"Friend PR {pr_number} already applied: {label}")
@@ -3086,15 +3084,13 @@ def _apply_friend_pr_patch(pr_number: int, label: str) -> None:
     try:
         req = Request(url, headers={"User-Agent": "Telegram-A11y-build"})
         patch = urlopen(req, timeout=30).read()
-        proc = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], input=patch, cwd=str(patch_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        proc = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], input=patch, cwd=str(repo_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode == 0:
             stamp.write_text(f"friend-pr-{pr_number}\n", encoding="utf-8")
             print(f"Friend PR {pr_number} applied: {label}")
         else:
-            output = proc.stdout.decode("utf-8", "replace")[-8000:]
-            print(f"ERROR: Friend PR {pr_number} ({label}) did not apply cleanly")
-            print(output)
-            raise RuntimeError(f"Friend PR {pr_number} failed to apply")
+            print(f"WARN: Friend PR {pr_number} ({label}) did not apply cleanly; skipped")
+            print(proc.stdout.decode("utf-8", "replace")[-4000:])
     except Exception as exc:
         print(f"WARN: Friend PR {pr_number} ({label}) unavailable: {exc}")
 
@@ -3189,7 +3185,6 @@ def main() -> int:
     patch_chat_message_cell_accessibility_long_click()
     patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
-    print("Friend PR integration path fixed: git apply runs inside telegram/ for TMessagesProj paths")
     print("A11y REAL patches done")
     return 0
 
