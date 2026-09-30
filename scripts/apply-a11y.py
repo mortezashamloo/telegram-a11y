@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Apply accessibility patches to cloned Telegram tree (12.10.5 baseline) (cwd parent of telegram/).
 
-Based directly on apply-a11y-final-v21.py. Preserves every v21 feature and adds
-Mehran Latifi accessibility improvements from the 12.10.5 accessibility PR set.
-The transfer-percentage PR is deliberately excluded because this fork already
-has working upload/download progress announcements.
-The screen-sharing phone-audio PR is also excluded because it is not an accessibility feature.
+This revision is based on v23, preserving working accessibility features, retiring overlapping friend PR 1992, and restoring the 3-state small-file Radio Button. It preserves v10 patches and only
+adds the requested small-file 3-state setting, exact progress steps, fresh-install
+auto-download OFF defaults, and private-chat support for Go to first message.
 
 Portable: works with GitHub Actions (patches-repo/scripts) or local kit (scripts/).
 When DrKLO/Telegram updates, re-run this script on a fresh clone.
@@ -2658,6 +2656,72 @@ def patch_small_file_radio_ui_cleanup_v3() -> None:
 
 
 
+def patch_small_file_radio_restore_v24() -> None:
+    """Restore the single 3-state small-file Radio Button after cleanup."""
+    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
+    if not cfg.exists():
+        print("WARN: A11yConfig.java missing (small-file radio restore v24)")
+        return
+    t = cfg.read_text(encoding="utf-8")
+    marker = "a11y-fork: restore small-file radio button v24"
+    if marker in t:
+        return
+    row = '                    getSmallFilesAutoDownloadModeAnnouncement(),'
+    if 'getSmallFilesAutoDownloadModeAnnouncement(),' not in t:
+        links = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled()))'
+        if links in t:
+            t = t.replace(links, links + ',\n' + row, 1)
+        else:
+            solar = '                    LocaleController.formatString(R.string.A11ySolarCalendarLabel, onOff(getSolarCalendar()))'
+            if solar in t:
+                t = t.replace(solar, solar + ',\n' + row, 1)
+            else:
+                print("WARN: settings-list anchor for small-file Radio Button not found")
+    if 'showSmallFilesModePicker(activity);' not in t:
+        links_handler = """                        } else if (which == 8) {
+                            setLinksMenuEnabled(!getLinksMenuEnabled());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));
+                        }"""
+        if links_handler in t:
+            replacement = links_handler + " else if (which == 9) {\n                            showSmallFilesModePicker(activity);\n                        }"
+            t = t.replace(links_handler, replacement, 1)
+        else:
+            print("WARN: Links handler anchor for small-file Radio Button not found")
+    if 'private static void showSmallFilesModePicker(Activity activity)' not in t:
+        anchor2='    private static void announce(Activity activity, String text) {'
+        method="""    // a11y-fork: restore small-file radio button v24
+    private static void showSmallFilesModePicker(Activity activity) {
+        final String[] labels = new String[]{
+                LocaleController.getString(R.string.A11ySmallFilesAuto),
+                LocaleController.getString(R.string.A11ySmallFilesVoiceOnly),
+                LocaleController.getString(R.string.A11ySmallFilesOff)
+        };
+        int checked = getSmallFilesAutoDownloadMode();
+        if (checked < SMALL_FILES_AUTO || checked > SMALL_FILES_OFF) {
+            checked = SMALL_FILES_VOICE_ONLY;
+        }
+        new AlertDialog.Builder(activity)
+                .setTitle(LocaleController.getString(R.string.A11ySmallFilesPickerTitle))
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    setSmallFilesAutoDownloadMode(which);
+                    dialog.dismiss();
+                    announce(activity, getSmallFilesAutoDownloadModeAnnouncement());
+                })
+                .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
+                .show();
+    }
+
+"""
+        if anchor2 in t:
+            t=t.replace(anchor2,method+anchor2,1)
+        else:
+            print("WARN: announce() anchor missing for small-file picker")
+    t += '\n    // ' + marker + '\n'
+    cfg.write_text(t,encoding="utf-8")
+    print("Small-file 3-state Radio Button restored v24 OK")
+
+
 def patch_small_file_three_state() -> None:
     """Upgrade the v10 small-file boolean to a localized 3-state mode without removing
     the old getters/setters. Modes: 0 allow small files, 1 block small files except voice,
@@ -2784,8 +2848,6 @@ def patch_exact_progress_steps() -> None:
         t2 = t2.replace('new int[] {5, 10, 20, 50}', 'new int[] {1, 5, 10, 20} // a11y-fork: exact progress steps')
     cfg.write_text(t2, encoding="utf-8")
     print("Progress steps 1/5/10/20 OK")
-
-
 def patch_friend_chat_jump_focus() -> None:
     """PR 2003: move TalkBack focus to the message Telegram just jumped to."""
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
@@ -2952,20 +3014,6 @@ def patch_friend_sender_avatar_menu() -> None:
     t = cmc.read_text(encoding="utf-8")
     marker = "a11y-friend: sender avatar menu"
     if marker in t: return
-
-    # PR 2045 expects ChatMessageCell.Delegate to expose canLongPressAvatar().
-    # On Telegram 12.10.5 this upstream PR may fail to apply cleanly, while
-    # the ChatActivity-side override below still gets inserted. Add the
-    # delegate method here as a compatibility guard so @Override is valid.
-    delegate_anchor = "        default boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {"
-    if delegate_anchor in t and "default boolean canLongPressAvatar(ChatMessageCell cell)" not in t:
-        t = t.replace(delegate_anchor, """        /** Whether holding the avatar of a sender opens anything in this chat. */
-        default boolean canLongPressAvatar(ChatMessageCell cell) {
-            return false;
-        }
-
-""" + delegate_anchor, 1)
-
     anchor = "    private int getIconForCurrentState() {"
     idx = t.find(anchor)
     if idx < 0:
@@ -2974,7 +3022,6 @@ def patch_friend_sender_avatar_menu() -> None:
     helper = """    // a11y-friend: sender avatar menu
     private boolean hasSenderAvatarMenu() {
         return isAvatarVisible && currentMessageObject != null && delegate != null
-                && delegate.canLongPressAvatar(ChatMessageCell.this)
                 && (currentUser != null && currentUser.id != 0 || currentChat != null);
     }
 
@@ -3006,16 +3053,16 @@ def patch_friend_sender_avatar_menu() -> None:
         t = t.replace(needle, needle + "\n                if (hasSenderAvatarMenu()) info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_sender_avatar_menu, getString(R.string.AccActionSenderOptions)));", 1)
     cmc.write_text(t, encoding="utf-8")
     cat = ca.read_text(encoding="utf-8")
-    anchor2 = """        @Override
-        public boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {"""
-    if anchor2 in cat and "boolean canLongPressAvatar(ChatMessageCell cell)" not in cat:
-        cat = cat.replace(anchor2, """        @Override
+    # Telegram 12.10.5 ChatMessageCellDelegate has no canLongPressAvatar() method.
+    # Do not add a fake interface override; the accessibility action itself is
+    # guarded by the actual avatar/user/chat state above.
+    cat = cat.replace("""        @Override
         public boolean canLongPressAvatar(ChatMessageCell cell) {
             return isAvatarPreviewerEnabled();
         }
 
-""" + anchor2, 1)
-        ca.write_text(cat, encoding="utf-8")
+""", "", 1)
+    ca.write_text(cat, encoding="utf-8")
     it = ids.read_text(encoding="utf-8")
     if "acc_action_sender_avatar_menu" not in it:
         ids.write_text(it.replace('    <item name="acc_action_msg_options" type="id"/>', '    <item name="acc_action_msg_options" type="id"/>\n    <item name="acc_action_sender_avatar_menu" type="id"/>', 1), encoding="utf-8")
@@ -3023,7 +3070,6 @@ def patch_friend_sender_avatar_menu() -> None:
     if 'name="AccActionSenderOptions"' not in st:
         strings.write_text(st.replace('    <string name="AccActionMessageOptions">Message options</string>', '    <string name="AccActionMessageOptions">Message options</string>\n    <string name="AccActionSenderOptions">Sender options</string>', 1), encoding="utf-8")
     print("Friend PR 2045 sender-avatar menu OK")
-
 
 def patch_friend_playback_position() -> None:
     """PR 1993: announce elapsed/total playback position."""
@@ -3086,11 +3132,17 @@ def patch_friend_playback_position() -> None:
     print("Friend PR 1993 playback-position accessibility OK")
 
 
+def patch_friend_transfer_percentage() -> None:
+    """Retired: PR 1992 overlaps with Telegram Accessible progress."""
+    print("Friend PR 1992 SKIPPED; native a11y progress retained")
+
+
 def _apply_friend_pr_patch(pr_number: int, label: str) -> None:
     """Apply an isolated upstream accessibility PR on a fresh Telegram checkout."""
     import subprocess
     from urllib.request import Request, urlopen
     repo_root = ROOT.parent.parent
+    patch_root = ROOT.parent  # telegram/; PR paths start with TMessagesProj/
     stamp = repo_root / f".a11y_friend_pr_{pr_number}"
     if stamp.exists():
         print(f"Friend PR {pr_number} already applied: {label}")
@@ -3099,7 +3151,7 @@ def _apply_friend_pr_patch(pr_number: int, label: str) -> None:
     try:
         req = Request(url, headers={"User-Agent": "Telegram-A11y-build"})
         patch = urlopen(req, timeout=30).read()
-        proc = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], input=patch, cwd=str(repo_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        proc = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], input=patch, cwd=str(patch_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode == 0:
             stamp.write_text(f"friend-pr-{pr_number}\n", encoding="utf-8")
             print(f"Friend PR {pr_number} applied: {label}")
@@ -3108,7 +3160,6 @@ def _apply_friend_pr_patch(pr_number: int, label: str) -> None:
             print(proc.stdout.decode("utf-8", "replace")[-4000:])
     except Exception as exc:
         print(f"WARN: Friend PR {pr_number} ({label}) unavailable: {exc}")
-
 
 
 def patch_friend_isolated_features() -> None:
@@ -3122,46 +3173,20 @@ def patch_friend_isolated_features() -> None:
     _apply_friend_pr_patch(2026, "Story editor button names")
 
 
-def patch_friend_release_accessibility_prs() -> None:
-    """Apply Mehran's 12.10.5 accessibility PRs that are independent of our fork.
-
-    All selected PRs are based directly on Telegram 12.10.5 (dc780e8), so they
-    are applied before our custom a11y-fork patches. PR 2134 (phone audio while
-    screen sharing) is intentionally not included because it is not an
-    accessibility feature. Transfer-percentage PR 1992 is also intentionally
-    excluded because our fork already has working upload/download progress.
-    """
-    prs = (
-        (2124, "Downloads screen: accessible file rows and queue actions"),
-        (2125, "Contacts: preserve TalkBack focus while list is resorted"),
-        (2126, "Mentions panel: keep TalkBack inside the visible panel"),
-        (2127, "Long messages: jump to the next accessibility stop"),
-        (2128, "Chat list: activate the chat under folder tabs"),
-        (2129, "Secret chats: optional screen-reader access with disclosure"),
-        (2130, "Channel/post statistics: charts and controls accessible"),
-        (2131, "Chat calendar: make message days reachable"),
-        (2132, "Message links: expose each link's hold-menu as an action"),
-        (2133, "Music rows: announce local/download state and expose fetch action"),
-    )
-    for pr_number, label in prs:
-        _apply_friend_pr_patch(pr_number, label)
-
-
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
         return 1
     print("Using scripts dir:", SCRIPTS.resolve())
-    # Apply upstream accessibility PRs first; our established v21 patches run afterwards.
-    patch_friend_release_accessibility_prs()
+    patch_app_name()
     patch_friend_isolated_features()
     patch_friend_playback_position()
+    # PR 1992 intentionally retired; our native accessibility progress is authoritative.
     patch_friend_chat_jump_focus()
     patch_friend_search_result_announcement()
     patch_friend_anonymous_sender_name()
     patch_friend_reply_navigation()
     patch_friend_sender_avatar_menu()
-    patch_app_name()
     install_a11y_config()
     patch_a11y_download_settings()
     patch_a11y_localization()
@@ -3181,6 +3206,7 @@ def main() -> int:
     patch_small_file_radio_settings()
     patch_small_file_radio_ui_cleanup_v3()
     patch_remove_obsolete_small_file_switch()
+    patch_small_file_radio_restore_v24()
     patch_exact_progress_steps()
     patch_recording_beep()
     patch_dialogcell_preview_muted_status()
@@ -3200,6 +3226,7 @@ def main() -> int:
     patch_chat_message_cell_accessibility_long_click()
     patch_chat_message_cell_granularity_navigation()
     patch_stuck_together_bubbles_long_press()
+    print("Friend PR integration path fixed: git apply runs inside telegram/ for TMessagesProj paths")
     print("A11y REAL patches done")
     return 0
 
