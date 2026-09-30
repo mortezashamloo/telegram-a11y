@@ -769,9 +769,10 @@ def patch_photo_longpress_message_options() -> None:
             if (view instanceof ChatMessageCell && !actionBar.isActionModeShowed()) {
                 try {
                     MessageObject a11yPhotoMessage = ((ChatMessageCell) view).getMessageObject();
+                    // any message type (file/document, video, voice, photo, text...):
+                    // createMenu(single=false) builds NO menu for type >= 2 (media/files)
                     boolean a11yPhotoOnly = a11yPhotoMessage != null
-                            && MessageObject.isPhoto(a11yPhotoMessage.messageOwner)
-                            && android.text.TextUtils.isEmpty(a11yPhotoMessage.messageOwner.message);
+                            && a11yPhotoMessage.type != MessageObject.TYPE_JOINED_CHANNEL;
                     android.view.accessibility.AccessibilityManager a11yPhotoAm =
                             (android.view.accessibility.AccessibilityManager) getParentActivity()
                                     .getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);
@@ -1015,7 +1016,7 @@ def patch_longpress_message_menu() -> None:
         if old_dlp_125 in t:
             t=t.replace(old_dlp_125,new_dlp_125,1)
             print("12.10.5 TalkBack didLongPress routing OK")
-        else:
+        elif "a11y-fork: under TalkBack, long-press must open the full" not in t:
             print("WARN: 12.10.5 didLongPress exact anchor not found")
 
     if "a11y-fork: OPTION_SELECT_MESSAGE menu" not in t:
@@ -2348,9 +2349,9 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
 
 def patch_stuck_together_bubbles_long_press() -> None:
     """Accessibility-fork: fix long-press on grouped/bubble-clustered messages."""
-    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    cmc = JAVA / "org/telegram/ui/ChatActivity.java"
     if not cmc.exists():
-        print("WARN: ChatMessageCell missing (stuck bubbles long press)")
+        print("WARN: ChatActivity missing (stuck bubbles long press)")
         return
     t = cmc.read_text(encoding="utf-8")
     marker = "a11y-fork: clamp long-press coordinates"
@@ -2986,6 +2987,16 @@ def patch_friend_sender_avatar_menu() -> None:
     needle = """                info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_msg_options, getString(\"AccActionMessageOptions\", R.string.AccActionMessageOptions)));"""
     if needle in t:
         t = t.replace(needle, needle + "\n                if (hasSenderAvatarMenu()) info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_sender_avatar_menu, getString(R.string.AccActionSenderOptions)));", 1)
+    # canLongPressAvatar does NOT exist upstream: declare it as a default method
+    # in the ChatMessageCellDelegate interface, otherwise the @Override in
+    # ChatActivity and the delegate call in ChatMessageCell both fail to compile.
+    iface_anchor = "        default boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {"
+    if "boolean canLongPressAvatar(ChatMessageCell cell)" not in t:
+        if iface_anchor in t:
+            t = t.replace(iface_anchor,
+                "        default boolean canLongPressAvatar(ChatMessageCell cell) {\n            return false;\n        }\n\n" + iface_anchor, 1)
+        else:
+            print("WARN: ChatMessageCellDelegate.didLongPressUserAvatar anchor missing (canLongPressAvatar)")
     cmc.write_text(t, encoding="utf-8")
     cat = ca.read_text(encoding="utf-8")
     anchor2 = """        @Override
