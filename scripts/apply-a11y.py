@@ -200,6 +200,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yPercent": "%1$d percent",
         "A11yDownloaded": "Downloaded",
         "A11yDownloadStateLabel": "Downloaded / not downloaded status: %s",
+        "A11yAlbumReadingLabel": "Album reading (photo 2 of 5): %s",
+        "A11yUserStatusLabel": "User status announcements (typing, recording, online): %s",
+        "A11yVideoSettings": "Video settings: quality and speed",
+        "A11yAddMembersConfirm": "Add selected members",
         "A11yClose": "Close",
         "A11yFileLabel": "File",
     }
@@ -243,6 +247,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yBotNumber": "ربات %1$d", "A11yPercent": "%1$d درصد",
         "A11yDownloaded": "دانلود شد",
         "A11yDownloadStateLabel": "وضعیت دانلود‌شده / دانلود‌نشده: %s",
+        "A11yAlbumReadingLabel": "خواندن آلبوم (عکس ۲ از ۵): %s",
+        "A11yUserStatusLabel": "اعلام وضعیت کاربر (در حال تایپ، ضبط ویس، آنلاین): %s",
+        "A11yVideoSettings": "تنظیمات ویدیو: کیفیت و سرعت",
+        "A11yAddMembersConfirm": "افزودن اعضای انتخاب‌شده",
         "A11yClose": "بستن",
         "A11yFileLabel": "فایل",
     }
@@ -1985,15 +1993,20 @@ def patch_go_to_first_message() -> None:
         if anchor in t: t=t.replace(anchor, helper+anchor,1)
 
     if "a11y-fork: go-to-first-message menu" not in t:
-        anchor = """            if (currentChat != null && !isTopic) {
-                viewAsTopics = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.TopicViewAsTopics));
-            }"""
-        insert = anchor + """
-            if (dialog_id != 0 && !isTopic) {
-                // a11y-fork: go-to-first-message menu
-                headerItem.lazilyAddSubItem(OPTION_GO_TO_FIRST_MESSAGE, R.drawable.msg_search, LocaleController.getString(R.string.A11yGoToFirstMessage));
-            }"""
-        if anchor in t: t=t.replace(anchor,insert,1)
+        # FIRST item of the chat's top-right "..." menu: inserted right after the menu is
+        # created (before Saved-chats / Call / Search / ...), not after "view as topics".
+        anchor = ("            headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));\n\n"
+                  "            if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {\n")
+        insert = ("            headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));\n"
+                  "            if (dialog_id != 0 && !isTopic && chatMode != MODE_SAVED && (currentUser == null || !currentUser.self)) {\n"
+                  "                // a11y-fork: go-to-first-message menu\n"
+                  "                headerItem.lazilyAddSubItem(OPTION_GO_TO_FIRST_MESSAGE, R.drawable.msg_search, LocaleController.getString(R.string.A11yGoToFirstMessage));\n"
+                  "            }\n\n"
+                  "            if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {\n")
+        if t.count(anchor) == 1:
+            t = t.replace(anchor, insert, 1)
+        else:
+            print("WARN: go-to-first-message first-position anchor found %d times" % t.count(anchor))
 
     if "a11y-fork: go-to-first-message handler" not in t:
         anchor = "                } else if (id == view_as_topics) {"
@@ -2590,6 +2603,96 @@ def patch_fork_quiet_download_state() -> None:
             print("WARN: SharedAudioCell appendAccessibilityDownloadState not found")
 
 
+def _gate_once(path: Path, old: str, new: str, label: str) -> None:
+    """Replace `old` by `new` exactly once in `path`; print OK / already / WARN."""
+    if not path.exists():
+        print("WARN: %s missing (%s)" % (path.name, label))
+        return
+    t = path.read_text(encoding="utf-8")
+    if new in t:
+        print("%s already patched" % label)
+        return
+    if t.count(old) != 1:
+        print("WARN: %s anchor found %d times in %s" % (label, t.count(old), path.name))
+        return
+    path.write_text(t.replace(old, new, 1), encoding="utf-8")
+    print("%s OK" % label)
+
+
+def patch_album_and_user_status_switches() -> None:
+    """Two Accessible Settings switches, both default OFF, for features the fork turns on always.
+
+      * "Album reading" (A11yConfig.getAlbumReading): the fork says "Album, photo 2 of 5" for every
+        message of a grouped-media album. OFF = the message is read like any other (stock Telegram).
+      * "User status announcements" (A11yConfig.getUserStatusAnnounce): the fork speaks what a
+        contact is doing -- typing, recording a voice message, sending audio, online -- in the chat
+        header, in the chat list while a row is focused, and inside the row's own description.
+        OFF = none of it is spoken (stock Telegram).
+    """
+    A = "org.telegram.messenger.A11yConfig"
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    _gate_once(
+        cmc,
+        "    private CharSequence albumAccessibilityPlace() {\n"
+        "        if (currentMessageObject == null || currentMessagesGroup == null || currentPosition == null) {\n",
+        "    private CharSequence albumAccessibilityPlace() {\n"
+        "        if (!" + A + ".getAlbumReading()) { // a11y-fork: setting (default OFF = stock wording)\n"
+        "            return null;\n"
+        "        }\n"
+        "        if (currentMessageObject == null || currentMessagesGroup == null || currentPosition == null) {\n",
+        "ChatMessageCell album-reading switch")
+    dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
+    _gate_once(
+        dc,
+        "        final CharSequence print = MessagesController.getInstance(currentAccount).getPrintingString(currentDialogId, getTopicId(), true);\n",
+        "        final CharSequence print = !" + A + ".getUserStatusAnnounce() ? null : MessagesController.getInstance(currentAccount).getPrintingString(currentDialogId, getTopicId(), true); // a11y-fork: setting\n",
+        "DialogCell live typing/recording switch")
+    _gate_once(
+        dc,
+        "            if (online && !accessibilityStateOnline) {\n",
+        "            if (online && !accessibilityStateOnline && " + A + ".getUserStatusAnnounce()) { // a11y-fork: setting\n",
+        "DialogCell live online switch")
+    _gate_once(
+        dc,
+        "        final CharSequence typing = printingStringType >= 0 && typingLayout != null ? typingLayout.getText() : null;\n",
+        "        final CharSequence typing = " + A + ".getUserStatusAnnounce() && printingStringType >= 0 && typingLayout != null ? typingLayout.getText() : null; // a11y-fork: setting\n",
+        "DialogCell row-description typing switch")
+    cac = JAVA / "org/telegram/ui/Components/ChatAvatarContainer.java"
+    _gate_once(
+        cac,
+        "    private void announceSubtitleChange(CharSequence newSubtitle) {\n",
+        "    private void announceSubtitleChange(CharSequence newSubtitle) {\n"
+        "        if (!" + A + ".getUserStatusAnnounce()) { // a11y-fork: setting (default OFF = nothing spoken)\n"
+        "            return;\n"
+        "        }\n",
+        "ChatAvatarContainer header status switch")
+
+
+def patch_unlabeled_buttons() -> None:
+    """Give buttons that TalkBack announces as "unlabeled" a real name (English + Persian).
+
+      * Video player (PhotoViewer): the button beside "More options" that opens the video
+        quality / speed / loop menu (videoItem) had no content description at all.
+      * Add members (GroupCreateActivity): the round check button that confirms the selected
+        people was named "Next" (copied from the new-group flow where it really is a next arrow).
+        In add-to-group / always-share / never-share mode it is a confirm button, so it is named
+        for what it does.
+    """
+    pv = JAVA / "org/telegram/ui/PhotoViewer.java"
+    _gate_once(
+        pv,
+        "        videoItemIcon.setCallback(videoItem.getIconView());\n",
+        "        videoItem.setContentDescription(LocaleController.getString(R.string.A11yVideoSettings)); // a11y-fork: label\n"
+        "        videoItemIcon.setCallback(videoItem.getIconView());\n",
+        "PhotoViewer video settings button label")
+    gca = JAVA / "org/telegram/ui/GroupCreateActivity.java"
+    _gate_once(
+        gca,
+        "        floatingButton.setContentDescription(getString(R.string.Next));\n",
+        "        floatingButton.setContentDescription((isNeverShare || isAlwaysShare || addToGroup) ? getString(R.string.A11yAddMembersConfirm) : getString(R.string.Next)); // a11y-fork: label\n",
+        "GroupCreateActivity confirm button label")
+
+
 def _java_remove_method(text: str, signature: str) -> str:
     """Remove one Java method (brace matched) that starts with `signature`."""
     a = text.find(signature)
@@ -2660,6 +2763,41 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    public static final String PREF_ALBUM_READING = "a11y_album_reading";
+    public static final String PREF_USER_STATUS = "a11y_user_status_announce";
+
+    /** Read grouped messages (albums) as "Album, photo 2 of 5" like the fork does. Default OFF = stock Telegram wording. */
+    public static boolean getAlbumReading() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_ALBUM_READING, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setAlbumReading(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_ALBUM_READING, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /** Speak what a contact is doing (typing, recording a voice message, sending audio, online). Default OFF. */
+    public static boolean getUserStatusAnnounce() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_USER_STATUS, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setUserStatusAnnounce(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_USER_STATUS, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static java.util.ArrayList<String> buildSettingsItems() {
         final java.util.ArrayList<String> items = new java.util.ArrayList<>();
         items.add(LocaleController.formatString(R.string.A11yProgressAnnounceLabel, progressStepLabel()));
@@ -2673,6 +2811,8 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));
         items.add(getSmallFilesAutoDownloadModeAnnouncement());
         items.add(LocaleController.formatString(R.string.A11yDownloadStateLabel, onOff(getAnnounceDownloadState())));
+        items.add(LocaleController.formatString(R.string.A11yAlbumReadingLabel, onOff(getAlbumReading())));
+        items.add(LocaleController.formatString(R.string.A11yUserStatusLabel, onOff(getUserStatusAnnounce())));
         return items;
     }
 
@@ -2745,6 +2885,14 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                 case 10:
                     setAnnounceDownloadState(!getAnnounceDownloadState());
                     message = LocaleController.formatString(R.string.A11yDownloadStateLabel, onOff(getAnnounceDownloadState()));
+                    break;
+                case 11:
+                    setAlbumReading(!getAlbumReading());
+                    message = LocaleController.formatString(R.string.A11yAlbumReadingLabel, onOff(getAlbumReading()));
+                    break;
+                case 12:
+                    setUserStatusAnnounce(!getUserStatusAnnounce());
+                    message = LocaleController.formatString(R.string.A11yUserStatusLabel, onOff(getUserStatusAnnounce()));
                     break;
                 default:
                     return;
@@ -3343,6 +3491,9 @@ def main() -> int:
     patch_every_node_long_click()
     if MEHRAN:
         patch_fork_quiet_download_state()
+    if MEHRAN:
+        patch_album_and_user_status_switches()
+    patch_unlabeled_buttons()
     if not MEHRAN:
         patch_chat_message_cell_granularity_navigation_legacy()
     patch_stuck_together_bubbles_long_press()
