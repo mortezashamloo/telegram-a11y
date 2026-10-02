@@ -187,6 +187,42 @@ jobs:
           grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
           grep -n "^APP_PACKAGE\|^RELEASE_" telegram/gradle.properties || true
 
+      # Own package name (contains "shamloo"). It is set LAST, after prepare-release-signing.py, so
+      # nothing can overwrite it. google-services.json must also know the package, otherwise the
+      # google-services Gradle plugin stops the build with "No matching client found".
+      # NOTE: a different package name installs as a separate app next to any older build.
+      - name: Set package name (shamloo) and google-services entry
+        env:
+          A11Y_PACKAGE_NAME: com.shamloo.telegram.accessible
+        run: |
+          python3 - <<'PY'
+          import copy, glob, json, os, re
+          pkg = os.environ["A11Y_PACKAGE_NAME"]
+          assert re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+", pkg), pkg
+          gp = "telegram/gradle.properties"
+          text = open(gp, encoding="utf-8").read()
+          if re.search(r"^APP_PACKAGE=.*$", text, re.M):
+              text = re.sub(r"^APP_PACKAGE=.*$", "APP_PACKAGE=" + pkg, text, flags=re.M)
+          else:
+              text += "\nAPP_PACKAGE=" + pkg + "\n"
+          open(gp, "w", encoding="utf-8").write(text)
+          print("APP_PACKAGE =", pkg)
+          for gs in glob.glob("telegram/**/google-services.json", recursive=True):
+              data = json.load(open(gs, encoding="utf-8"))
+              clients = data.get("client", [])
+              names = [c["client_info"]["android_client_info"]["package_name"] for c in clients]
+              if pkg in names:
+                  continue
+              base = next((c for c in clients
+                           if c["client_info"]["android_client_info"]["package_name"] == "org.telegram.messenger"), clients[0])
+              new = copy.deepcopy(base)
+              new["client_info"]["android_client_info"]["package_name"] = pkg
+              clients.append(new)
+              json.dump(data, open(gs, "w", encoding="utf-8"), indent=2)
+              print("google-services entry added:", gs)
+          PY
+          grep -n "^APP_PACKAGE" telegram/gradle.properties
+
       - name: Build APK
         working-directory: telegram
         run: |
