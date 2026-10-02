@@ -202,6 +202,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yDownloadStateLabel": "Downloaded / not downloaded status: %s",
         "A11yAlbumReadingLabel": "Album reading (photo 2 of 5): %s",
         "A11yUserStatusLabel": "User status announcements (typing, recording, online): %s",
+        "A11yChatOpenSoundLabel": "Sound when a chat opens: %s",
         "A11yVideoSettings": "Video settings: quality and speed",
         "A11yAddMembersConfirm": "Add selected members",
         "A11yClose": "Close",
@@ -249,6 +250,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yDownloadStateLabel": "وضعیت دانلود‌شده / دانلود‌نشده: %s",
         "A11yAlbumReadingLabel": "خواندن آلبوم (عکس ۲ از ۵): %s",
         "A11yUserStatusLabel": "اعلام وضعیت کاربر (در حال تایپ، ضبط ویس، آنلاین): %s",
+        "A11yChatOpenSoundLabel": "صدا هنگام باز شدن چت: %s",
         "A11yVideoSettings": "تنظیمات ویدیو: کیفیت و سرعت",
         "A11yAddMembersConfirm": "افزودن اعضای انتخاب‌شده",
         "A11yClose": "بستن",
@@ -2668,6 +2670,18 @@ def patch_album_and_user_status_switches() -> None:
         "ChatAvatarContainer header status switch")
 
 
+def patch_chat_open_sound() -> None:
+    """Optional system click when a chat opens (the fork moves TalkBack focus by itself, which
+    suppresses the usual enter sound). Plays once, on the first successful landing only."""
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    old = "            final boolean landed = target.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);\n"
+    new = (old +
+           "            if (landed && !requested) { // a11y-fork: optional chat-open sound (setting, default OFF)\n"
+           "                org.telegram.messenger.A11yConfig.playChatOpenSound();\n"
+           "            }\n")
+    _gate_once(ca, old, new, "ChatActivity chat-open sound")
+
+
 def patch_unlabeled_buttons() -> None:
     """Give buttons that TalkBack announces as "unlabeled" a real name (English + Persian).
 
@@ -2798,6 +2812,38 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    public static final String PREF_CHAT_OPEN_SOUND = "a11y_chat_open_sound";
+
+    /** Play the phone's own "Touch sounds" click once when a chat opens and focus lands on its message. Default OFF. */
+    public static boolean getChatOpenSound() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_CHAT_OPEN_SOUND, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setChatOpenSound(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_CHAT_OPEN_SOUND, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /** The system click ("Touch sounds" in the phone's Sound settings); the system itself stays silent when that is off. */
+    public static void playChatOpenSound() {
+        try {
+            if (!getChatOpenSound()) {
+                return;
+            }
+            android.media.AudioManager am = (android.media.AudioManager) ApplicationLoader.applicationContext.getSystemService(android.content.Context.AUDIO_SERVICE);
+            if (am != null) {
+                am.playSoundEffect(android.media.AudioManager.FX_KEY_CLICK);
+            }
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static java.util.ArrayList<String> buildSettingsItems() {
         final java.util.ArrayList<String> items = new java.util.ArrayList<>();
         items.add(LocaleController.formatString(R.string.A11yProgressAnnounceLabel, progressStepLabel()));
@@ -2813,6 +2859,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yDownloadStateLabel, onOff(getAnnounceDownloadState())));
         items.add(LocaleController.formatString(R.string.A11yAlbumReadingLabel, onOff(getAlbumReading())));
         items.add(LocaleController.formatString(R.string.A11yUserStatusLabel, onOff(getUserStatusAnnounce())));
+        items.add(LocaleController.formatString(R.string.A11yChatOpenSoundLabel, onOff(getChatOpenSound())));
         return items;
     }
 
@@ -2893,6 +2940,10 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                 case 12:
                     setUserStatusAnnounce(!getUserStatusAnnounce());
                     message = LocaleController.formatString(R.string.A11yUserStatusLabel, onOff(getUserStatusAnnounce()));
+                    break;
+                case 13:
+                    setChatOpenSound(!getChatOpenSound());
+                    message = LocaleController.formatString(R.string.A11yChatOpenSoundLabel, onOff(getChatOpenSound()));
                     break;
                 default:
                     return;
@@ -3493,6 +3544,8 @@ def main() -> int:
         patch_fork_quiet_download_state()
     if MEHRAN:
         patch_album_and_user_status_switches()
+    if MEHRAN:
+        patch_chat_open_sound()
     patch_unlabeled_buttons()
     if not MEHRAN:
         patch_chat_message_cell_granularity_navigation_legacy()
