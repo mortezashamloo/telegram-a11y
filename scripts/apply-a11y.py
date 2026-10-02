@@ -203,6 +203,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yAlbumReadingLabel": "Album reading (photo 2 of 5): %s",
         "A11yUserStatusLabel": "User status announcements (typing, recording, online): %s",
         "A11yChatOpenSoundLabel": "Sound when a chat opens: %s",
+        "A11yMutualContact": "Mutual contact",
+        "A11ySwitchAccount": "Switch account",
         "A11yVideoSettings": "Video settings: quality and speed",
         "A11yAddMembersConfirm": "Add selected members",
         "A11yClose": "Close",
@@ -251,6 +253,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yAlbumReadingLabel": "خواندن آلبوم (عکس ۲ از ۵): %s",
         "A11yUserStatusLabel": "اعلام وضعیت کاربر (در حال تایپ، ضبط ویس، آنلاین): %s",
         "A11yChatOpenSoundLabel": "صدا هنگام باز شدن چت: %s",
+        "A11yMutualContact": "مخاطب دوطرفه",
+        "A11ySwitchAccount": "تعویض حساب",
         "A11yVideoSettings": "تنظیمات ویدیو: کیفیت و سرعت",
         "A11yAddMembersConfirm": "افزودن اعضای انتخاب‌شده",
         "A11yClose": "بستن",
@@ -2707,6 +2711,194 @@ def patch_unlabeled_buttons() -> None:
         "GroupCreateActivity confirm button label")
 
 
+def patch_contacts_list_accessibility() -> None:
+    """Contacts list (New message / Contacts): two fixes in UserCell, switched on only by ContactsAdapter.
+
+      * "Not checked" is spoken on every contact even though nothing is being selected. The state
+        is now spoken only once a selection has started (something is selected), and then on every
+        contact, as asked.
+      * A contact who has you as a contact too is read as "Mutual contact" (User.mutual_contact).
+    """
+    uc = JAVA / "org/telegram/ui/Cells/UserCell.java"
+    _gate_once(
+        uc,
+        "    @Override\n    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {\n"
+        "        super.onInitializeAccessibilityNodeInfo(info);\n"
+        "        if (checkBoxBig != null && checkBoxBig.getVisibility() == VISIBLE) {\n"
+        "            info.setCheckable(true);\n"
+        "            info.setChecked(checkBoxBig.isChecked());\n"
+        "            info.setClassName(\"android.widget.CheckBox\");\n"
+        "        } else if (checkBox != null && checkBox.getVisibility() == VISIBLE) {\n"
+        "            info.setCheckable(true);\n"
+        "            info.setChecked(checkBox.isChecked());\n"
+        "            info.setClassName(\"android.widget.CheckBox\");\n"
+        "        }\n",
+        "    // a11y-fork: contacts list switches (set by ContactsAdapter only)\n"
+        "    public interface A11ySelectionMode {\n"
+        "        boolean isActive();\n"
+        "    }\n"
+        "    public A11ySelectionMode a11ySelectionMode;\n"
+        "    public boolean a11yAnnounceMutual;\n\n"
+        "    @Override\n    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {\n"
+        "        super.onInitializeAccessibilityNodeInfo(info);\n"
+        "        final boolean selecting = a11ySelectionMode == null || a11ySelectionMode.isActive();\n"
+        "        if (checkBoxBig != null && checkBoxBig.getVisibility() == VISIBLE) {\n"
+        "            if (selecting || checkBoxBig.isChecked()) {\n"
+        "                info.setCheckable(true);\n"
+        "                info.setChecked(checkBoxBig.isChecked());\n"
+        "                info.setClassName(\"android.widget.CheckBox\");\n"
+        "            }\n"
+        "        } else if (checkBox != null && checkBox.getVisibility() == VISIBLE) {\n"
+        "            if (selecting || checkBox.isChecked()) {\n"
+        "                info.setCheckable(true);\n"
+        "                info.setChecked(checkBox.isChecked());\n"
+        "                info.setClassName(\"android.widget.CheckBox\");\n"
+        "            }\n"
+        "        }\n",
+        "UserCell checkbox state only while selecting")
+    _gate_once(
+        uc,
+        "        if (adminTextView != null && adminTextView.getVisibility() == VISIBLE) {\n"
+        "            CharSequence admin = adminTextView.getText();\n",
+        "        if (a11yAnnounceMutual && currentObject instanceof TLRPC.User && ((TLRPC.User) currentObject).mutual_contact) {\n"
+        "            if (sb.length() > 0) sb.append(\", \");\n"
+        "            sb.append(LocaleController.getString(R.string.A11yMutualContact)); // a11y-fork\n"
+        "        }\n"
+        "        if (adminTextView != null && adminTextView.getVisibility() == VISIBLE) {\n"
+        "            CharSequence admin = adminTextView.getText();\n",
+        "UserCell mutual contact")
+    ca = JAVA / "org/telegram/ui/Adapters/ContactsAdapter.java"
+    _gate_once(
+        ca,
+        "                UserCell cell = new UserCell(mContext, 58, 1, false);\n                cell.setCallCellStyle(58);\n",
+        "                UserCell cell = new UserCell(mContext, 58, 1, false);\n"
+        "                cell.a11ySelectionMode = () -> selectedContacts != null && selectedContacts.size() > 0; // a11y-fork\n"
+        "                cell.a11yAnnounceMutual = true; // a11y-fork\n"
+        "                cell.setCallCellStyle(58);\n",
+        "ContactsAdapter contact cell switches")
+
+
+def patch_topics_hide_chat_list_from_screen_reader() -> None:
+    """Topics of a forum group open in a panel (RightSlidingDialogContainer) on top of the chat
+    list, which stays on the screen underneath. A screen reader therefore walks through the whole
+    chat list before / between the topics. While the panel is fully open every other child of its
+    parent is hidden from accessibility (their previous setting is remembered and put back when the
+    panel is closing or gone)."""
+    rc = JAVA / "org/telegram/ui/RightSlidingDialogContainer.java"
+    _gate_once(
+        rc,
+        "    protected void updateOpenAnimationProgress() {\n        if (replaceAnimationInProgress || !hasFragment()) {\n            return;\n        }\n",
+        "    // a11y-fork: hide what is underneath from a screen reader while the panel is open\n"
+        "    private final java.util.WeakHashMap<View, Integer> a11ySiblingModes = new java.util.WeakHashMap<>();\n"
+        "    private boolean a11ySiblingsHidden;\n\n"
+        "    private void a11yUpdateSiblings(boolean hide) {\n"
+        "        if (hide == a11ySiblingsHidden) {\n"
+        "            return;\n"
+        "        }\n"
+        "        a11ySiblingsHidden = hide;\n"
+        "        if (!(getParent() instanceof android.view.ViewGroup)) {\n"
+        "            return;\n"
+        "        }\n"
+        "        android.view.ViewGroup parent = (android.view.ViewGroup) getParent();\n"
+        "        if (hide) {\n"
+        "            a11ySiblingModes.clear();\n"
+        "            for (int i = 0; i < parent.getChildCount(); i++) {\n"
+        "                View child = parent.getChildAt(i);\n"
+        "                if (child == this) {\n"
+        "                    continue;\n"
+        "                }\n"
+        "                a11ySiblingModes.put(child, child.getImportantForAccessibility());\n"
+        "                child.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);\n"
+        "            }\n"
+        "        } else {\n"
+        "            for (java.util.Map.Entry<View, Integer> e : a11ySiblingModes.entrySet()) {\n"
+        "                if (e.getKey() != null) {\n"
+        "                    e.getKey().setImportantForAccessibility(e.getValue());\n"
+        "                }\n"
+        "            }\n"
+        "            a11ySiblingModes.clear();\n"
+        "        }\n"
+        "    }\n\n"
+        "    protected void updateOpenAnimationProgress() {\n"
+        "        a11yUpdateSiblings(hasFragment() && isOpenned && openedProgress >= 0.99f);\n"
+        "        if (replaceAnimationInProgress || !hasFragment()) {\n            return;\n        }\n",
+        "RightSlidingDialogContainer hides chat list from screen reader")
+
+
+def patch_more_unlabeled_buttons() -> None:
+    """Second sweep for buttons TalkBack reads as "unlabeled" (found by scanning the whole UI source).
+
+      * Voice chat banner (FragmentContextView): the round mute / unmute button -> "Mute" / "Unmute",
+        kept in step with the microphone state.
+      * Chat list (DialogsActivity): the avatar button that switches between accounts -> "Switch account".
+      * Mini apps (BotWebViewSheet) and Select gifts: the "..." button -> "More options".
+      * Chat background preview (ThemePreviewActivity): the sun / moon button -> "Switch to night /
+        day theme", kept in step with the theme.
+    Strings other than "Switch account" are the app's own, so they follow the app's language.
+    """
+    fcv = JAVA / "org/telegram/ui/Components/FragmentContextView.java"
+    _gate_once(
+        fcv,
+        "            muteDrawable.setCurrentFrame(muteDrawable.getCustomEndFrame() - 1, false, true);\n"
+        "            muteButton.invalidate();\n"
+        "            frameLayout.setBackground(null);\n",
+        "            muteDrawable.setCurrentFrame(muteDrawable.getCustomEndFrame() - 1, false, true);\n"
+        "            muteButton.invalidate();\n"
+        "            muteButton.setContentDescription(getString(isMuted ? R.string.VoipGroupUnmuteShort : R.string.VoipMute)); // a11y-fork: label\n"
+        "            frameLayout.setBackground(null);\n",
+        "FragmentContextView mute button label (start)")
+    _gate_once(
+        fcv,
+        "                muteDrawable.setCurrentFrame(muteDrawable.getCustomEndFrame() - 1, false, true);\n"
+        "                muteButton.invalidate();\n"
+        "            }\n"
+        "        } else if (currentStyle == STYLE_INACTIVE_GROUP_CALL) {\n",
+        "                muteDrawable.setCurrentFrame(muteDrawable.getCustomEndFrame() - 1, false, true);\n"
+        "                muteButton.invalidate();\n"
+        "                muteButton.setContentDescription(getString(isMuted ? R.string.VoipGroupUnmuteShort : R.string.VoipMute)); // a11y-fork: label\n"
+        "            }\n"
+        "        } else if (currentStyle == STYLE_INACTIVE_GROUP_CALL) {\n",
+        "FragmentContextView mute button label (update)")
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    _gate_once(
+        da,
+        "            switchItem = menu.addItemWithWidth(11, 0, dp(56));\n",
+        "            switchItem = menu.addItemWithWidth(11, 0, dp(56));\n"
+        "            switchItem.setContentDescription(LocaleController.getString(R.string.A11ySwitchAccount)); // a11y-fork: label\n",
+        "DialogsActivity switch account button label")
+    bw = JAVA / "org/telegram/ui/bots/BotWebViewSheet.java"
+    _gate_once(
+        bw,
+        "        optionsItem = menu.addItem(0, optionsIcon = new BotFullscreenButtons.OptionsIcon(getContext()));\n",
+        "        optionsItem = menu.addItem(0, optionsIcon = new BotFullscreenButtons.OptionsIcon(getContext()));\n"
+        "        optionsItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions)); // a11y-fork: label\n",
+        "BotWebViewSheet options button label")
+    sg = JAVA / "org/telegram/ui/Gifts/SelectGiftsBottomSheet.java"
+    _gate_once(
+        sg,
+        "        final ActionBarMenuItem other = menu.addItem(1, R.drawable.ic_ab_other);\n",
+        "        final ActionBarMenuItem other = menu.addItem(1, R.drawable.ic_ab_other);\n"
+        "        other.setContentDescription(org.telegram.messenger.LocaleController.getString(R.string.AccDescrMoreOptions)); // a11y-fork: label\n",
+        "SelectGiftsBottomSheet more-options button label")
+    tp = JAVA / "org/telegram/ui/ThemePreviewActivity.java"
+    _gate_once(
+        tp,
+        "                    dayNightItem = menu2.addItem(OPTION_DAY_NIGHT, sunDrawable);\n",
+        "                    dayNightItem = menu2.addItem(OPTION_DAY_NIGHT, sunDrawable);\n"
+        "                    dayNightItem.setContentDescription(LocaleController.getString(onSwitchDayNightDelegate != null && onSwitchDayNightDelegate.isDark() ? R.string.AccDescrSwitchToDayTheme : R.string.AccDescrSwitchToNightTheme)); // a11y-fork: label\n",
+        "ThemePreviewActivity day/night button label")
+    _gate_once(
+        tp,
+        "                    boolean isDark = onSwitchDayNightDelegate.isDark();\n"
+        "                    if (onSwitchDayNightDelegate != null) {\n",
+        "                    boolean isDark = onSwitchDayNightDelegate.isDark();\n"
+        "                    if (dayNightItem != null) { // a11y-fork: label now describes the next switch\n"
+        "                        dayNightItem.setContentDescription(LocaleController.getString(isDark ? R.string.AccDescrSwitchToNightTheme : R.string.AccDescrSwitchToDayTheme));\n"
+        "                    }\n"
+        "                    if (onSwitchDayNightDelegate != null) {\n",
+        "ThemePreviewActivity day/night button label (toggle)")
+
+
 def _java_remove_method(text: str, signature: str) -> str:
     """Remove one Java method (brace matched) that starts with `signature`."""
     a = text.find(signature)
@@ -3547,6 +3739,9 @@ def main() -> int:
     if MEHRAN:
         patch_chat_open_sound()
     patch_unlabeled_buttons()
+    patch_contacts_list_accessibility()
+    patch_topics_hide_chat_list_from_screen_reader()
+    patch_more_unlabeled_buttons()
     if not MEHRAN:
         patch_chat_message_cell_granularity_navigation_legacy()
     patch_stuck_together_bubbles_long_press()
