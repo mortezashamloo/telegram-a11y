@@ -2899,6 +2899,61 @@ def patch_more_unlabeled_buttons() -> None:
         "ThemePreviewActivity day/night button label (toggle)")
 
 
+def patch_reply_longpress_opens_options() -> None:
+    """A real long press on the reply header of a message (touch path: ChatMessageCell.onLongPress ->
+    delegate.didPressReplyMessage(..., longpress=true)) is answered by stock ChatActivity like a short tap:
+    it scrolls to the replied message. Here a long press there opens Message options, like a long press
+    anywhere else on the message (the TalkBack action path already did)."""
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    _gate_once(
+        ca,
+        "            if (UserObject.isReplyUser(currentUser)) {\n"
+        "                didPressSideButton(cell);\n"
+        "                return;\n"
+        "            }\n"
+        "            MessageObject messageObject = cell.getMessageObject();\n"
+        "            if (messageObject == null) return;\n"
+        "            if (messageObject.isReplyToStory() && messageObject.messageOwner.replyStory != null) {\n",
+        "            if (longpress && cell != null && cell.getMessageObject() != null && canPerformActions()) { // a11y-fork: reply long-press = Message options\n"
+        "                didLongPress(cell, x, y);\n"
+        "                return;\n"
+        "            }\n"
+        "            if (UserObject.isReplyUser(currentUser)) {\n"
+        "                didPressSideButton(cell);\n"
+        "                return;\n"
+        "            }\n"
+        "            MessageObject messageObject = cell.getMessageObject();\n"
+        "            if (messageObject == null) return;\n"
+        "            if (messageObject.isReplyToStory() && messageObject.messageOwner.replyStory != null) {\n",
+        "ChatActivity reply long-press opens Message options")
+
+
+def patch_longclickable_flag() -> None:
+    """TalkBack plays its "long press" sound by looking at the node's long-clickable flag. A message
+    node (and each of its virtual parts) answered ACTION_LONG_CLICK but never said "long-clickable",
+    which is the likely reason the sound is missing on some messages such as grouped media.
+    Declaring it changes nothing else: the action itself is already handled."""
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    _gate_once(
+        cmc,
+        "                info.setEnabled(true);\n"
+        "                AccessibilityNodeInfo.CollectionItemInfo itemInfo = info.getCollectionItemInfo();\n",
+        "                info.setEnabled(true);\n"
+        "                info.setLongClickable(true); // a11y-fork: TalkBack long-press sound\n"
+        "                AccessibilityNodeInfo.CollectionItemInfo itemInfo = info.getCollectionItemInfo();\n",
+        "ChatMessageCell host node long-clickable flag")
+    _gate_once(
+        cmc,
+        "                    if (!a11yHasLong) {\n"
+        "                        a11yInfo.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);\n"
+        "                    }\n",
+        "                    if (!a11yHasLong) {\n"
+        "                        a11yInfo.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);\n"
+        "                    }\n"
+        "                    a11yInfo.setLongClickable(true); // a11y-fork: TalkBack long-press sound\n",
+        "ChatMessageCell virtual nodes long-clickable flag")
+
+
 def _java_remove_method(text: str, signature: str) -> str:
     """Remove one Java method (brace matched) that starts with `signature`."""
     a = text.find(signature)
@@ -3742,6 +3797,8 @@ def main() -> int:
     patch_contacts_list_accessibility()
     patch_topics_hide_chat_list_from_screen_reader()
     patch_more_unlabeled_buttons()
+    patch_reply_longpress_opens_options()
+    patch_longclickable_flag()
     if not MEHRAN:
         patch_chat_message_cell_granularity_navigation_legacy()
     patch_stuck_together_bubbles_long_press()
