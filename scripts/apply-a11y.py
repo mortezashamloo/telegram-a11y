@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Apply accessibility patches to cloned Telegram tree (12.10.6 baseline) (cwd parent of telegram/).
 
 Step 0 applies scripts/mehran-a11y.patch: the accessibility work of the
@@ -98,6 +98,7 @@ def apply_mehran_patch() -> None:
     marker.write_text("ok\n")
 
 
+
 def _set_string(path: Path, name: str, value: str) -> None:
     # Android string resources are XML. Escape XML text characters before
     # writing/updating a <string> element. In particular, "&" in labels such
@@ -142,8 +143,15 @@ def patch_app_name() -> None:
         _set_string(RES / rel, "AppNameBeta", FA_NAME)
     print("AppName OK")
 
+
+
 def _patch_a11y_string_resources() -> None:
-    """Install every accessibility-fork string resource referenced by A11yConfig.java."""
+    """Install every accessibility-fork string resource referenced by A11yConfig.java.
+
+    The previous build failed because A11yConfig referenced the
+    Label/Title/On/Off resource names while the installer created only
+    shorter alias names. Keep both the exact names and compatibility aliases.
+    """
     en = {
         "A11yAccessibleSettingsTitle": "Accessible settings",
         "A11yProgressAnnounceLabel": "Progress announce: %s",
@@ -169,18 +177,13 @@ def _patch_a11y_string_resources() -> None:
         "A11yBlockSmallFilesLabel": "Do not auto-download small files: %s",
         "A11yNoAutoDownloadLabel": "Do not auto-download files: %s",
         "A11yVoiceOnlyAutoDownloadLabel": "Do not auto-download files except voice messages: %s",
-        "A11ySmallFilesModeLabel": "Small files auto-download: %s",
-        "A11ySmallFilesAuto": "Auto-download small files",
-        "A11ySmallFilesVoiceOnly": "Do not download small files except voice messages",
-        "A11ySmallFilesOff": "Do not download small files",
-        "A11ySmallFilesPickerTitle": "Small files auto-download",
         "A11yOn": "On", "A11yOff": "Off", "A11yCancel": "Cancel",
         "A11ySolarDate": "%1$s",
         "A11yAt": "at",
         "A11yAccessibleSettings": "Accessible settings",
         "A11yProgressAnnounce": "Progress announce",
         "A11yVoiceQuality": "Voice quality",
-        "A11yProgressAnnounceSummary": "",
+        "A11yProgressAnnounceSummary": "Progress & voice quality",
         "A11yProgressAnnounceStep": "Progress announce step",
         "A11yVoiceMessageQuality": "Voice message quality",
         "A11yLow": "Low", "A11yMedium": "Medium", "A11yHigh": "High",
@@ -199,8 +202,11 @@ def _patch_a11y_string_resources() -> None:
         "A11yDownloadStateLabel": "Downloaded / not downloaded status: %s",
         "A11yAlbumReadingLabel": "Announce media album grouping: %s",
         "A11yAlbumReadingSummary": "Screen reader announces when a message belongs to an album and its position",
-        "A11yAdminTagsLabel": "Announce admin and group tags: %s",
-        "A11yAdminTagsSummary": "Adds admin, owner or the group’s own tag after the sender name in groups.",
+        "A11yAdminTagLabel": "Announce admin and group tags: %s",
+        "A11yAdminTagSummary": "Adds admin, owner or the group’s own tag after the sender name in groups.",
+        "A11yLeaveComment": "Leave comment",
+        "A11yCommentOne": "1 comment",
+        "A11yCommentsCount": "%1$d comments",
         "A11yUserStatusLabel": "User status announcements (typing, recording, online): %s",
         "A11yChatOpenSoundLabel": "Sound when a chat opens: %s",
         "A11yMutualContact": "Mutual contact",
@@ -231,17 +237,12 @@ def _patch_a11y_string_resources() -> None:
         "A11yBlockSmallFilesLabel": "دانلود خودکار فایل‌های کم‌حجم را متوقف کن: %s",
         "A11yNoAutoDownloadLabel": "دانلود خودکار هیچ فایلی: %s",
         "A11yVoiceOnlyAutoDownloadLabel": "دانلود خودکار فایل‌ها به‌جز پیام‌های صوتی: %s",
-        "A11ySmallFilesModeLabel": "دانلود خودکار فایل‌های کم‌‌حجم: %s",
-        "A11ySmallFilesAuto": "دانلود خودکار فایل‌های کم‌حجم",
-        "A11ySmallFilesVoiceOnly": "دانلود نکردن فایل‌های کم‌‌حجم به‌جز پیام‌های صوتی",
-        "A11ySmallFilesOff": "دانلود نکردن فایل‌های کم‌حجم",
-        "A11ySmallFilesPickerTitle": "دانلود خودکار فایل‌های کم‌حجم",
         "A11yOn": "روشن", "A11yOff": "خاموش", "A11yCancel": "لغو",
         "A11ySolarDate": "%1$s",
         "A11yAt": "در",
         "A11yAccessibleSettings": "تنظیمات دسترس‌پذیری",
         "A11yProgressAnnounce": "اعلام پیشرفت", "A11yVoiceQuality": "کیفیت صدا",
-        "A11yProgressAnnounceSummary": "",
+        "A11yProgressAnnounceSummary": "اعلام پیشرفت و کیفیت صدا",
         "A11yProgressAnnounceStep": "گام اعلام پیشرفت", "A11yVoiceMessageQuality": "کیفیت پیام صوتی",
         "A11yLow": "پایین", "A11yMedium": "متوسط", "A11yHigh": "بالا",
         "A11yProgressStep": "گام پیشرفت %1$d درصد",
@@ -256,9 +257,12 @@ def _patch_a11y_string_resources() -> None:
         "A11yDownloaded": "دانلود شد",
         "A11yDownloadStateLabel": "وضعیت دانلود‌شده / دانلود‌نشده: %s",
         "A11yAlbumReadingLabel": "اعلام گروه‌بندی آلبوم رسانه: %s",
-        "A11yAlbumReadingSummary": "صفحه‌خوان اعلام می‌کند که پیام متعلق به یک آلبوم است و شماره موقعیت آن چند است",
-        "A11yAdminTagsLabel": "اعلام تگ‌های مدیر و گروه: %s",
-        "A11yAdminTagsSummary": "افزودن برچسب مدیر، مالک یا تگ اختصاصی گروه بعد از نام فرستنده در گروه‌ها.",
+        "A11yAlbumReadingSummary": "صفحه‌خوان اعلام می‌کند که پیام جزو یک آلبوم است و جایگاه آن را می‌گوید",
+        "A11yAdminTagLabel": "اعلام تگ ادمین و گروه: %s",
+        "A11yAdminTagSummary": "تگ ادمین، مالک یا تگ اختصاصی گروه را بعد از نام فرستنده در گروه‌ها اضافه می‌کند.",
+        "A11yLeaveComment": "ثبت نظر",
+        "A11yCommentOne": "1 نظر",
+        "A11yCommentsCount": "%1$d نظر",
         "A11yUserStatusLabel": "اعلام وضعیت کاربر (در حال تایپ، ضبط ویس، آنلاین): %s",
         "A11yChatOpenSoundLabel": "صدا هنگام باز شدن چت: %s",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -281,6 +285,8 @@ def patch_a11y_localization() -> None:
     """Replace accessibility-fork hard-coded runtime text with localized resources."""
     _patch_a11y_string_resources()
 
+    # A11yConfig.java is copied from the user's repository. Localize its labels
+    # without replacing or removing any of the existing settings/features.
     cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
     if cfg.exists():
         t = cfg.read_text(encoding="utf-8")
@@ -327,8 +333,7 @@ def patch_a11y_localization() -> None:
             'items.add("Links");': 'items.add(LocaleController.getString(R.string.A11yLinks));',
             'botBtnBuilder.setTitle("Bot Buttons");': 'botBtnBuilder.setTitle(LocaleController.getString(R.string.A11yBotButtons));',
             '("Bot " + (labels.size() + 1))': 'LocaleController.formatString("A11yBotNumber", R.string.A11yBotNumber, labels.size() + 1)',
-            '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), ""',
-            '"Accessible settings", ""': 'LocaleController.getString(R.string.A11yAccessibleSettings), ""',
+            '"Accessible settings", "Progress & voice quality"': 'LocaleController.getString(R.string.A11yAccessibleSettings), LocaleController.getString(R.string.A11yProgressAnnounceSummary)',
             'parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));': 'parent.announceForAccessibility(org.telegram.messenger.LocaleController.formatString("A11yPercent", org.telegram.messenger.R.string.A11yPercent, step));',
         }
         for old, new in replacements.items():
@@ -348,6 +353,9 @@ def install_a11y_config() -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, dst)
     cfg = dst.read_text(encoding="utf-8")
+    # a11y-fork: Solar calendar is ON by default (can be turned off from Accessible Settings).
+    # The recording-start beep stays OFF by default (A11yConfig.java's own default); the
+    # recording vibration (patch_recording_beep) is unconditional and independent of it.
     if "PREF_LINKS_MENU" not in cfg:
         cfg = cfg.replace(
             'public static final String PREF_SOLAR_CALENDAR = "a11y_solar_calendar";',
@@ -372,8 +380,177 @@ def install_a11y_config() -> None:
         )
         if anchor in cfg:
             cfg = cfg.replace(anchor, methods + anchor, 1)
+    # a11y-fork: Solar date replacement supports both old int and current long signatures.
+    # It is date-only: Telegram's surrounding formatter controls the time-of-day.
+    solar_start = cfg.find("    public static String formatSolarDate(")
+    if solar_start >= 0:
+        solar_end = cfg.find("    private static String toPersianDigits", solar_start)
+        if solar_end > solar_start:
+            solar_method = (
+                "    public static String formatSolarDate(long unixSeconds) {\n"
+                "        try {\n"
+                "            java.util.Calendar cal = java.util.Calendar.getInstance();\n"
+                "            cal.setTimeInMillis(unixSeconds * 1000L);\n"
+                "            int gy = cal.get(java.util.Calendar.YEAR);\n"
+                "            int gm = cal.get(java.util.Calendar.MONTH) + 1;\n"
+                "            int gd = cal.get(java.util.Calendar.DAY_OF_MONTH);\n"
+                "            int jy;\n"
+                "            if (gy > 1600) { jy = 979; gy -= 1600; } else { jy = 0; gy -= 621; }\n"
+                "            int[] gdm = {0,31,59,90,120,151,181,212,243,273,304,334};\n"
+                "            int gy2 = gm > 2 ? gy + 1 : gy;\n"
+                "            int days = 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 - 80 + gd + gdm[gm - 1];\n"
+                "            jy += 33 * (days / 12053); days %= 12053;\n"
+                "            jy += 4 * (days / 1461); days %= 1461;\n"
+                "            if (days > 365) { jy += (days - 1) / 365; days = (days - 1) % 365; }\n"
+                "            int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;\n"
+                "            int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);\n"
+                "            String[] faMonths = {\"فروردین\",\"اردیبهشت\",\"خرداد\",\"تیر\",\"مرداد\",\"شهریور\",\"مهر\",\"آبان\",\"آذر\",\"دی\",\"بهمن\",\"اسفند\"};\n"
+                "            String[] enMonths = {\"Farvardin\",\"Ordibehesht\",\"Khordad\",\"Tir\",\"Mordad\",\"Shahrivar\",\"Mehr\",\"Aban\",\"Azar\",\"Dey\",\"Bahman\",\"Esfand\"};\n"
+                "            boolean isFa = \"fa\".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());\n"
+                "            String month = (isFa ? faMonths : enMonths)[jm - 1];\n"
+                "            java.util.Calendar now = java.util.Calendar.getInstance();\n"
+                "            int nowGy = now.get(java.util.Calendar.YEAR);\n"
+                "            int nowGm = now.get(java.util.Calendar.MONTH) + 1;\n"
+                "            int nowGd = now.get(java.util.Calendar.DAY_OF_MONTH);\n"
+                "            int nowJy;\n"
+                "            if (nowGy > 1600) { nowJy = 979; nowGy -= 1600; } else { nowJy = 0; nowGy -= 621; }\n"
+                "            int nowGy2 = nowGm > 2 ? nowGy + 1 : nowGy;\n"
+                "            int nowDays = 365 * nowGy + (nowGy2 + 3) / 4 - (nowGy2 + 99) / 100 + (nowGy2 + 399) / 400 - 80 + nowGd + gdm[nowGm - 1];\n"
+                "            nowJy += 33 * (nowDays / 12053); nowDays %= 12053;\n"
+                "            nowJy += 4 * (nowDays / 1461); nowDays %= 1461;\n"
+                "            if (nowDays > 365) { nowJy += (nowDays - 1) / 365; }\n"
+                "            String value = jy == nowJy ? String.format(java.util.Locale.US, \"%d %s\", jd, month) : String.format(java.util.Locale.US, \"%d %s %d\", jd, month, jy);\n"
+                "            return LocaleController.formatString(R.string.A11ySolarDate, isFa ? toPersianDigits(value) : value);\n"
+                "        } catch (Throwable ignore) { return \"\"; }\n"
+                "    }\n\n"
+                "    public static String formatSolarDateAudio(long unixSeconds) {\n"
+                "        try {\n"
+                "            long dateMs = unixSeconds * 1000L;\n"
+                "            java.util.Calendar now = java.util.Calendar.getInstance();\n"
+                "            java.util.Calendar msg = java.util.Calendar.getInstance();\n"
+                "            msg.setTimeInMillis(dateMs);\n"
+                "            int nowDay = now.get(java.util.Calendar.DAY_OF_YEAR);\n"
+                "            int nowYear = now.get(java.util.Calendar.YEAR);\n"
+                "            int msgDay = msg.get(java.util.Calendar.DAY_OF_YEAR);\n"
+                "            int msgYear = msg.get(java.util.Calendar.YEAR);\n"
+                "            java.text.SimpleDateFormat timeFmt = new java.text.SimpleDateFormat(\"HH:mm\", java.util.Locale.getDefault());\n"
+                "            String time = timeFmt.format(new java.util.Date(dateMs));\n"
+                "            if (msgDay == nowDay && msgYear == nowYear) {\n"
+                "                return LocaleController.formatString(R.string.TodayAtFormatted, time);\n"
+                "            } else if (msgDay + 1 == nowDay && msgYear == nowYear) {\n"
+                "                return LocaleController.formatString(R.string.YesterdayAtFormatted, time);\n"
+                "            } else {\n"
+                "                String solar = formatSolarDate(unixSeconds);\n"
+                "                if (solar == null || solar.isEmpty()) return LocaleController.formatDateAudio(unixSeconds, true);\n"
+                "                return solar + \" \" + LocaleController.getString(R.string.A11yAt) + \" \" + time;\n"
+                "            }\n"
+                "        } catch (Throwable ignore) {\n"
+                "            return LocaleController.formatDateAudio(unixSeconds, true);\n"
+                "        }\n"
+                "    }\n\n"
+            )
+            cfg = cfg[:solar_start] + solar_method + cfg[solar_end:]
+    # a11y-fork: Solar Hijri for chat date separators, mirroring Telegram's own
+    # LocaleController.formatDateChat(date, checkYear) short/full-year decision exactly.
+    # Self-contained (own Jalali maths + digit conversion) so it does not depend on which
+    # helpers the user's A11yConfig.java happens to contain.
+    if "formatSolarDateChat(" not in cfg:
+        chat_method = (
+            "    // a11y-fork: solar formatDateChat\n"
+            "    public static String formatSolarDateChat(long unixSeconds, boolean checkYear) {\n"
+            "        try {\n"
+            "            long dateMs = unixSeconds * 1000L;\n"
+            "            java.util.Calendar msg = java.util.Calendar.getInstance();\n"
+            "            msg.setTimeInMillis(dateMs);\n"
+            "            int[] j = a11yGregorianToJalali(msg.get(java.util.Calendar.YEAR), msg.get(java.util.Calendar.MONTH) + 1, msg.get(java.util.Calendar.DAY_OF_MONTH));\n"
+            "            boolean shortForm;\n"
+            "            if (checkYear) {\n"
+            "                shortForm = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) == msg.get(java.util.Calendar.YEAR);\n"
+            "            } else {\n"
+            "                shortForm = Math.abs(System.currentTimeMillis() - dateMs) < 31536000000L;\n"
+            "            }\n"
+            "            java.util.Locale loc = null;\n"
+            "            try { loc = LocaleController.getInstance().getCurrentLocale(); } catch (Throwable ignore) {}\n"
+            "            if (loc == null) loc = java.util.Locale.getDefault();\n"
+            "            boolean isFa = \"fa\".equalsIgnoreCase(loc.getLanguage());\n"
+            "            String[] faMonths = {\"\\u0641\\u0631\\u0648\\u0631\\u062f\\u06cc\\u0646\",\"\\u0627\\u0631\\u062f\\u06cc\\u0628\\u0647\\u0634\\u062a\",\"\\u062e\\u0631\\u062f\\u0627\\u062f\",\"\\u062a\\u06cc\\u0631\",\"\\u0645\\u0631\\u062f\\u0627\\u062f\",\"\\u0634\\u0647\\u0631\\u06cc\\u0648\\u0631\",\"\\u0645\\u0647\\u0631\",\"\\u0622\\u0628\\u0627\\u0646\",\"\\u0622\\u0630\\u0631\",\"\\u062f\\u06cc\",\"\\u0628\\u0647\\u0645\\u0646\",\"\\u0627\\u0633\\u0641\\u0646\\u062f\"};\n"
+            "            String[] enMonths = {\"Farvardin\",\"Ordibehesht\",\"Khordad\",\"Tir\",\"Mordad\",\"Shahrivar\",\"Mehr\",\"Aban\",\"Azar\",\"Dey\",\"Bahman\",\"Esfand\"};\n"
+            "            String month = (isFa ? faMonths : enMonths)[j[1] - 1];\n"
+            "            String value = shortForm\n"
+            "                    ? j[2] + \" \" + month\n"
+            "                    : j[2] + \" \" + month + (isFa ? \"\\u060c \" : \", \") + j[0];\n"
+            "            if (isFa) {\n"
+            "                StringBuilder sb = new StringBuilder(value.length());\n"
+            "                for (int i = 0; i < value.length(); i++) {\n"
+            "                    char c = value.charAt(i);\n"
+            "                    sb.append(c >= '0' && c <= '9' ? (char) ('\\u06f0' + (c - '0')) : c);\n"
+            "                }\n"
+            "                value = sb.toString();\n"
+            "            }\n"
+            "            return value;\n"
+            "        } catch (Throwable ignore) {\n"
+            "            return \"\";\n"
+            "        }\n"
+            "    }\n\n"
+            "    private static int[] a11yGregorianToJalali(int gy, int gm, int gd) {\n"
+            "        int jy;\n"
+            "        if (gy > 1600) { jy = 979; gy -= 1600; } else { jy = 0; gy -= 621; }\n"
+            "        int[] gdm = {0,31,59,90,120,151,181,212,243,273,304,334};\n"
+            "        int gy2 = gm > 2 ? gy + 1 : gy;\n"
+            "        int days = 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 - 80 + gd + gdm[gm - 1];\n"
+            "        jy += 33 * (days / 12053); days %= 12053;\n"
+            "        jy += 4 * (days / 1461); days %= 1461;\n"
+            "        if (days > 365) { jy += (days - 1) / 365; days = (days - 1) % 365; }\n"
+            "        int jm = days < 186 ? 1 + days / 31 : 7 + (days - 186) / 30;\n"
+            "        int jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);\n"
+            "        return new int[]{jy, jm, jd};\n"
+            "    }\n"
+        )
+        last_brace = cfg.rstrip().rfind("}")
+        if last_brace > 0:
+            cfg = cfg[:last_brace] + "\n" + chat_method + cfg[last_brace:]
+        else:
+            print("WARN: could not append formatSolarDateChat to A11yConfig.java")
+    # a11y-fork: decide Persian digits/month names from Telegram's OWN selected language, not the
+    # phone's system language (a Persian Telegram on an English phone otherwise got English month
+    # names and Latin digits in the Solar date).
+    if "a11yIsPersianUi()" not in cfg:
+        cfg = cfg.replace('"fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage())', "a11yIsPersianUi()")
+        cfg = cfg.replace('"fa".equalsIgnoreCase(locale.getLanguage())', "a11yIsPersianUi()")
+        helper = (
+            "    // a11y-fork: Telegram's selected UI language, falling back to the system locale\n"
+            "    private static boolean a11yIsPersianUi() {\n"
+            "        try {\n"
+            "            java.util.Locale loc = LocaleController.getInstance().getCurrentLocale();\n"
+            "            if (loc == null) loc = java.util.Locale.getDefault();\n"
+            "            return \"fa\".equalsIgnoreCase(loc.getLanguage());\n"
+            "        } catch (Throwable ignore) {\n"
+            "            return \"fa\".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage());\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        anchor = "    private static String toPersianDigits"
+        if anchor in cfg:
+            cfg = cfg.replace(anchor, helper + anchor, 1)
+        else:
+            print("WARN: toPersianDigits anchor not found (a11yIsPersianUi helper not inserted)")
+            cfg = cfg.replace("a11yIsPersianUi()", '"fa".equalsIgnoreCase(java.util.Locale.getDefault().getLanguage())')
+    # a11y-fork: default values of Accessible Settings, chosen by the user. They apply on a
+    # fresh install (a value the user already saved always wins):
+    #   progress step 1 %, status in preview ON, forward-to-saved-without-quote OFF,
+    #   recording start beep OFF, solar calendar OFF, links menu OFF.
+    for pref, val in (("PREF_SOLAR_CALENDAR", "false"), ("PREF_SHOW_STATUS_IN_PREVIEW", "true"),
+                      ("PREF_FORWARD_SAVED_NO_QUOTE", "false"), ("PREF_RECORDING_BEEP", "false"),
+                      ("PREF_LINKS_MENU", "false")):
+        cfg = re.sub(r"getBoolean\(" + pref + r",\s*(?:true|false)\)", "getBoolean(" + pref + ", " + val + ")", cfg)
+    m_step = re.search(r"public static int getProgressStep\(\) \{.*?\n    \}\n", cfg, re.S)
+    if m_step:
+        fixed = m_step.group(0).replace("PREF_PROGRESS_STEP, 5)", "PREF_PROGRESS_STEP, 1)").replace("step = 5;", "step = 1;").replace("return 5;", "return 1;")
+        cfg = cfg[:m_step.start()] + fixed + cfg[m_step.end():]
+    else:
+        print("WARN: getProgressStep not found (default 1 percent)")
     dst.write_text(cfg, encoding="utf-8")
-    print("A11yConfig.java installed OK")
+    print("A11yConfig.java installed + Solar date fixed/date-only + small-file setting added")
 
 
 def _inject_progress_announce(java_path: Path) -> None:
@@ -381,6 +558,9 @@ def _inject_progress_announce(java_path: Path) -> None:
         print(f"WARN: {java_path.name} missing")
         return
     t = java_path.read_text(encoding="utf-8")
+    # Cached Telegram trees can already contain an older accessibility patch.
+    # Normalize that stale block instead of returning early, otherwise an old
+    # unqualified LocaleController/R reference can survive into the build.
     stale_patterns = [
         'LocaleController.formatString("A11yPercent", R.string.A11yPercent, step)',
         'parent.announceForAccessibility(step + " percent");',
@@ -570,12 +750,15 @@ def patch_hide_share_and_comment() -> None:
 
 
 def patch_forward_handler(t: str) -> str:
+    # If the broken old handler exists, remove it completely. It is the source
+    # of the observed NO_QUOTE -> Saved Messages fall-through.
     if "a11y-fork: OPTION_FORWARD_NO_QUOTE" in t:
         start = t.find("            case OPTION_FORWARD_NO_QUOTE: // a11y-fork: OPTION_FORWARD_NO_QUOTE")
         end = t.find("            case OPTION_FORWARD: {", start)
         if start >= 0 and end >= 0:
             t = t[:start] + t[end:]
 
+    # Ensure the no-quote case shares the normal Forward handler, not Saved.
     normal = "            case OPTION_FORWARD: {"
     shared = "            case OPTION_FORWARD_NO_QUOTE: // a11y-fork: forward without quote\n                IS_FORWARD_NO_QUOTE = true;\n                // fall through to the normal Forward UI\n            case OPTION_FORWARD: {"
     if "case OPTION_FORWARD_NO_QUOTE: // a11y-fork: forward without quote" not in t:
@@ -583,10 +766,12 @@ def patch_forward_handler(t: str) -> str:
             raise RuntimeError("normal OPTION_FORWARD case not found")
         t = t.replace(normal, shared, 1)
 
+    # Add/replace Saved Messages handler immediately before normal Forward.
     marker = "            case OPTION_FORWARD_NO_QUOTE: // a11y-fork: forward without quote\n"
     saved_start = t.find(marker)
     if saved_start < 0:
         raise RuntimeError("forward no-quote case insertion failed")
+    # Insert Saved case before no-quote case if it is not already present.
     if "a11y-fork: forward to Saved Messages" not in t:
         saved = '''            case OPTION_FORWARD_TO_SAVED: { // a11y-fork: forward to Saved Messages\n                if (selectedObject != null) {\n                    try {\n                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {\n                            toSend.addAll(selectedObjectGroup.messages);\n                        } else {\n                            toSend.add(selectedObject);\n                        }\n                        IS_FORWARD_NO_QUOTE = org.telegram.messenger.A11yConfig.getForwardSavedNoQuote();\n                        long savedId = getUserConfig().getClientUserId();\n                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n                        try {\n                            if (getParentActivity() != null) {\n                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Forwarded to Saved Messages\");\n                            }\n                        } catch (Throwable ignore) {}\n                    } catch (Throwable e) {\n                        FileLog.e(e);\n                    }\n                }\n                selectedObject = null;\n                selectedObjectToEditCaption = null;\n                selectedObjectGroup = null;\n                break;\n            }\n'''
         t = t[:saved_start] + saved + t[saved_start:]
@@ -607,6 +792,9 @@ def patch_forward_menu_extras() -> None:
             if old in t:
                 t=t.replace(old,new,1); smh.write_text(t,encoding="utf-8"); print("drop_author one-shot v2 OK")
     t=ca.read_text(encoding="utf-8")
+    # IMPORTANT: the forward handler itself also contains the token
+    # IS_FORWARD_NO_QUOTE, so checking `if "IS_FORWARD_NO_QUOTE" not in t`
+    # is not sufficient to detect the field declaration.
     if "public static boolean IS_FORWARD_NO_QUOTE" not in t:
         anchor="protected TLRPC.Chat currentChat;"
         if anchor in t:
@@ -615,6 +803,9 @@ def patch_forward_menu_extras() -> None:
         else:
             print("WARN: currentChat anchor not found (IS_FORWARD_NO_QUOTE field)")
 
+    # The new switch cases use these accessibility option IDs.  They must be
+    # declared inside ChatActivity; Python constants at the top of this
+    # script do not exist in the generated Java source.
     option_decl = (
         "private static final int OPTION_FORWARD_NO_QUOTE = 200;\n"
         "    private static final int OPTION_FORWARD_TO_SAVED = 202;"
@@ -649,73 +840,6 @@ def patch_forward_menu_extras() -> None:
     t=patch_forward_handler(t)
     ca.write_text(t,encoding="utf-8")
     print("Forward option handlers v2 OK")
-
-def patch_leave_comment_in_message_options() -> None:
-    """Accessibility-fork: restore leave comment in message options with comments count."""
-    ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    if not ca.exists():
-        print("WARN: ChatActivity missing (leave comment)")
-        return
-    t = ca.read_text(encoding="utf-8")
-    marker = "a11y-fork: leave comment in message options v1"
-    if marker in t:
-        print("ChatActivity leave comment already patched")
-        return
-
-    if "private static final int OPTION_LEAVE_COMMENT = 204;" not in t:
-        idx = t.find("public class ChatActivity")
-        if idx != -1:
-            brace = t.find("{", idx)
-            if brace != -1:
-                t = t[:brace+1] + "\n    private static final int OPTION_LEAVE_COMMENT = 204; // a11y-fork: OPTION_LEAVE_COMMENT declaration\n" + t[brace+1:]
-                print("ChatActivity OPTION_LEAVE_COMMENT declaration OK")
-
-    anchor_item = "final int type = getMessageType(message);"
-    menu_inject = """final int type = getMessageType(message);
-        // a11y-fork: leave comment in message options v1
-        if (message != null && message.messageOwner != null && message.messageOwner.replies != null && message.messageOwner.replies.comments) {
-            int a11yComments = message.messageOwner.replies.replies;
-            String a11yCommentTitle;
-            if (a11yComments > 0) {
-                a11yCommentTitle = LocaleController.formatPluralString("Comments", a11yComments, a11yComments);
-            } else {
-                a11yCommentTitle = LocaleController.getString(R.string.LeaveAComment);
-            }
-            items.add(a11yCommentTitle);
-            options.add(OPTION_LEAVE_COMMENT);
-            icons.add(R.drawable.msg_comments);
-        }
-"""
-    if anchor_item in t:
-        t = t.replace(anchor_item, menu_inject, 1)
-        print("ChatActivity leave comment menu item OK")
-    else:
-        print("WARN: fillMessageMenu getMessageType anchor not found (leave comment)")
-
-    case_anchor = "case OPTION_FORWARD: {"
-    case_inject = """case OPTION_LEAVE_COMMENT: { // a11y-fork: leave comment handler
-                if (selectedObject != null) {
-                    try {
-                        getMessagesController().loadComments(selectedObject, false, false, true);
-                        openChat(selectedObject.getDialogId(), 0, selectedObject.getId(), 0, true);
-                    } catch (Throwable e) {
-                        FileLog.e(e);
-                    }
-                }
-                selectedObject = null;
-                selectedObjectToEditCaption = null;
-                selectedObjectGroup = null;
-                break;
-            }
-            case OPTION_FORWARD: {"""
-    if case_anchor in t:
-        t = t.replace(case_anchor, case_inject, 1)
-        print("ChatActivity leave comment action handler OK")
-    else:
-        print("WARN: OPTION_FORWARD anchor not found (leave comment handler)")
-
-    ca.write_text(t, encoding="utf-8")
-    print("ChatActivity leave comment in message options OK")
 
 
 def patch_photo_longpress_message_options() -> None:
@@ -752,17 +876,28 @@ def patch_photo_longpress_message_options() -> None:
             }
 
 """
-    t = t.replace(needle, insert + needle, 1)
-    ca.write_text(t, encoding="utf-8")
+    t=t.replace(needle,insert+needle,1)
+    ca.write_text(t,encoding="utf-8")
     print("Photo-only/no-caption TalkBack long-press -> Message Options OK")
 
-
 def patch_reactions_as_menu() -> None:
+    """
+    Accessibility-fork: put the emoji reactions row behind a "Reactions"
+    menu item (hidden/collapsed by default, revealed on tap) instead of it
+    always being a focusable row above the message menu -- keeps TalkBack
+    navigation from being cluttered by a rarely-used control. Inserted at
+    the SAME anchor Bot Buttons/Select use, and this function is called
+    before those two in main(), so the final order is:
+    Reactions, Bot Buttons, Select (last).
+    """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing (reactions menu)")
         return
     t = ca.read_text(encoding="utf-8")
+    # The workflow already applies patches/04-comment-and-reactions.patch,
+    # which implements the Reactions menu item using OPTION_TOGGLE_REACTIONS_ROW.
+    # Do not add a second item with OPTION_REACTIONS_MENU.
     if "OPTION_TOGGLE_REACTIONS_ROW" in t and "Accessibility: put reactions behind" in t:
         print("ChatActivity Reactions menu already provided by 04-comment-and-reactions.patch")
         return
@@ -770,6 +905,10 @@ def patch_reactions_as_menu() -> None:
         print("ChatActivity reactions-menu already patched")
         return
 
+    # patch_reactions_as_menu injects into fillMessageMenu(), where the
+    # createMenu() local variable named isReactionsAvailableFinal does not
+    # exist.  Define an equivalent local value here, based on Telegram's
+    # current MessageObject API, before the menu item is inserted.
     if "a11y-fork: reactions availability for menu" not in t:
         reactions_availability_anchor = (
             "        final MessageObject.GroupedMessages groupedMessages = selectedObjectGroup;\n"
@@ -810,6 +949,7 @@ def patch_reactions_as_menu() -> None:
     t = t.replace(old_item, new_item, 1)
 
     if "accessibilityReactionsToggleIndex" not in t.split("a11y-fork: reactions menu item")[0]:
+        # add the field declaration once, right before the class body's first field-like anchor
         field_anchor = "public class ChatActivity"
         idx = t.find(field_anchor)
         if idx != -1:
@@ -858,6 +998,7 @@ def patch_longpress_message_menu() -> None:
         return
     t = ca.read_text(encoding="utf-8")
 
+    # Prefer single-message menu under TalkBack (avoids multi-select path inside createMenu)
     if "a11y-fork: createMenu single under a11y" not in t:
         old_cm = (
             "            if (!actionBar.isActionModeShowed() && (!isReport() || showMenu)) {\n"
@@ -952,13 +1093,22 @@ def patch_longpress_message_menu() -> None:
             if old_v1 in t:
                 t = t.replace(old_v1, new_dlp, 1)
                 print("didLongPress universal TalkBack Message Options upgraded OK")
+            else:
+                print("WARN: didLongPress v1 block not found")
+        else:
+            print("WARN: didLongPress block not found")
 
+    # Telegram 12.10.5 uses a direct ChatMessageCellDelegate.didLongPress implementation
+    # for accessibility-triggered long clicks. The older anchor above may not exist, so
+    # patch the exact current delegate method as a safe fallback.
     if "a11y-fork: 12.10.5 TalkBack didLongPress" not in t and "a11y-fork: under TalkBack, long-press must open the full" not in t:
         old_dlp_125 = '        public void didLongPress(ChatMessageCell cell, float x, float y) {\n            createMenu(cell, false, false, x, y, false);\n            startMultiselect(chatListView.getChildAdapterPosition(cell));\n        }'
         new_dlp_125 = '        public void didLongPress(ChatMessageCell cell, float x, float y) {\n            // a11y-fork: 12.10.5 TalkBack didLongPress\n            boolean a11yTalkBack = false;\n            try {\n                android.view.accessibility.AccessibilityManager am = (android.view.accessibility.AccessibilityManager) getParentActivity().getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);\n                a11yTalkBack = am != null && am.isEnabled() && am.isTouchExplorationEnabled();\n            } catch (Throwable ignore) {}\n            if (a11yTalkBack) {\n                createMenu(cell, true, false, x, y, true);\n            } else {\n                createMenu(cell, false, false, x, y, false);\n                startMultiselect(chatListView.getChildAdapterPosition(cell));\n            }\n        }'
         if old_dlp_125 in t:
-            t = t.replace(old_dlp_125, new_dlp_125, 1)
+            t=t.replace(old_dlp_125,new_dlp_125,1)
             print("12.10.5 TalkBack didLongPress routing OK")
+        else:
+            print("WARN: 12.10.5 didLongPress exact anchor not found")
 
     if "a11y-fork: OPTION_SELECT_MESSAGE menu" not in t:
         needle = "        if (message.isSponsored() && !getUserConfig().isPremium()"
@@ -974,6 +1124,8 @@ def patch_longpress_message_menu() -> None:
         if needle in t:
             t = t.replace(needle, insert, 1)
             print("Select menu item OK")
+        else:
+            print("WARN: fillMessageMenu inject point not found")
 
     if "a11y-fork: OPTION_SELECT_MESSAGE handler" not in t:
         old_case = "            case OPTION_RETRY: {"
@@ -1013,10 +1165,16 @@ def patch_longpress_message_menu() -> None:
         if old_case in t:
             t = t.replace(old_case, new_case, 1)
             print("Select handler OK")
+        else:
+            print("WARN: OPTION_RETRY case not found")
     ca.write_text(t, encoding="utf-8")
 
 
+
 def patch_auto_download_policy() -> None:
+    """Default automatic downloads OFF for photo/video/document on all networks;
+    voice messages remain enabled. User changes are not overridden after first run.
+    """
     dc = JAVA / "org/telegram/messenger/DownloadController.java"
     if not dc.exists():
         print("WARN: DownloadController missing (auto-download policy)")
@@ -1035,6 +1193,10 @@ def patch_auto_download_policy() -> None:
             "            for (int i = 0; i < 4; i++) {\n"
             "                mobilePreset.mask[i] = voiceOnlyMask; wifiPreset.mask[i] = voiceOnlyMask; roamingPreset.mask[i] = voiceOnlyMask;\n"
             "            }\n"
+            "            // enabled MUST stay true: Telegram checks preset.enabled BEFORE anything else, so with\n"
+            "            // enabled=false even voice messages (which bypass the mask) never auto-download and the\n"
+            "            // small-files radio setting could not do anything. The mask (0) already keeps photo /\n"
+            "            // video / document from auto-downloading.\n"
             "            mobilePreset.enabled = true; wifiPreset.enabled = true; roamingPreset.enabled = true;\n"
             "            mobilePreset.preloadVideo = false; wifiPreset.preloadVideo = false; roamingPreset.preloadVideo = false;\n"
             "            mobilePreset.preloadMusic = false; wifiPreset.preloadMusic = false; roamingPreset.preloadMusic = false;\n"
@@ -1047,7 +1209,10 @@ def patch_auto_download_policy() -> None:
             "    }\n\n"
         )
         if anchor in t:
-            t = t.replace(anchor, helper + anchor, 1)
+            t=t.replace(anchor,helper+anchor,1)
+        else:
+            print("WARN: DownloadController constructor anchor not found")
+            return
         anchor2 = """        if (getUserConfig().isClientActivated()) {
             checkAutodownloadSettings();
         }
@@ -1058,11 +1223,10 @@ def patch_auto_download_policy() -> None:
             checkAutodownloadSettings();
         }
 """
-        if anchor2 in t:
-            t = t.replace(anchor2, repl2, 1)
-    dc.write_text(t, encoding="utf-8")
+        if anchor2 in t: t=t.replace(anchor2,repl2,1)
+        else: print("WARN: DownloadController post-constructor anchor not found")
+    dc.write_text(t,encoding="utf-8")
     print("DownloadController first-run auto-download defaults OK")
-
 
 def patch_voice_bitrate() -> None:
     audio = ROOT / "jni/audio.c"
@@ -1090,6 +1254,8 @@ def patch_voice_bitrate() -> None:
                 t = t.replace(start_line, jni, 1)
             audio.write_text(t, encoding="utf-8")
             print("audio.c bitrate OK")
+        else:
+            print("audio.c already patched")
     mc = JAVA / "org/telegram/messenger/MediaController.java"
     if not mc.exists():
         return
@@ -1111,6 +1277,7 @@ def patch_voice_bitrate() -> None:
             t = t2
             print(f"MediaController apply voice before record x{n}")
     mc.write_text(t, encoding="utf-8")
+
 
 def patch_chat_message_cell_float_coordinates() -> None:
     """
@@ -1151,11 +1318,13 @@ def patch_recording_beep() -> None:
         print("MediaController recording-start beep v2 already patched")
         return
 
+    # Remove the old fragile v1 implementation if a checkout was already patched.
     old = re.compile(r'\n\s*// a11y-fork: recording-start beep-wav-v1[\s\S]*?\n\s*\}\s*catch \(Throwable e\) \{\s*\n\s*FileLog\.e\(e\);\s*\n\s*\}\s*', re.MULTILINE)
     t, n = old.subn("\n", t, count=1)
     if n:
         print("Old recording beep v1 removed")
 
+    # Anchor to Telegram's real recording entry point, not to our bitrate patch.
     sig = re.compile(r'(?m)^(?P<i>\s*)public void startRecording\(int currentAccount, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories\.StoryItem replyStory, int guid, boolean manual, SendMessageChatArguments sendMessageChatArguments, long monoForumPeerId, MessageSuggestionParams suggestionParams\) \{\n')
     m = sig.search(t)
     if not m:
@@ -1195,7 +1364,6 @@ def patch_recording_beep() -> None:
     mc.write_text(t, encoding="utf-8")
     print("MediaController recording-start beep v3 (ringtone stream) OK")
 
-
 def patch_settings_menu() -> None:
     sa = JAVA / "org/telegram/ui/SettingsActivity.java"
     if not sa.exists():
@@ -1203,7 +1371,7 @@ def patch_settings_menu() -> None:
         return
     t = sa.read_text(encoding="utf-8")
     needle = 'items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));'
-    insert = needle + '\n        // a11y-fork: Accessible settings entry (empty subtitle)\n        items.add(SettingCell.Factory.of(100, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, "Accessible settings", ""));'
+    insert = needle + "\n        // a11y-fork: Accessible settings entry\n        items.add(SettingCell.Factory.of(100, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, LocaleController.getString(R.string.A11yAccessibleSettings)));"
     if "a11y-fork: Accessible settings entry" not in t:
         if needle in t:
             t = t.replace(needle, insert, 1)
@@ -1300,6 +1468,13 @@ def patch_dialogcell_preview_muted_status() -> None:
 
 
 def patch_dialogcell_time_last() -> None:
+    """Sent / received sentence (and how far our own message got) is read LAST.
+
+    The fork's buildAccessibilityTextBody() builds the row text and has several early
+    returns (typing, draft, forum), so the sentence cannot simply be moved inside it.
+    Instead it is cut out of there and appended by buildAccessibilityText(), the one
+    wrapper every return path goes through, after the folders the chat is in.
+    """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (time-last)")
@@ -1346,6 +1521,7 @@ def patch_dialogcell_time_last() -> None:
     if wrap_old not in t:
         print("WARN: DialogCell buildAccessibilityText wrapper not found (time-last)")
         return
+    # find the wrapper's `return sb;` (first one after the wrapper start)
     w = t.index(wrap_old)
     r = t.index("        return sb;\n", w)
     tail = (
@@ -1379,7 +1555,19 @@ def patch_dialogcell_time_last() -> None:
     print("DialogCell sent/received LAST v6 OK")
 
 
+
 def patch_locale_controller_solar_date_chat() -> None:
+    """Solar Hijri for every chat date separator, in Telegram's own short/full format.
+
+    Telegram builds ALL of these strings (in-list date dividers, the floating date
+    header, scheduled-date text, ...) with the single shared
+    LocaleController.formatDateChat(date, checkYear). The in-list dividers are
+    ChatActionCell instances whose text comes from MessageObject.messageText, NOT from
+    ChatActionCell.setCustomDate(), so patching ChatActionCell alone (previous
+    revisions) never reached what TalkBack actually reads. Patching the one shared
+    formatter fixes every caller at once and keeps Telegram's exact "short form inside
+    the last year, full form with year otherwise" decision.
+    """
     lc = JAVA / "org/telegram/messenger/LocaleController.java"
     if not lc.exists():
         print("WARN: LocaleController missing (solar date chat)")
@@ -1411,6 +1599,12 @@ def patch_locale_controller_solar_date_chat() -> None:
 
 
 def patch_hide_sponsor_channel() -> None:
+    """
+    Accessibility-fork: when A11yConfig.getHideSponsorChannel() is on,
+    automatically hide the proxy sponsor/promo channel from the chat list
+    using Telegram's own existing hidePromoDialog() mechanism, checked each
+    time the chat list resumes.
+    """
     da = JAVA / "org/telegram/ui/DialogsActivity.java"
     if not da.exists():
         print("WARN: DialogsActivity missing (hide sponsor channel)")
@@ -1443,6 +1637,12 @@ def patch_hide_sponsor_channel() -> None:
 
 
 def patch_ghost_mode() -> None:
+    """
+    Accessibility-fork: Ghost Mode -- when A11yConfig.getGhostMode() is on,
+    skip calling markDialogAsRead(...) from ChatActivity so the sender
+    never gets a "seen" / read-receipt signal. Local unread badges for this
+    account may not clear while Ghost Mode is on -- an accepted trade-off.
+    """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing (ghost mode)")
@@ -1455,6 +1655,7 @@ def patch_ghost_mode() -> None:
     if count == 0:
         print("WARN: ChatActivity markDialogAsRead call sites not found (ghost mode)")
         return
+    import re
     pattern = re.compile(r"(\s*)getMessagesController\(\)\.markDialogAsRead\(([^;]*)\);")
     def guard(m):
         indent, args = m.group(1), m.group(2)
@@ -1471,7 +1672,9 @@ def patch_ghost_mode() -> None:
     print(f"ChatActivity ghost-mode OK ({n} call sites guarded)")
 
 
+
 def patch_links_as_menu() -> None:
+    # Optional Links item at the end of the accessibility message-menu tail.
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing (links menu)")
@@ -1535,12 +1738,14 @@ def patch_links_as_menu() -> None:
                             if (!a11yLow.contains("://") && !a11yLow.startsWith("tg:") && !a11yLow.startsWith("mailto:")) url="https://"+url;
                         }
                     } else if (e instanceof TLRPC.TL_messageEntityMention) {
+                        // a11y-fork: @username mention -> t.me deep link
                         int s=Math.max(0,Math.min(raw.length(),e.offset));
                         int end=Math.max(s,Math.min(raw.length(),s+e.length));
                         String uname=raw.substring(s,end);
                         if (uname.startsWith("@")) uname=uname.substring(1);
                         if (uname.length()>0) url="https://t.me/"+uname;
                     } else if (e instanceof TLRPC.TL_messageEntityMentionName) {
+                        // a11y-fork: tap-to-profile mention (no @ in raw text) -> t.me deep link by user id
                         long uid = ((TLRPC.TL_messageEntityMentionName)e).user_id;
                         if (uid != 0) url="tg://user?id="+uid;
                     }
@@ -1560,6 +1765,9 @@ def patch_links_as_menu() -> None:
             final String[] values=links.toArray(new String[0]);
             new AlertDialog.Builder(getParentActivity()).setTitle(LocaleController.getString(R.string.A11yLinks)).setItems(values,(dialog,which)->{
                 if(which>=0&&which<values.length) {
+                    // a11y-fork: Telegram's own links (t.me / telegram.me / telegram.dog / tg://) must be
+                    // handled INSIDE Telegram (same path a normal tap on such a link takes), never handed
+                    // to the system browser. Everything else keeps the previous external behaviour.
                     final String a11yUrl = values[which];
                     boolean a11yInternal = false;
                     try { a11yInternal = Browser.isInternalUrl(a11yUrl, null); } catch (Throwable ignore) {}
@@ -1596,6 +1804,7 @@ def patch_links_as_menu() -> None:
     else: print("WARN: Bot Buttons handler anchor not found")
     ca.write_text(t,encoding="utf-8")
     print("ChatActivity optional Links menu OK")
+
 
 def patch_bot_buttons_menu() -> None:
     """
@@ -1638,6 +1847,8 @@ def patch_bot_buttons_menu() -> None:
 
     # 2) Add the "Bot Buttons" menu item + its click handler in ChatActivity.
     t2 = ca.read_text(encoding="utf-8")
+    # a11y-fork: OPTION_BOT_BUTTONS_MENU must be a Java field, not only a
+    # Python-side constant.  The menu item and handler below both reference it.
     if "a11y-fork: OPTION_BOT_BUTTONS_MENU declaration" not in t2:
         class_anchor = "public class ChatActivity"
         class_idx = t2.find(class_anchor)
@@ -1650,6 +1861,10 @@ def patch_bot_buttons_menu() -> None:
                     + t2[brace_idx + 1:]
                 )
                 print("ChatActivity OPTION_BOT_BUTTONS_MENU declaration OK")
+            else:
+                print("WARN: ChatActivity class opening brace not found (bot buttons menu)")
+        else:
+            print("WARN: ChatActivity class declaration not found (bot buttons menu)")
 
     if "a11y-fork: bot buttons menu" in t2:
         print("ChatActivity bot-buttons-menu already patched")
@@ -1728,8 +1943,18 @@ def patch_bot_buttons_menu() -> None:
     print("ChatActivity bot-buttons-menu item+handler OK")
 
 
+
 def patch_go_to_first_message() -> None:
-    """Add a localized Go to first message action to group/channel More Options."""
+    """Add a localized "Go to first message" action to the chat's top-right "..." menu.
+
+    It reuses Telegram's own date jump (ChatActivity.jumpToDate -- the code behind the calendar's
+    "Jump to date") with the earliest possible date: if the start of the chat is already loaded
+    it scrolls straight to the oldest message, otherwise the server positions the chat on the
+    very first messages (messages.getHistory with offset_date). The old version loaded pages with
+    load_type 1, which is Telegram's "newer messages" direction, so it walked toward the LATEST
+    message instead of the first one (and message id 1 is not the first message of a chat anyway:
+    ids are global per account in private chats and groups).
+    """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing (go to first message)")
@@ -1740,61 +1965,33 @@ def patch_go_to_first_message() -> None:
         anchor = "    private final static int id_chat_compose_panel = 1000;"
         if anchor in t:
             t = t.replace(anchor, anchor + "\n    private final static int OPTION_GO_TO_FIRST_MESSAGE = 75; // a11y-fork: OPTION_GO_TO_FIRST_MESSAGE declaration", 1)
-
-    if "a11y-fork: go-to-first-message state" not in t:
-        anchor = "    private boolean loadingForward;"
-        if anchor in t:
-            t = t.replace(anchor, anchor + "\n    private boolean a11yGoToFirstMessageRequested; // a11y-fork: go-to-first-message state", 1)
+        else:
+            print("WARN: go-to-first-message declaration anchor not found")
 
     if "a11y-fork: go-to-first-message helper" not in t:
         anchor = "    public void firstLoadMessages() {"
-        helper = """    // a11y-fork: go-to-first-message helper
+        helper = """    // a11y-fork: go-to-first-message helper (v2: Telegram's own date jump to the earliest date)
     private void accessibilityGoToFirstMessage() {
         if (dialog_id == 0 || isTopic) {
             return;
         }
         wasManualScroll = true;
-        a11yGoToFirstMessageRequested = true;
-        if (forwardEndReached[0]) {
-            a11yScrollToOldestLoadedMessage();
-            return;
+        try {
+            jumpToDate(1);
+        } catch (Throwable e) {
+            FileLog.e(e);
         }
-        if (loadingForward) {
-            return;
-        }
-        loadingForward = true;
-        waitingForLoad.add(lastLoadIndex);
-        getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, minMessageId[0], 0, true, maxDate[0], classGuid, 1, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
-    }
-
-    private void a11yScrollToOldestLoadedMessage() {
-        if (!a11yGoToFirstMessageRequested || chatAdapter == null || chatLayoutManager == null || messages.isEmpty()) {
-            return;
-        }
-        MessageObject oldest = null;
-        for (int i = 0; i < messages.size(); i++) {
-            MessageObject object = messages.get(i);
-            if (object == null || object.getId() <= 0 || object.isDateObject || object.isSponsored()) {
-                continue;
-            }
-            if (oldest == null || object.getId() < oldest.getId()) {
-                oldest = object;
-            }
-        }
-        if (oldest != null) {
-            int position = messages.indexOf(oldest);
-            if (position >= 0) {
-                chatAdapter.updateRowsSafe();
-                chatLayoutManager.scrollToPositionWithOffset(chatAdapter.messagesStartRow + position, AndroidUtilities.dp(8), false);
-            }
-        }
-        a11yGoToFirstMessageRequested = false;
     }
 
 """
-        if anchor in t: t=t.replace(anchor, helper+anchor,1)
+        if anchor in t:
+            t = t.replace(anchor, helper + anchor, 1)
+        else:
+            print("WARN: go-to-first-message helper anchor not found")
 
     if "a11y-fork: go-to-first-message menu" not in t:
+        # FIRST item of the chat's top-right "..." menu: inserted right after the menu is
+        # created (before Saved-chats / Call / Search / ...), not after "view as topics".
         anchor = ("            headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));\n\n"
                   "            if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {\n")
         insert = ("            headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));\n"
@@ -1805,39 +2002,35 @@ def patch_go_to_first_message() -> None:
                   "            if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {\n")
         if t.count(anchor) == 1:
             t = t.replace(anchor, insert, 1)
+        else:
+            print("WARN: go-to-first-message first-position anchor found %d times" % t.count(anchor))
 
     if "a11y-fork: go-to-first-message handler" not in t:
         anchor = "                } else if (id == view_as_topics) {"
-        branch = "                } else if (id == OPTION_GO_TO_FIRST_MESSAGE) { // a11y-fork: go-to-first-message handler\n                    accessibilityGoToFirstMessage();\n                } else if (id == view_as_topics) {"
-        branch=branch.replace('\\n','\n')
-        if anchor in t: t=t.replace(anchor,branch,1)
-
-    if "a11y-fork: continue go-to-first-message" not in t:
-        anchor = "            loadingForward = false;\n        } else {"
-        replacement = """            loadingForward = false;
-            // a11y-fork: continue go-to-first-message
-            if (a11yGoToFirstMessageRequested) {
-                if (forwardEndReached[loadIndex]) {
-                    a11yScrollToOldestLoadedMessage();
-                } else {
-                    loadingForward = true;
-                    waitingForLoad.add(lastLoadIndex);
-                    getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, minMessageId[loadIndex], 0, true, maxDate[loadIndex], classGuid, 1, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
-                }
-            }
-        } else {"""
-        if anchor in t: t=t.replace(anchor,replacement,1)
+        branch = ("                } else if (id == OPTION_GO_TO_FIRST_MESSAGE) { // a11y-fork: go-to-first-message handler\n"
+                  "                    accessibilityGoToFirstMessage();\n"
+                  "                } else if (id == view_as_topics) {")
+        if anchor in t:
+            t = t.replace(anchor, branch, 1)
+        else:
+            print("WARN: go-to-first-message handler anchor not found")
 
     ca.write_text(t, encoding="utf-8")
     print("ChatActivity go-to-first-message OK")
 
 
 def patch_file_description_spacing() -> None:
+    """TalkBack: announce the real document filename as a single clean "file <name>" (with a real
+    space, never concatenated), not Telegram's internal numeric storage filename and not a
+    separate/duplicated extension-type announcement (which read out of order and could confuse
+    TalkBack's long-press gesture)."""
     cmc=JAVA/"org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
         print("WARN: ChatMessageCell missing (file description spacing)"); return
     t=cmc.read_text(encoding="utf-8")
     marker="a11y-fork: real document filename"
+    # Clean up: if an older revision of this patch (with the redundant extension-type
+    # announcement) already applied, replace it with the simplified single-announcement version.
     old_verbose = (
         "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
         "                        // a11y-fork: real document filename\n"
@@ -1855,7 +2048,7 @@ def patch_file_description_spacing() -> None:
         "                        }\n"
         "                    }")
     if old_verbose in t:
-        t = t.replace(old_verbose, "", 1)
+        t = t.replace(old_verbose, "", 1)  # drop; the block below (re)inserts the clean version
 
     if marker not in t:
         old=(
@@ -1867,6 +2060,14 @@ def patch_file_description_spacing() -> None:
             "                    }")
         new=(
             "                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {\n"
+            "                        // a11y-fork: real document filename -- single \"File: <name>\" announcement,\n"
+            "                        // built as one literal Java string so \"File\" can never end up glued to\n"
+            "                        // the filename (that broke TalkBack reading and its long-press gesture).\n"
+            "                        // Telegram sets messageText to the filename itself when a document has\n"
+            "                        // no separate caption, and the untouched native code just below (which\n"
+            "                        // appends messageText) would then read that same filename a second time --\n"
+            "                        // so when that's about to happen, say only \"File:\" here and let that\n"
+            "                        // native code supply the name once (still followed by its file size).\n"
             "                        String a11yDocumentName = FileLoader.getDocumentFileName(documentAttach);\n"
             "                        if (!TextUtils.isEmpty(a11yDocumentName)) {\n"
             "                            boolean a11yNameWillRepeat = !TextUtils.isEmpty(currentMessageObject.messageText)\n"
@@ -1881,11 +2082,15 @@ def patch_file_description_spacing() -> None:
             "                    }")
         if old in t:
             t=t.replace(old,new,1); cmc.write_text(t,encoding="utf-8"); print("ChatMessageCell single clean \"file <name>\" announcement OK")
+        else: print("WARN: ChatMessageCell document accessibility anchor not found")
     else:
         cmc.write_text(t,encoding="utf-8")
-
+        print("ChatMessageCell real document filename already patched")
+    # AccDescrDocumentType is no longer referenced by the patched block above
+    # (the clean "file <name>" text is built directly in Java), so it's left untouched.
 
 def patch_chat_message_cell_accessibility_long_click() -> None:
+    """Route TalkBack long-clicks from ChatMessageCell host and virtual nodes."""
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
         return
@@ -1909,6 +2114,7 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
         "        } else if (action == AccessibilityNodeInfo.ACTION_CLICK) {\n"
     )
     if host not in t:
+        print("WARN: host long-click anchor missing")
         return
     t = t.replace(host, host_new, 1)
     prov = "            if (virtualViewId == HOST_VIEW_ID) {\n                performAccessibilityAction(action, arguments);\n            } else {\n"
@@ -1920,6 +2126,8 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
         "                if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {\n"
         "                    try {\n"
         "                        if (delegate != null && currentMessageObject != null) {\n"
+        "                            // the reply / forward header is part of the message, not a place of its own:\n"
+        "                            // a long press there must open the message options, at the middle of the message\n"
         "                            final boolean a11yCenter = true;\n"
         "                            float a11yX = !a11yCenter && lastTouchX > 0 ? lastTouchX : getWidth() / 2f;\n"
         "                            float a11yY = !a11yCenter && lastTouchY > 0 ? lastTouchY : getHeight() / 2f;\n"
@@ -1932,6 +2140,7 @@ def patch_chat_message_cell_accessibility_long_click() -> None:
         "                }\n"
     )
     if prov not in t:
+        print("WARN: provider long-click anchor missing")
         return
     t = t.replace(prov, prov_new, 1)
     cmc.write_text(t, encoding="utf-8")
@@ -2086,7 +2295,7 @@ def patch_mehran_strings_persian() -> None:
             continue
         for name, value in fa.items():
             if f'name="{name}"' not in base:
-                continue
+                continue  # the fork patch was not applied / key not present
             if f'name="{name}"' in path.read_text(encoding="utf-8"):
                 continue
             esc = value.replace("&", "&amp;").replace("<", "&lt;").replace("'", "\\'")
@@ -2095,8 +2304,16 @@ def patch_mehran_strings_persian() -> None:
             n += 1
     print("Persian strings for the fork's additions OK (%d written)" % n)
 
-
+# ---- legacy versions, used only when the fork patch is NOT applied (plain upstream tree) ----
 def patch_dialogcell_preview_muted_status_legacy() -> None:
+    """
+    Accessibility-fork additions to DialogCell.java's TalkBack description:
+      - remove the "Muted" announcement entirely
+      - read the contact's online/last-seen status (private chats only),
+        gated by A11yConfig.getShowStatusInPreview()
+      - bump the message-preview length read aloud from the visually
+        truncated length to a fixed 300 characters
+    """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (preview/muted/status)")
@@ -2148,11 +2365,26 @@ def patch_dialogcell_preview_muted_status_legacy() -> None:
     else:
         t = t.replace(old_len, new_len)
 
+    # Keep Telegram's native preview date/time block untouched.
+    # Solar Hijri applies only to message-focus accessibility in ChatMessageCell.
+
     dc.write_text(t, encoding="utf-8")
     print("DialogCell muted removed / status announce / preview-300 / time-last OK")
 
 
+
+
+
 def patch_dialogcell_time_last_legacy() -> None:
+    """Move Telegram's native sent/received sentence to the absolute end of Preview.
+
+    Do not build a separate accessibility field: Telegram's own StringBuilder is
+    the content description used by both the AccessibilityEvent and the View.
+    Removing the native block and inserting the exact same block immediately
+    before those final calls guarantees TalkBack receives it as the last item.
+    Preview deliberately stays Gregorian/native; Solar Hijri is for chat-message
+    date separators only.
+    """
     dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
     if not dc.exists():
         print("WARN: DialogCell missing (time-last)")
@@ -2163,6 +2395,7 @@ def patch_dialogcell_time_last_legacy() -> None:
         print("DialogCell sent/received LAST v5 already patched")
         return
 
+    # Remove any field-based v4 implementation from v16, if present.
     t = re.sub(
         r'(?m)^\s*// a11y-fork: preview sent-received field(?: v[0-9]+)?\n\s*private String a11yPreviewSentReceivedDate;\n',
         '', t, count=1
@@ -2175,6 +2408,7 @@ def patch_dialogcell_time_last_legacy() -> None:
         '', t, count=1
     )
 
+    # Remove the native early sent/received block, wherever it occurs.
     native = re.compile(
         r'(?m)^\s*String date = LocaleController\.formatDateAudio\(lastDate, true\);\n'
         r'\s*if \(message\.isOut\(\)\) \{\n'
@@ -2189,6 +2423,7 @@ def patch_dialogcell_time_last_legacy() -> None:
         return
     t = t[:m.start()] + t[m.end():]
 
+    # Insert it immediately before the final accessibility-description calls.
     tail = (
         '        // ' + marker + '\n'
         '        String a11yPreviewDate = LocaleController.formatDateAudio(lastDate, true);\n'
@@ -2208,7 +2443,19 @@ def patch_dialogcell_time_last_legacy() -> None:
     print("DialogCell sent/received LAST v5 OK")
 
 
+
+
+
 def patch_chat_message_cell_granularity_navigation_legacy() -> None:
+    """Implement real character/word TalkBack text-navigation for the message
+    accessibility node. The base View class's performAccessibilityAction has no
+    text-cursor concept for a non-TextView custom View, so ACTION_NEXT/PREVIOUS_
+    AT_MOVEMENT_GRANULARITY were never handled -- TalkBack would fall through to
+    unrelated "move to next accessibility element" behavior (observed as jumping
+    to the toolbar's Search button) instead of stepping character-by-character
+    or word-by-word through the message text. This adds the missing declaration
+    (setMovementGranularities/addAction) plus the actual traversal logic.
+    """
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
         print("WARN: ChatMessageCell missing (granularity navigation)")
@@ -2262,7 +2509,17 @@ def patch_chat_message_cell_granularity_navigation_legacy() -> None:
     print("ChatMessageCell granularity navigation v1 OK")
 
 
+
+
 def patch_reply_forward_long_click() -> None:
+    """Long press on the reply / forward header of a message opened the REPLIED message.
+
+    The header is its own accessibility node that advertised only CLICK. For a node without
+    a long-click action TalkBack answers "double tap and hold" with a real touch held at the
+    node's middle, and a held touch on the reply header is what Telegram itself turns into a
+    jump to the replied message. The nodes now advertise LONG_CLICK, which the long-click
+    patch routes to the Message Options menu (patch_chat_message_cell_accessibility_long_click).
+    """
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if not cmc.exists():
         print("WARN: ChatMessageCell missing (reply long-click)")
@@ -2288,9 +2545,21 @@ def patch_reply_forward_long_click() -> None:
 
 
 def patch_fork_quiet_download_state() -> None:
+    """The fork says "Downloaded" / "Not downloaded" on EVERY media message (photos, videos,
+    files, voice, music ...) it passes, and on every row of a music list. That is noise, so it
+    is controlled by the Accessible Settings option "Downloaded / not downloaded status"
+    (A11yConfig.getAnnounceDownloadState(), default OFF).
+    Not affected by that option: the fork's one-time "Downloaded" spoken when a download that
+    was running reaches its end while the message is being read (right after the percentage
+    reaches 100).
+    """
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if cmc.exists():
         t = cmc.read_text(encoding="utf-8")
+        old = ("                if (hasAccessibilityDownloadState()) {\n"
+               "                    sb.append(\", \");\n"
+               "                    sb.append(getString(mediaDownloaded ? R.string.AccDescrMediaDownloaded : R.string.AccDescrMediaNotDownloaded));\n"
+               "                }\n")
         pat = re.compile(r"(\n[ \t]*)if \(hasAccessibilityDownloadState\(\)\) \{(\n[ \t]*sb\.append\(\", \"\);\n[ \t]*sb\.append\(getString\(mediaDownloaded \? R\.string\.AccDescrMediaDownloaded : R\.string\.AccDescrMediaNotDownloaded\)\);\n[ \t]*\})")
         if "A11yConfig.getAnnounceDownloadState()" in t:
             print("ChatMessageCell download-state setting already patched")
@@ -2319,6 +2588,7 @@ def patch_fork_quiet_download_state() -> None:
 
 
 def _gate_once(path: Path, old: str, new: str, label: str) -> None:
+    """Replace `old` by `new` exactly once in `path`; print OK / already / WARN."""
     if not path.exists():
         print("WARN: %s missing (%s)" % (path.name, label))
         return
@@ -2334,6 +2604,15 @@ def _gate_once(path: Path, old: str, new: str, label: str) -> None:
 
 
 def patch_album_and_user_status_switches() -> None:
+    """Two Accessible Settings switches, both default OFF, for features the fork turns on always.
+
+      * "Album reading" (A11yConfig.getAlbumReading): the fork says "Album, photo 2 of 5" for every
+        message of a grouped-media album. OFF = the message is read like any other (stock Telegram).
+      * "User status announcements" (A11yConfig.getUserStatusAnnounce): the fork speaks what a
+        contact is doing -- typing, recording a voice message, sending audio, online -- in the chat
+        header, in the chat list while a row is focused, and inside the row's own description.
+        OFF = none of it is spoken (stock Telegram).
+    """
     A = "org.telegram.messenger.A11yConfig"
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     _gate_once(
@@ -2374,6 +2653,8 @@ def patch_album_and_user_status_switches() -> None:
 
 
 def patch_chat_open_sound() -> None:
+    """Optional system click when a chat opens (the fork moves TalkBack focus by itself, which
+    suppresses the usual enter sound). Plays once, on the first successful landing only."""
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     old = "            final boolean landed = target.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);\n"
     new = (old +
@@ -2384,6 +2665,15 @@ def patch_chat_open_sound() -> None:
 
 
 def patch_unlabeled_buttons() -> None:
+    """Give buttons that TalkBack announces as "unlabeled" a real name (English + Persian).
+
+      * Video player (PhotoViewer): the button beside "More options" that opens the video
+        quality / speed / loop menu (videoItem) had no content description at all.
+      * Add members (GroupCreateActivity): the round check button that confirms the selected
+        people was named "Next" (copied from the new-group flow where it really is a next arrow).
+        In add-to-group / always-share / never-share mode it is a confirm button, so it is named
+        for what it does.
+    """
     pv = JAVA / "org/telegram/ui/PhotoViewer.java"
     _gate_once(
         pv,
@@ -2400,6 +2690,13 @@ def patch_unlabeled_buttons() -> None:
 
 
 def patch_contacts_list_accessibility() -> None:
+    """Contacts list (New message / Contacts): two fixes in UserCell, switched on only by ContactsAdapter.
+
+      * "Not checked" is spoken on every contact even though nothing is being selected. The state
+        is now spoken only once a selection has started (something is selected), and then on every
+        contact, as asked.
+      * A contact who has you as a contact too is read as "Mutual contact" (User.mutual_contact).
+    """
     uc = JAVA / "org/telegram/ui/Cells/UserCell.java"
     _gate_once(
         uc,
@@ -2460,6 +2757,11 @@ def patch_contacts_list_accessibility() -> None:
 
 
 def patch_topics_hide_chat_list_from_screen_reader() -> None:
+    """Topics of a forum group open in a panel (RightSlidingDialogContainer) on top of the chat
+    list, which stays on the screen underneath. A screen reader therefore walks through the whole
+    chat list before / between the topics. While the panel is fully open every other child of its
+    parent is hidden from accessibility (their previous setting is remembered and put back when the
+    panel is closing or gone)."""
     rc = JAVA / "org/telegram/ui/RightSlidingDialogContainer.java"
     _gate_once(
         rc,
@@ -2502,6 +2804,16 @@ def patch_topics_hide_chat_list_from_screen_reader() -> None:
 
 
 def patch_more_unlabeled_buttons() -> None:
+    """Second sweep for buttons TalkBack reads as "unlabeled" (found by scanning the whole UI source).
+
+      * Voice chat banner (FragmentContextView): the round mute / unmute button -> "Mute" / "Unmute",
+        kept in step with the microphone state.
+      * Chat list (DialogsActivity): the avatar button that switches between accounts -> "Switch account".
+      * Mini apps (BotWebViewSheet) and Select gifts: the "..." button -> "More options".
+      * Chat background preview (ThemePreviewActivity): the sun / moon button -> "Switch to night /
+        day theme", kept in step with the theme.
+    Strings other than "Switch account" are the app's own, so they follow the app's language.
+    """
     fcv = JAVA / "org/telegram/ui/Components/FragmentContextView.java"
     _gate_once(
         fcv,
@@ -2566,6 +2878,10 @@ def patch_more_unlabeled_buttons() -> None:
 
 
 def patch_reply_longpress_opens_options() -> None:
+    """A real long press on the reply header of a message (touch path: ChatMessageCell.onLongPress ->
+    delegate.didPressReplyMessage(..., longpress=true)) is answered by stock ChatActivity like a short tap:
+    it scrolls to the replied message. Here a long press there opens Message options, like a long press
+    anywhere else on the message (the TalkBack action path already did)."""
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     _gate_once(
         ca,
@@ -2591,6 +2907,10 @@ def patch_reply_longpress_opens_options() -> None:
 
 
 def patch_longclickable_flag() -> None:
+    """TalkBack plays its "long press" sound by looking at the node's long-clickable flag. A message
+    node (and each of its virtual parts) answered ACTION_LONG_CLICK but never said "long-clickable",
+    which is the likely reason the sound is missing on some messages such as grouped media.
+    Declaring it changes nothing else: the action itself is already handled."""
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     _gate_once(
         cmc,
@@ -2613,6 +2933,7 @@ def patch_longclickable_flag() -> None:
 
 
 def _java_remove_method(text: str, signature: str) -> str:
+    """Remove one Java method (brace matched) that starts with `signature`."""
     a = text.find(signature)
     if a < 0:
         return text
@@ -2629,12 +2950,21 @@ def _java_remove_method(text: str, signature: str) -> str:
                 j += 1
                 break
         j += 1
+    # also swallow the line break(s) that followed the method
     while j < len(text) and text[j] in "\r\n":
         j += 1
     return text[:a] + text[j:]
 
 
 def patch_a11y_settings_dialog_stays_open() -> None:
+    """Accessible Settings stays open while options are changed.
+
+    Before, every item click dismissed the dialog (AlertDialog.setItems), so a change dropped
+    the user back on Telegram's Settings page. Now the list is a normal list whose rows are
+    refreshed in place; the pickers (progress step, voice quality, small files) close only
+    themselves; the dialog is left with its Close button / the back key.
+    Also adds the "Downloaded / not downloaded status" setting (default OFF).
+    """
     cfgp = JAVA / "org/telegram/messenger/A11yConfig.java"
     if not cfgp.exists():
         print("WARN: A11yConfig.java missing (settings dialog)")
@@ -2656,6 +2986,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
     // """ + marker + r"""
     public static final String PREF_DOWNLOAD_STATE = "a11y_download_state";
 
+    /** Say "Downloaded" / "Not downloaded" on every media message and music row. Default OFF. */
     public static boolean getAnnounceDownloadState() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_DOWNLOAD_STATE, false);
@@ -2672,8 +3003,10 @@ def patch_a11y_settings_dialog_stays_open() -> None:
     }
 
     public static final String PREF_ALBUM_READING = "a11y_album_reading";
+    public static final String PREF_ADMIN_TAG = "a11y_admin_tag_announce";
     public static final String PREF_USER_STATUS = "a11y_user_status_announce";
 
+    /** Read grouped messages (albums) as "Album, photo 2 of 5" like the fork does. Default OFF = stock Telegram wording. */
     public static boolean getAlbumReading() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_ALBUM_READING, false);
@@ -2689,6 +3022,23 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    /** Say the admin / owner / group-own tag after the sender name in groups. Default OFF. */
+    public static boolean getAdminTagAnnounce() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_ADMIN_TAG, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setAdminTagAnnounce(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_ADMIN_TAG, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /** Speak what a contact is doing (typing, recording a voice message, sending audio, online). Default OFF. */
     public static boolean getUserStatusAnnounce() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_USER_STATUS, false);
@@ -2706,6 +3056,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
 
     public static final String PREF_CHAT_OPEN_SOUND = "a11y_chat_open_sound";
 
+    /** Play the phone's own "Touch sounds" click once when a chat opens and focus lands on its message. Default OFF. */
     public static boolean getChatOpenSound() {
         try {
             return MessagesController.getGlobalMainSettings().getBoolean(PREF_CHAT_OPEN_SOUND, false);
@@ -2721,6 +3072,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    /** The system click ("Touch sounds" in the phone's Sound settings); the system itself stays silent when that is off. */
     public static void playChatOpenSound() {
         try {
             if (!getChatOpenSound()) {
@@ -2747,10 +3099,10 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenuEnabled())));
         items.add(getSmallFilesAutoDownloadModeAnnouncement());
         items.add(LocaleController.formatString(R.string.A11yDownloadStateLabel, onOff(getAnnounceDownloadState())));
-        items.add(LocaleController.formatString(R.string.A11yAlbumReadingLabel, onOff(getAlbumReading())));
+        items.add(LocaleController.formatString(R.string.A11yAlbumReadingLabel, onOff(getAlbumReading())) + ". " + LocaleController.getString(R.string.A11yAlbumReadingSummary));
+        items.add(LocaleController.formatString(R.string.A11yAdminTagLabel, onOff(getAdminTagAnnounce())) + ". " + LocaleController.getString(R.string.A11yAdminTagSummary));
         items.add(LocaleController.formatString(R.string.A11yUserStatusLabel, onOff(getUserStatusAnnounce())));
         items.add(LocaleController.formatString(R.string.A11yChatOpenSoundLabel, onOff(getChatOpenSound())));
-        items.add(LocaleController.formatString(R.string.A11yAdminTagsLabel, onOff(getAnnounceAdminTags())));
         return items;
     }
 
@@ -2773,6 +3125,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                     .setNegativeButton(LocaleController.getString(R.string.A11yClose), null)
                     .create();
             dialog.show();
+            // the stock click handler dismisses the dialog; ours only refreshes the row
             dialog.getListView().setOnItemClickListener((parent, view, which, id) -> handleSettingsClick(activity, which, refresh));
         } catch (Throwable ignore) {
         }
@@ -2828,16 +3181,16 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                     message = LocaleController.formatString(R.string.A11yAlbumReadingLabel, onOff(getAlbumReading()));
                     break;
                 case 12:
+                    setAdminTagAnnounce(!getAdminTagAnnounce());
+                    message = LocaleController.formatString(R.string.A11yAdminTagLabel, onOff(getAdminTagAnnounce()));
+                    break;
+                case 13:
                     setUserStatusAnnounce(!getUserStatusAnnounce());
                     message = LocaleController.formatString(R.string.A11yUserStatusLabel, onOff(getUserStatusAnnounce()));
                     break;
-                case 13:
+                case 14:
                     setChatOpenSound(!getChatOpenSound());
                     message = LocaleController.formatString(R.string.A11yChatOpenSoundLabel, onOff(getChatOpenSound()));
-                    break;
-                case 14:
-                    setAnnounceAdminTags(!getAnnounceAdminTags());
-                    message = LocaleController.formatString(R.string.A11yAdminTagsLabel, onOff(getAnnounceAdminTags()));
                     break;
                 default:
                     return;
@@ -2915,7 +3268,126 @@ def patch_a11y_settings_dialog_stays_open() -> None:
     print("A11yConfig settings dialog stays open + download-state setting OK")
 
 
+def patch_admin_tag_switch() -> None:
+    """Accessible Settings switch "Announce admin and group tags" (default OFF).
+
+    Telegram speaks the admin / owner / member tag after the sender's name in groups. With the
+    switch off nothing of it is spoken; with it on the stock wording is unchanged.
+    """
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    _gate_once(
+        cmc,
+        "                        final CharSequence adminText = getAdminAccessibilityText();\n",
+        "                        final CharSequence adminText = org.telegram.messenger.A11yConfig.getAdminTagAnnounce() ? getAdminAccessibilityText() : null; // a11y-fork: setting (default OFF)\n",
+        "ChatMessageCell admin-tag switch")
+
+
+LEAVE_COMMENT_MENU_BLOCK = (
+    "        // a11y-fork: leave comment menu v1\n"
+    "        try {\n"
+    "            final MessageObject a11yCommentMsg = groupedMessages != null && !groupedMessages.messages.isEmpty() ? groupedMessages.messages.get(0) : message;\n"
+    "            if (a11yCommentMsg != null && a11yCommentMsg.messageOwner != null && a11yCommentMsg.messageOwner.action == null\n"
+    "                    && chatMode != MODE_SCHEDULED && chatMode != MODE_WELCOME_MESSAGES\n"
+    "                    && ChatObject.isChannel(currentChat) && currentChat.has_link && !currentChat.megagroup\n"
+    "                    && !message.isEphemeral() && !message.isSponsored()\n"
+    "                    && a11yCommentMsg.isLinkedToChat(chatInfo != null ? chatInfo.linked_chat_id : 0)) {\n"
+    "                final int a11yCommentCount = a11yCommentMsg.getRepliesCount();\n"
+    "                items.add(a11yCommentCount <= 0\n"
+    "                        ? LocaleController.getString(R.string.A11yLeaveComment)\n"
+    "                        : a11yCommentCount == 1\n"
+    "                        ? LocaleController.getString(R.string.A11yCommentOne)\n"
+    "                        : LocaleController.formatString(\"A11yCommentsCount\", R.string.A11yCommentsCount, a11yCommentCount));\n"
+    f"                options.add({OPTION_LEAVE_COMMENT});\n"
+    "                icons.add(R.drawable.msg_viewreplies);\n"
+    "            }\n"
+    "        } catch (Throwable e) {\n"
+    "            FileLog.e(e);\n"
+    "        }\n\n"
+)
+
+
+def patch_leave_comment_menu() -> None:
+    """Bring back "Leave comment" (with the comment count) as an item of the message options.
+
+    The comment button that Telegram draws under channel posts is hidden for TalkBack
+    (patch_hide_share_and_comment), so this item replaces it: it appears for the same posts the
+    button appears for (channel with a linked discussion group, post with comments enabled),
+    reads "Leave comment" when there are none and "4 comments" when there are, and opens the
+    discussion exactly like a tap on the button (same arguments as didPressCommentButton).
+    The item is placed by patch_reorder_a11y_menu_items (after Bot Buttons, before Reactions).
+    """
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity missing (leave comment menu)")
+        return
+    t = ca.read_text(encoding="utf-8")
+
+    if "a11y-fork: OPTION_LEAVE_COMMENT declaration" not in t:
+        class_idx = t.find("public class ChatActivity")
+        brace_idx = t.find("{", class_idx) if class_idx != -1 else -1
+        if brace_idx == -1:
+            print("WARN: ChatActivity class brace not found (leave comment menu)")
+            return
+        t = (t[:brace_idx + 1]
+             + "\n    private static final int OPTION_LEAVE_COMMENT = %d; // a11y-fork: OPTION_LEAVE_COMMENT declaration\n" % OPTION_LEAVE_COMMENT
+             + t[brace_idx + 1:])
+
+    if "a11y-fork: leave comment handler" not in t:
+        old_case = "            case OPTION_RETRY: {\n"
+        new_case = (
+            "            case OPTION_LEAVE_COMMENT: { // a11y-fork: leave comment handler\n"
+            "                try {\n"
+            "                    final MessageObject.GroupedMessages a11yGroup = selectedObjectGroup;\n"
+            "                    final MessageObject a11yMsg = a11yGroup != null && !a11yGroup.messages.isEmpty() ? a11yGroup.messages.get(0) : selectedObject;\n"
+            "                    if (a11yMsg != null && a11yMsg.messageOwner != null && currentChat != null) {\n"
+            "                        final int a11yMaxReadId;\n"
+            "                        final long a11yLinkedChatId;\n"
+            "                        if (a11yMsg.messageOwner.replies != null) {\n"
+            "                            a11yMaxReadId = a11yMsg.messageOwner.replies.read_max_id;\n"
+            "                            a11yLinkedChatId = a11yMsg.messageOwner.replies.channel_id;\n"
+            "                        } else {\n"
+            "                            a11yMaxReadId = -1;\n"
+            "                            a11yLinkedChatId = 0;\n"
+            "                        }\n"
+            "                        openDiscussionMessageChat(currentChat.id, a11yMsg, a11yMsg.getId(), a11yLinkedChatId, a11yMaxReadId, 0, null);\n"
+            "                    }\n"
+            "                } catch (Throwable e) {\n"
+            "                    FileLog.e(e);\n"
+            "                }\n"
+            "                selectedObject = null;\n"
+            "                selectedObjectToEditCaption = null;\n"
+            "                selectedObjectGroup = null;\n"
+            "                break;\n"
+            "            }\n"
+            "            case OPTION_RETRY: {\n"
+        )
+        if t.count(old_case) != 1:
+            print("WARN: OPTION_RETRY case anchor found %d times (leave comment handler)" % t.count(old_case))
+            return
+        t = t.replace(old_case, new_case, 1)
+
+    if "a11y-fork: leave comment menu v1" not in t:
+        anchor = ("        if (message.isSponsored() && !getUserConfig().isPremium() "
+                  "&& !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {\n")
+        if t.count(anchor) != 1:
+            print("WARN: sponsored-item anchor found %d times (leave comment menu item)" % t.count(anchor))
+            return
+        t = t.replace(anchor, LEAVE_COMMENT_MENU_BLOCK + anchor, 1)
+
+    ca.write_text(t, encoding="utf-8")
+    print("ChatActivity leave-comment menu item+handler OK")
+
+
 def patch_every_node_long_click() -> None:
+    """A long press (TalkBack double-tap-and-hold) must open Message Options wherever the focus is.
+
+    A node without a LONG_CLICK action makes TalkBack send a real touch held at the node's middle,
+    which Telegram reads as a tap on that spot (jump to the replied message, open a profile ...).
+      1. every virtual node of a message cell advertises LONG_CLICK (routed to Message Options)
+      2. service messages (ChatActionCell: "pinned a message", ...) get it too
+      3. ChatActivity.createMenu: the "jump to the replied / pinned message" shortcut of the
+         single-message path is for TAPS only, never for a long press
+    """
     cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
     if cmc.exists():
         t = cmc.read_text(encoding="utf-8")
@@ -2963,6 +3435,8 @@ def patch_every_node_long_click() -> None:
         if marker in t:
             print("ChatActionCell long-click already patched")
         else:
+            # works on plain upstream AND on the fork-merged tree: first setEnabled(true) of
+            # onInitializeAccessibilityNodeInfo, and performAccessibilityAction (added if missing)
             n = t.find("public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {")
             k = t.find("        info.setEnabled(true);\n", n) if n >= 0 else -1
             if k < 0:
@@ -3022,6 +3496,14 @@ def patch_every_node_long_click() -> None:
 
 
 def patch_stuck_together_bubbles_long_press() -> None:
+    """Accessibility-fork: keep long-press coordinates inside the cell.
+
+    The accessibility long-click path passes lastTouchX/lastTouchY (possibly stale, from an
+    earlier touch on a different/recycled cell, or from a neighbouring bubble of a
+    stuck-together cluster). The real ChatMessageCellDelegate.didLongPress implementation
+    lives in ChatActivity -- ChatMessageCell only declares an EMPTY default method, which is
+    where the previous revision looked (so it never applied and warned on every build).
+    """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing (long-press coordinate clamp)")
@@ -3055,8 +3537,16 @@ def patch_stuck_together_bubbles_long_press() -> None:
     ca.write_text(t, encoding="utf-8")
     print("ChatActivity clamp long-press OK")
 
-
 def patch_reorder_a11y_menu_items() -> None:
+    """Move Select / Reactions / Bot Buttons / Links out of their original
+    early insertion point (right before the sponsored-ad block, i.e. near
+    the TOP of the menu) and place them, in this exact order, at the very
+    END of fillMessageMenu -- after every native item (Copy, Delete, Reply,
+    Report, Save to Downloads/Gallery, etc.), right before the method's
+    closing brace. Must run after patch_longpress_message_menu,
+    patch_reactions_as_menu, patch_bot_buttons_menu and patch_links_as_menu,
+    since it relocates the exact blocks those functions insert.
+    """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
     if not ca.exists():
         print("WARN: ChatActivity missing (menu reorder)")
@@ -3084,6 +3574,7 @@ def patch_reorder_a11y_menu_items() -> None:
             "            icons.add(R.drawable.msg_viewreplies);\n"
             "        }\n\n"
         ),
+        "leave_comment": LEAVE_COMMENT_MENU_BLOCK,
         "reactions": (
             "        // a11y-fork: reactions menu item\n"
             "        accessibilityReactionsToggleIndex = -1;\n"
@@ -3104,6 +3595,8 @@ def patch_reorder_a11y_menu_items() -> None:
         ),
     }
 
+    optional = {"leave_comment"}  # never blocks the reorder if its patch did not apply
+    blocks = {name: block for name, block in blocks.items() if name not in optional or block in t}
     missing = [name for name, block in blocks.items() if block not in t]
     if missing:
         print(f"WARN: a11y menu-item block(s) not found for reorder: {', '.join(missing)} (left in original position)")
@@ -3138,12 +3631,15 @@ def patch_reorder_a11y_menu_items() -> None:
         return
 
     ordered = (
-        f"        // {marker} -- order: Links, Bot Buttons, Reactions, Select\n"
-        + blocks["links"] + blocks["bot_buttons"] + blocks["reactions"] + blocks["select"]
+        f"        // {marker} -- order: Links, Bot Buttons, Leave Comment, Reactions, Select\n"
+        + blocks["links"] + blocks["bot_buttons"] + blocks.get("leave_comment", "") + blocks["reactions"] + blocks["select"]
     )
     t = t[:end_idx] + ordered + t[end_idx:]
     ca.write_text(t, encoding="utf-8")
-    print("ChatActivity a11y menu items reordered to end (Links, Bot Buttons, Reactions, Select) OK")
+    print("ChatActivity a11y menu items reordered to end (Links, Bot Buttons, Leave Comment, Reactions, Select) OK")
+
+
+
 
 def patch_small_file_localization() -> None:
     """Add localized labels required by the 3-state small-file setting."""
@@ -3169,18 +3665,156 @@ def patch_small_file_localization() -> None:
             _set_string(path, name, value)
     print("Small-file 3-state localization OK")
 
-
 def patch_small_file_download_mode() -> None:
-    """One clean, authoritative 3-state "small files" auto-download setting."""
+    """One clean, authoritative 3-state "small files" auto-download setting.
+
+    0 SMALL_FILES_AUTO       small files (<=512 KB) auto-download of every type, on networks where
+                             Telegram's own auto-download master switch is on
+    1 SMALL_FILES_VOICE_ONLY block small (<=512 KB) auto-downloads except voice messages (default)
+    2 SMALL_FILES_OFF        block ALL small (<=512 KB) auto-downloads AND all voice messages of
+                             any size (voice bypasses Telegram's per-type switches)
+
+    Replaces the old stack of overlapping v10..v20 patches. Those left the settings row
+    labelled with the legacy "voice-only: On/Off" text while its click opened the radio
+    picker, kept two dead click handlers, and -- worst -- kept a legacy voice-only flag whose
+    default was TRUE and which blocked every non-voice auto-download regardless of the radio
+    choice (so "Auto-download small files" could never work).
+    All blocking logic now lives in ONE method, A11yConfig.blockAutoDownload(type, size),
+    called from every DownloadController decision point.
+    """
     cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
     dc = JAVA / "org/telegram/messenger/DownloadController.java"
     if not cfg.exists() or not dc.exists():
         print("WARN: A11yConfig/DownloadController missing (small-file download mode)")
         return
 
+    # ---------- A11yConfig.java ----------
+    c = cfg.read_text(encoding="utf-8")
+    marker = "a11y-fork: small-file download mode v3"
+    if marker not in c:
+        methods = r"""    // a11y-fork: small-file download mode v3
+    // 0 = fork adds no restriction, 1 = block small files except voice (default),
+    // 2 = block all small files (voice included).
+    public static final int SMALL_FILES_AUTO = 0;
+    public static final int SMALL_FILES_VOICE_ONLY = 1;
+    public static final int SMALL_FILES_OFF = 2;
+    public static final long SMALL_FILE_MAX_SIZE = 512 * 1024;
+    private static final String PREF_SMALL_FILES_MODE = "a11y_small_files_mode";
+
+    public static int getSmallFilesAutoDownloadMode() {
+        try {
+            int mode = MessagesController.getGlobalMainSettings().getInt(PREF_SMALL_FILES_MODE, SMALL_FILES_VOICE_ONLY);
+            return mode < SMALL_FILES_AUTO || mode > SMALL_FILES_OFF ? SMALL_FILES_VOICE_ONLY : mode;
+        } catch (Throwable ignore) {
+            return SMALL_FILES_VOICE_ONLY;
+        }
+    }
+
+    public static void setSmallFilesAutoDownloadMode(int mode) {
+        if (mode < SMALL_FILES_AUTO || mode > SMALL_FILES_OFF) mode = SMALL_FILES_VOICE_ONLY;
+        try {
+            MessagesController.getGlobalMainSettings().edit().putInt(PREF_SMALL_FILES_MODE, mode).apply();
+            try { DownloadController.getInstance(UserConfig.selectedAccount).checkAutodownloadSettings(); } catch (Throwable ignore) {}
+        } catch (Throwable ignore) {
+        }
+    }
+
+    public static String getSmallFilesAutoDownloadModeLabel() {
+        switch (getSmallFilesAutoDownloadMode()) {
+            case SMALL_FILES_AUTO:
+                return LocaleController.getString(R.string.A11ySmallFilesAuto);
+            case SMALL_FILES_OFF:
+                return LocaleController.getString(R.string.A11ySmallFilesOff);
+            default:
+                return LocaleController.getString(R.string.A11ySmallFilesVoiceOnly);
+        }
+    }
+
+    public static String getSmallFilesAutoDownloadModeAnnouncement() {
+        return LocaleController.formatString(R.string.A11ySmallFilesModeLabel, getSmallFilesAutoDownloadModeLabel());
+    }
+
+    /** True when the fork must veto an automatic download of this type/size. */
+    public static boolean blockAutoDownload(int type, long size) {
+        try {
+            int mode = getSmallFilesAutoDownloadMode();
+            if (mode == SMALL_FILES_AUTO) {
+                return false;
+            }
+            if (mode == SMALL_FILES_OFF) {
+                // Telegram lets voice messages bypass the per-type switches entirely, so a
+                // voice message bigger than 512 KB would still download by itself. "Off" has
+                // to mean off: block every small file AND every voice message, whatever its size.
+                return size <= SMALL_FILE_MAX_SIZE || type == DownloadController.AUTODOWNLOAD_TYPE_AUDIO;
+            }
+            if (size > SMALL_FILE_MAX_SIZE) {
+                return false;
+            }
+            return type != DownloadController.AUTODOWNLOAD_TYPE_AUDIO;
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    /** True when the fork must let this small automatic download through (AUTO mode only). */
+    public static boolean allowSmallAutoDownload(int type, long size) {
+        try {
+            return getSmallFilesAutoDownloadMode() == SMALL_FILES_AUTO && size > 0 && size <= SMALL_FILE_MAX_SIZE;
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    private static void showSmallFilesModePicker(Activity activity) {
+        final String[] labels = new String[]{
+                LocaleController.getString(R.string.A11ySmallFilesAuto),
+                LocaleController.getString(R.string.A11ySmallFilesVoiceOnly),
+                LocaleController.getString(R.string.A11ySmallFilesOff)
+        };
+        new AlertDialog.Builder(activity)
+                .setTitle(LocaleController.getString(R.string.A11ySmallFilesPickerTitle))
+                .setSingleChoiceItems(labels, getSmallFilesAutoDownloadMode(), (d, which) -> {
+                    setSmallFilesAutoDownloadMode(which);
+                    d.dismiss();
+                    announce(activity, getSmallFilesAutoDownloadModeAnnouncement());
+                })
+                .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
+                .show();
+    }
+
+"""
+        anchor = "    public static void showSettingsDialog(Activity activity) {"
+        if anchor not in c:
+            print("WARN: showSettingsDialog anchor not found (small-file download mode)")
+            return
+        c = c.replace(anchor, methods + anchor, 1)
+
+        # settings-dialog row: appended after the LAST existing row, index = its position
+        m = re.search(r'final String\[\] items = new String\[\]\{(.*?)\n            \};', c, re.S)
+        if not m:
+            print("WARN: settings items array not found (small-file download mode)")
+            return
+        body = m.group(1)
+        row_count = body.count("LocaleController.formatString(") + body.count("getSmallFilesAutoDownloadModeAnnouncement()")
+        new_body = body.rstrip() + ",\n                    getSmallFilesAutoDownloadModeAnnouncement()"
+        c = c[:m.start(1)] + new_body + c[m.end(1):]
+        handler_anchor = "                    })\n                    .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)\n                    .show();\n        } catch (Throwable ignore) {\n        }\n    }\n\n    private static void announce("
+        # the items click-listener closes with `}` right before `})`
+        hm = re.search(r'(\n                        \}\n)(                    \}\)\n                    \.setNegativeButton)', c)
+        if not hm:
+            print("WARN: settings click handler end not found (small-file download mode)")
+            return
+        c = c[:hm.start(1)] + (
+            "\n                        } else if (which == %d) {\n"
+            "                            showSmallFilesModePicker(activity);\n"
+            "                        }\n" % row_count
+        ) + c[hm.end(1):]
+    cfg.write_text(c, encoding="utf-8")
+
     # ---------- DownloadController.java ----------
     d = dc.read_text(encoding="utf-8")
     if "a11y-fork: small-file hook v3" not in d:
+        # every decision point ends in the same generic return, in 4 typed variants
         generic_bool = ("        long maxSize = preset.sizes[typeToIndex(type)];\n"
                         "        return (type == AUTODOWNLOAD_TYPE_PHOTO || size != 0 && size <= maxSize) && (type == AUTODOWNLOAD_TYPE_AUDIO || (mask & type) != 0);")
         if generic_bool in d:
@@ -3206,6 +3840,8 @@ def patch_small_file_download_mode() -> None:
             "            }\n"
             r"\1", d)
         print(f"DownloadController small-file hook installed at {n_sites} message/media sites + generic path")
+        if n_sites != 4:
+            print("WARN: expected 4 message/media decision sites in DownloadController, found", n_sites)
     dc.write_text(d, encoding="utf-8")
     print("Small-file 3-state download mode v2 OK")
 
@@ -3226,7 +3862,6 @@ def patch_exact_progress_steps() -> None:
     cfg.write_text(t2, encoding="utf-8")
     print("Progress steps 1/5/10/20 OK")
 
-
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -3239,7 +3874,6 @@ def main() -> int:
     patch_radial_progress()
     patch_dialogcell_name_then_type()
     patch_hide_share_and_comment()
-    patch_leave_comment_in_message_options()
     patch_forward_menu_extras()
     # Shared end-anchor order: Bot Buttons -> Reactions -> Select (Select last).
     patch_longpress_message_menu()
@@ -3263,6 +3897,7 @@ def main() -> int:
     patch_hide_sponsor_channel()
     patch_ghost_mode()
     patch_bot_buttons_menu()
+    patch_leave_comment_menu()
     patch_links_as_menu()
     patch_reorder_a11y_menu_items()
     patch_go_to_first_message()
@@ -3277,6 +3912,7 @@ def main() -> int:
         patch_fork_quiet_download_state()
     if MEHRAN:
         patch_album_and_user_status_switches()
+    patch_admin_tag_switch()
     if MEHRAN:
         patch_chat_open_sound()
     patch_unlabeled_buttons()
@@ -3291,6 +3927,7 @@ def main() -> int:
     if MEHRAN:
         patch_mehran_strings_persian()
     # MUST stay last: it rewrites English text injected by the patches above
+    # (Selected / Bot Buttons / Forwarded to Saved / Accessible settings ...).
     patch_a11y_localization()
     print("A11y REAL patches done")
     return 0
