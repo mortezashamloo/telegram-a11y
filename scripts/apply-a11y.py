@@ -2655,15 +2655,44 @@ def patch_album_and_user_status_switches() -> None:
 
 
 def patch_chat_open_sound() -> None:
-    """Optional system click when a chat opens (the fork moves TalkBack focus by itself, which
-    suppresses the usual enter sound). Plays once, on the first successful landing only."""
+    """Optional system click (the phone's "Touch sounds") the moment the chat fragment opens.
+
+    It is played from ChatActivity.onTransitionAnimationStart(isOpen = true, backward = false),
+    i.e. right when the tap on the chat list is handled -- exactly like a normal touch -- and NOT
+    when messages finish loading and TalkBack's focus lands on one of them. Once per fragment
+    instance; chat previews and chats embedded inside another screen stay silent.
+    """
     ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    old = "            final boolean landed = target.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);\n"
+    old = (
+        "    public void onTransitionAnimationStart(boolean isOpen, boolean backward) {\n"
+        "        super.onTransitionAnimationStart(isOpen, backward);\n")
     new = (old +
-           "            if (landed && !requested) { // a11y-fork: optional chat-open sound (setting, default OFF)\n"
-           "                org.telegram.messenger.A11yConfig.playChatOpenSound();\n"
-           "            }\n")
-    _gate_once(ca, old, new, "ChatActivity chat-open sound")
+           "        if (isOpen && !backward && !a11yChatOpenSoundPlayed && !isInPreviewMode() && !isInsideContainer) { // a11y-fork: chat-open sound\n"
+           "            a11yChatOpenSoundPlayed = true;\n"
+           "            org.telegram.messenger.A11yConfig.playChatOpenSound();\n"
+           "        }\n")
+    field_anchor = "    long startMs;\n    @Override\n    public void onTransitionAnimationStart(boolean isOpen, boolean backward) {\n"
+    if not ca.exists():
+        print("WARN: ChatActivity.java missing (chat-open sound)")
+        return
+    t = ca.read_text(encoding="utf-8")
+    if "a11yChatOpenSoundPlayed" in t:
+        print("ChatActivity chat-open sound already patched")
+        return
+    if t.count(old) != 1 or t.count(field_anchor) != 1:
+        print("WARN: ChatActivity chat-open sound anchor not found (%d/%d)" % (t.count(old), t.count(field_anchor)))
+        return
+    t = t.replace(field_anchor, "    private boolean a11yChatOpenSoundPlayed; // a11y-fork: chat-open sound, once per fragment\n" + field_anchor, 1)
+    t = t.replace(old, new, 1)
+    # the fork's old trigger (sound when TalkBack focus lands on a message) must not fire a second click
+    old_fork = ("            if (landed && !requested) { // a11y-fork: optional chat-open sound (setting, default OFF)\n"
+                "                org.telegram.messenger.A11yConfig.playChatOpenSound();\n"
+                "            }\n")
+    if old_fork in t:
+        t = t.replace(old_fork, "", 1)
+        print("removed old focus-landing chat-open sound")
+    ca.write_text(t, encoding="utf-8")
+    print("ChatActivity chat-open sound (fragment open) OK")
 
 
 def patch_unlabeled_buttons() -> None:
@@ -3948,8 +3977,7 @@ def main() -> int:
         patch_album_and_user_status_switches()
     patch_admin_tag_switch()
     patch_share_send_button_label()
-    if MEHRAN:
-        patch_chat_open_sound()
+    patch_chat_open_sound()
     patch_unlabeled_buttons()
     patch_contacts_list_accessibility()
     patch_topics_hide_chat_list_from_screen_reader()
