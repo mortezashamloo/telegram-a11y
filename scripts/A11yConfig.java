@@ -391,11 +391,11 @@ public class A11yConfig {
                 return yesterdayAt + " " + time;
             }
 
-            String at = LocaleController.getString("At", R.string.At);
             if (TextUtils.isEmpty(solarDate)) {
                 return official;
             }
-            return solarDate + " " + at + " " + time;
+            // Telegram's own "%1$s at %2$s" resource (there is no R.string.At upstream)
+            return LocaleController.formatString("formatDateAtTime", R.string.formatDateAtTime, solarDate, time);
         } catch (Throwable ignore) {
             try {
                 return LocaleController.formatDateAudio(unixSeconds, includeTime);

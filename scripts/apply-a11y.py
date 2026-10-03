@@ -271,6 +271,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yAddMembersConfirm": "افزودن اعضای انتخاب‌شده",
         "A11yClose": "بستن",
         "A11yFileLabel": "فایل",
+        "AccDescrShareInChats_one": "اشتراک‌گذاری در %1$d گفتگو",
+        "AccDescrShareInChats_other": "اشتراک‌گذاری در %1$d گفتگو",
     }
     for rel, values in (("values/strings.xml", en), ("values-fa/strings.xml", fa), ("values-fa-rIR/strings.xml", fa)):
         path = RES / rel
@@ -3378,6 +3380,38 @@ def patch_leave_comment_menu() -> None:
     print("ChatActivity leave-comment menu item+handler OK")
 
 
+def patch_share_send_button_label() -> None:
+    """Label the send button of the share sheet ("Share in 3 chats").
+
+    In ShareAlert the label was put on the focusable FRAME around the button, but the frame has
+    no click listener -- the real, clickable button is its child (a bare View), which had no
+    description at all, so TalkBack read an unlabeled button. Now the button itself carries
+    "Share in N chats" (updated whenever the selection changes) and the empty frame is hidden
+    from TalkBack so there is a single, correct stop. The forward picker (DialogsActivity) gets
+    the same text as a content description as well.
+    """
+    sa = JAVA / "org/telegram/ui/Components/ShareAlert.java"
+    _gate_once(
+        sa,
+        "        writeButtonContainer.setFocusableInTouchMode(true);\n",
+        "        writeButtonContainer.setFocusableInTouchMode(true);\n"
+        "        writeButtonContainer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); // a11y-fork: the real button is the child\n",
+        "ShareAlert frame hidden from TalkBack")
+    _gate_once(
+        sa,
+        "            writeButton.setCount(Math.max(1, selectedDialogs.size()), animated != 0);\n",
+        "            writeButton.setCount(Math.max(1, selectedDialogs.size()), animated != 0);\n"
+        "            writeButton.setContentDescription(LocaleController.formatPluralString(\"AccDescrShareInChats\", Math.max(1, selectedDialogs.size()))); // a11y-fork: send button label\n",
+        "ShareAlert send button label")
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    _gate_once(
+        da,
+        "                    info.setText(LocaleController.formatPluralString(\"AccDescrShareInChats\", selectedDialogs.size()));\n",
+        "                    info.setText(LocaleController.formatPluralString(\"AccDescrShareInChats\", selectedDialogs.size()));\n"
+        "                    info.setContentDescription(LocaleController.formatPluralString(\"AccDescrShareInChats\", selectedDialogs.size())); // a11y-fork\n",
+        "DialogsActivity send button description")
+
+
 def patch_every_node_long_click() -> None:
     """A long press (TalkBack double-tap-and-hold) must open Message Options wherever the focus is.
 
@@ -3913,6 +3947,7 @@ def main() -> int:
     if MEHRAN:
         patch_album_and_user_status_switches()
     patch_admin_tag_switch()
+    patch_share_send_button_label()
     if MEHRAN:
         patch_chat_open_sound()
     patch_unlabeled_buttons()
