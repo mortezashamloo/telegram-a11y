@@ -208,7 +208,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yCommentOne": "1 comment",
         "A11yCommentsCount": "%1$d comments",
         "A11yUserStatusLabel": "User status announcements (typing, recording, online): %s",
-        "A11yChatOpenSoundLabel": "Sound when a chat opens: %s",
+        "A11yChatOpenSoundLabel": "Touch sound when a chat opens and when a message is tapped: %s",
         "A11ySenderOptionsLabel": "Sender options in message menu: %s",
         "A11yVoiceShareSaveLabel": "Share and save to music for voice messages: %s",
         "A11yPlayerSeekLabel": "Rewind and forward in audio player: %s",
@@ -271,7 +271,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yCommentOne": "1 نظر",
         "A11yCommentsCount": "%1$d نظر",
         "A11yUserStatusLabel": "اعلام وضعیت کاربر (در حال تایپ، ضبط ویس، آنلاین): %s",
-        "A11yChatOpenSoundLabel": "صدا هنگام باز شدن چت: %s",
+        "A11yChatOpenSoundLabel": "صدای لمس هنگام باز شدن چت و ضربه روی پیام: %s",
         "A11ySenderOptionsLabel": "گزینه‌های فرستنده در منوی پیام: %s",
         "A11yVoiceShareSaveLabel": "اشتراک‌گذاری و ذخیره در موسیقی برای پیام‌های صوتی: %s",
         "A11yPlayerSeekLabel": "عقب و جلو در پخش‌کننده‌ی صدا: %s",
@@ -4007,6 +4007,36 @@ def patch_exact_progress_steps() -> None:
     cfg.write_text(t2, encoding="utf-8")
     print("Progress steps 1/5/10/20 OK")
 
+def patch_message_tap_sound() -> None:
+    """The same optional system click for a tap on a message (setting "Touch sound", default OFF).
+
+    With TalkBack, a double tap reaches a message as ACTION_CLICK, which ChatMessageCell handles by
+    itself -- nothing on that path ever asks the system to play its touch sound, so a message
+    stayed silent where every ordinary button of the phone clicks. The click is played first thing
+    on that tap, before the tap's own work starts, both for the message itself and for the parts
+    inside it TalkBack lists on their own (links, buttons, the avatar, rich blocks). It is the
+    same switch and the same A11yConfig.playChatOpenSound() as the chat-open sound, so the system's
+    own "Touch sounds" setting still decides whether anything is heard.
+    """
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    _gate_once(
+        cmc,
+        "    public boolean performAccessibilityAction(int action, Bundle arguments) {\n",
+        "    public boolean performAccessibilityAction(int action, Bundle arguments) {\n"
+        "        if (action == AccessibilityNodeInfo.ACTION_CLICK) { // a11y-fork: touch sound for a tap on a message\n"
+        "            org.telegram.messenger.A11yConfig.playChatOpenSound();\n"
+        "        }\n",
+        "ChatMessageCell tap sound (message)")
+    _gate_once(
+        cmc,
+        "                } else if (action == AccessibilityNodeInfo.ACTION_CLICK) {\n"
+        "                    if (virtualViewId == PROFILE) {\n",
+        "                } else if (action == AccessibilityNodeInfo.ACTION_CLICK) {\n"
+        "                    org.telegram.messenger.A11yConfig.playChatOpenSound(); // a11y-fork: touch sound for a tap on a part of a message\n"
+        "                    if (virtualViewId == PROFILE) {\n",
+        "ChatMessageCell tap sound (parts of a message)")
+
+
 def patch_voice_share() -> None:
     """Share for a downloaded voice message, at the place every other media gets its Share.
 
@@ -4548,6 +4578,7 @@ def main() -> int:
     patch_admin_tag_switch()
     patch_share_send_button_label()
     patch_chat_open_sound()
+    patch_message_tap_sound()
     patch_voice_share()
     patch_player_seek_buttons()
     patch_sender_options_menu()
