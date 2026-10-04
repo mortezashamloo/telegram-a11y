@@ -214,6 +214,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yPlayerSeekLabel": "Rewind and forward in audio player: %s",
         "A11yPlayerRewind": "Rewind 10 seconds",
         "A11yPlayerForward": "Forward 10 seconds",
+        "A11yProxyButtonLabel": "Proxy button in the chat list toolbar: %s",
         "A11yUnselected": "Unselected",
         "A11ySelectAllDone": "%1$d chats selected",
         "A11yMutualContact": "Mutual contact",
@@ -277,6 +278,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yPlayerSeekLabel": "عقب و جلو در پخش‌کننده‌ی صدا: %s",
         "A11yPlayerRewind": "۱۰ ثانیه عقب",
         "A11yPlayerForward": "۱۰ ثانیه جلو",
+        "A11yProxyButtonLabel": "دکمه‌ی پروکسی در نوار بالای لیست چت: %s",
         "A11yUnselected": "از انتخاب خارج شد",
         "A11ySelectAllDone": "%1$d گفتگو انتخاب شد",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -3259,6 +3261,24 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    public static final String PREF_PROXY_TOOLBAR = "a11y_proxy_toolbar_button";
+
+    /** Proxy button in the chat list's top bar, as older versions had it. Default OFF. */
+    public static boolean getProxyButtonInToolbar() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_PROXY_TOOLBAR, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setProxyButtonInToolbar(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_PROXY_TOOLBAR, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static java.util.ArrayList<String> buildSettingsItems() {
         final java.util.ArrayList<String> items = new java.util.ArrayList<>();
         items.add(LocaleController.formatString(R.string.A11yProgressAnnounceLabel, progressStepLabel()));
@@ -3279,6 +3299,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11ySenderOptionsLabel, onOff(getSenderOptionsInMenu())));
         items.add(LocaleController.formatString(R.string.A11yVoiceShareSaveLabel, onOff(getVoiceShareSave())));
         items.add(LocaleController.formatString(R.string.A11yPlayerSeekLabel, onOff(getPlayerSeekButtons())));
+        items.add(LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar())));
         return items;
     }
 
@@ -3379,6 +3400,10 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                 case 17:
                     setPlayerSeekButtons(!getPlayerSeekButtons());
                     message = LocaleController.formatString(R.string.A11yPlayerSeekLabel, onOff(getPlayerSeekButtons()));
+                    break;
+                case 18:
+                    setProxyButtonInToolbar(!getProxyButtonInToolbar());
+                    message = LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar()));
                     break;
                 default:
                     return;
@@ -4113,6 +4138,60 @@ def patch_dialog_row_tap_sound() -> None:
     print("DialogCell row tap sound OK")
 
 
+def patch_proxy_toolbar_button() -> None:
+    """The proxy button of the chat list's top bar, as older Telegram versions had it.
+
+    Today the proxy entry sits inside the "More options" popup, and only while a proxy is on (or the
+    country is blocked and a proxy list exists). Older versions had a button in the top bar for
+    exactly the same condition. With the Accessible Settings switch "Proxy button in the chat list
+    toolbar" (A11yConfig.getProxyButtonInToolbar, default OFF) that button comes back, after the
+    downloads button and before More options. It opens the proxy list, and its name says the state:
+    "Proxy settings, connected / connecting / disabled". It is refreshed whenever the bar's proxy
+    state is (connection changes, coming back to the list), so a switch flipped in the settings shows
+    up when you return to the chat list.
+    """
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    _gate_once(
+        da,
+        "    private ActionBarMenuSubItem proxyMenuSubItem;\n",
+        "    private ActionBarMenuSubItem proxyMenuSubItem;\n"
+        "    private ActionBarMenuItem a11yProxyItem; // a11y-fork: proxy button in the top bar (setting, default OFF)\n"
+        "    private ProxyDrawable a11yProxyDrawable;\n",
+        "DialogsActivity proxy toolbar fields")
+    _gate_once(
+        da,
+        "            downloadsItem.setVisibility(View.GONE);\n"
+        "\n"
+        "            updateProxyButton(false, false);\n",
+        "            downloadsItem.setVisibility(View.GONE);\n"
+        "\n"
+        "            // a11y-fork: proxy button in the top bar, as older versions had it\n"
+        "            a11yProxyDrawable = new ProxyDrawable(context);\n"
+        "            a11yProxyItem = menu.addItem(2, a11yProxyDrawable);\n"
+        "            a11yProxyItem.setContentDescription(getString(R.string.ProxySettings));\n"
+        "            a11yProxyItem.setVisibility(View.GONE);\n"
+        "            a11yProxyItem.setOnClickListener(v -> presentFragment(new ProxyListActivity()));\n"
+        "\n"
+        "            updateProxyButton(false, false);\n",
+        "DialogsActivity proxy toolbar button created")
+    _gate_once(
+        da,
+        "        proxyDrawable.setConnected(proxyEnabled, connected, animated);\n"
+        "    }\n",
+        "        proxyDrawable.setConnected(proxyEnabled, connected, animated);\n"
+        "        if (a11yProxyItem != null) { // a11y-fork: proxy button in the top bar\n"
+        "            final boolean a11yProxyVisible = proxyEnabled && !TextUtils.isEmpty(preferences.getString(\"proxy_ip\", \"\"))\n"
+        "                    || getMessagesController().blockedCountry && !SharedConfig.proxyList.isEmpty();\n"
+        "            a11yProxyItem.setVisibility(org.telegram.messenger.A11yConfig.getProxyButtonInToolbar() && a11yProxyVisible ? View.VISIBLE : View.GONE);\n"
+        "            if (a11yProxyDrawable != null) {\n"
+        "                a11yProxyDrawable.setConnected(proxyEnabled, connected, animated);\n"
+        "            }\n"
+        "            a11yProxyItem.setContentDescription(getString(R.string.ProxySettings) + \", \" + getString(proxyEnabled ? (connected ? R.string.MenuProxyConnected : R.string.MenuProxyConnecting) : R.string.MenuProxyDisabled));\n"
+        "        }\n"
+        "    }\n",
+        "DialogsActivity proxy toolbar refresh")
+
+
 def patch_message_tap_sound() -> None:
     """The same optional system click for a tap on a message (setting "Touch sound", default OFF).
 
@@ -4685,6 +4764,7 @@ def main() -> int:
     patch_share_send_button_label()
     patch_chat_open_sound()
     patch_message_tap_sound()
+    patch_proxy_toolbar_button()
     patch_dialog_row_tap_sound()
     patch_voice_share()
     patch_player_seek_buttons()
