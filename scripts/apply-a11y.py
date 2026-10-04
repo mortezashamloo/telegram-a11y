@@ -215,6 +215,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yPlayerRewind": "Rewind 10 seconds",
         "A11yPlayerForward": "Forward 10 seconds",
         "A11yProxyButtonLabel": "Proxy button in the chat list toolbar: %s",
+        "A11yOldMenuLabel": "Old-style main menu instead of the bottom tabs: %s",
+        "A11yMainMenu": "Main menu",
         "A11yUnselected": "Unselected",
         "A11ySelectAllDone": "%1$d chats selected",
         "A11yMutualContact": "Mutual contact",
@@ -279,6 +281,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yPlayerRewind": "۱۰ ثانیه عقب",
         "A11yPlayerForward": "۱۰ ثانیه جلو",
         "A11yProxyButtonLabel": "دکمه‌ی پروکسی در نوار بالای لیست چت: %s",
+        "A11yOldMenuLabel": "منوی قدیمی تلگرام به‌جای نوار پایین: %s",
+        "A11yMainMenu": "منوی اصلی",
         "A11yUnselected": "از انتخاب خارج شد",
         "A11ySelectAllDone": "%1$d گفتگو انتخاب شد",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -3279,6 +3283,24 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    public static final String PREF_OLD_MENU = "a11y_old_style_menu";
+
+    /** Old-style main menu button (the old side drawer's entries) in the chat list's top bar. Default OFF. */
+    public static boolean getOldStyleMenu() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_OLD_MENU, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setOldStyleMenu(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_OLD_MENU, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static java.util.ArrayList<String> buildSettingsItems() {
         final java.util.ArrayList<String> items = new java.util.ArrayList<>();
         items.add(LocaleController.formatString(R.string.A11yProgressAnnounceLabel, progressStepLabel()));
@@ -3300,6 +3322,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yVoiceShareSaveLabel, onOff(getVoiceShareSave())));
         items.add(LocaleController.formatString(R.string.A11yPlayerSeekLabel, onOff(getPlayerSeekButtons())));
         items.add(LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar())));
+        items.add(LocaleController.formatString(R.string.A11yOldMenuLabel, onOff(getOldStyleMenu())));
         return items;
     }
 
@@ -3404,6 +3427,14 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                 case 18:
                     setProxyButtonInToolbar(!getProxyButtonInToolbar());
                     message = LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar()));
+                    break;
+                case 19:
+                    setOldStyleMenu(!getOldStyleMenu());
+                    try {
+                        org.telegram.ui.MainTabsActivity.a11yRefreshTabs();
+                    } catch (Throwable ignore) {
+                    }
+                    message = LocaleController.formatString(R.string.A11yOldMenuLabel, onOff(getOldStyleMenu()));
                     break;
                 default:
                     return;
@@ -4192,6 +4223,150 @@ def patch_proxy_toolbar_button() -> None:
         "DialogsActivity proxy toolbar refresh")
 
 
+def patch_old_style_menu() -> None:
+    """An old-style main menu (the old side drawer's entries) behind an Accessible Settings switch.
+
+    Telegram removed the side drawer from its code; the old class cannot be put back without
+    importing a whole older navigation. What can be given back is the menu itself: with the switch
+    "Old-style main menu button in the chat list toolbar" (A11yConfig.getOldStyleMenu, default OFF)
+    a button "Main menu" appears in the top bar of the chat list, after the proxy button. It opens a
+    list with the drawer's entries -- My Profile, New Group, New Channel, Contacts, Calls, Saved
+    Messages, Settings, Invite Friends, Telegram Features -- each one opening the same screen the drawer opened. The
+    bottom tabs of the current Telegram stay as they are. The switch is read when the chat list
+    refreshes its top bar, so it shows when you come back to the list.
+    """
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    _gate_once(
+        da,
+        "    private ProxyDrawable a11yProxyDrawable;\n",
+        "    private ProxyDrawable a11yProxyDrawable;\n"
+        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
+        "DialogsActivity old-style menu field")
+    _gate_once(
+        da,
+        "            a11yProxyItem.setOnClickListener(v -> presentFragment(new ProxyListActivity()));\n",
+        "            a11yProxyItem.setOnClickListener(v -> presentFragment(new ProxyListActivity()));\n"
+        "            a11yMenuItem = menu.addItem(6, R.drawable.msg_list); // a11y-fork: old-style main menu button\n"
+        "            a11yMenuItem.setContentDescription(getString(R.string.A11yMainMenu));\n"
+        "            a11yMenuItem.setVisibility(org.telegram.messenger.A11yConfig.getOldStyleMenu() ? View.VISIBLE : View.GONE);\n"
+        "            a11yMenuItem.setOnClickListener(v -> a11yShowOldStyleMenu());\n",
+        "DialogsActivity old-style menu button created")
+    _gate_once(
+        da,
+        "        if (a11yProxyItem != null) { // a11y-fork: proxy button in the top bar\n",
+        "        if (a11yMenuItem != null) { // a11y-fork: old-style main menu button\n"
+        "            a11yMenuItem.setVisibility(org.telegram.messenger.A11yConfig.getOldStyleMenu() ? View.VISIBLE : View.GONE);\n"
+        "        }\n"
+        "        if (a11yProxyItem != null) { // a11y-fork: proxy button in the top bar\n",
+        "DialogsActivity old-style menu refresh")
+    _gate_once(
+        da,
+        "    private void showItemOptions() {\n",
+        "    // a11y-fork: the entries of the old side drawer, each opening the screen the drawer opened\n"
+        "    private void a11yShowOldStyleMenu() {\n"
+        "        try {\n"
+        "            ItemOptions io = ItemOptions.makeOptions(this, a11yMenuItem);\n"
+        "            io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));\n"
+        "            io.setDimAlpha(0x08);\n"
+        "            io.add(R.drawable.msg_openprofile, getString(R.string.MyProfile), () -> {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
+        "                presentFragment(new ProfileActivity(args, null));\n"
+        "            });\n"
+        "            io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> presentFragment(new GroupCreateActivity(new Bundle())));\n"
+        "            io.add(R.drawable.msg_channel, getString(R.string.NewChannel), () -> {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putInt(\"step\", 0);\n"
+        "                presentFragment(new ChannelCreateActivity(args));\n"
+        "            });\n"
+        "            io.add(R.drawable.msg_contacts, getString(R.string.Contacts), () -> {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putBoolean(\"needFinishFragment\", false);\n"
+        "                presentFragment(new ContactsActivity(args));\n"
+        "            });\n"
+        "            io.add(R.drawable.msg_calls, getString(R.string.Calls), () -> presentFragment(new CallLogActivity()));\n"
+        "            io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
+        "                presentFragment(new ChatActivity(args));\n"
+        "            });\n"
+        "            io.add(R.drawable.msg_settings_old, getString(R.string.Settings), () -> presentFragment(new SettingsActivity()));\n"
+        "            io.add(R.drawable.msg_invited, getString(R.string.InviteFriends), () -> presentFragment(new InviteContactsActivity()));\n"
+        "            io.add(R.drawable.msg_help, getString(R.string.TelegramFeatures), () -> Browser.openUrl(getParentActivity(), getString(R.string.TelegramFeaturesUrl)));\n"
+        "            io.show();\n"
+        "            io.setTranslationY(-dp(64));\n"
+        "        } catch (Throwable e) {\n"
+        "            FileLog.e(e);\n"
+        "        }\n"
+        "    }\n\n"
+        "    private void showItemOptions() {\n",
+        "DialogsActivity old-style menu list")
+
+
+def patch_old_menu_hides_tabs() -> None:
+    """With the old-style main menu on, the bottom tab bar is hidden; with it off, the bar is there.
+
+    Telegram already hides the bar by itself (while searching, for instance) through
+    MainTabsActivity's tabs-visible animator, driven by DialogsActivity.checkUi_mainTabsVisible ->
+    MainTabsActivityController.setTabsVisible. That one entry is used here: what a screen asks for
+    is remembered, and the bar is shown only if it asks for it AND the old-style menu is off. The
+    state is also applied when the main screen comes back (onResume) and right when the switch
+    in Accessible Settings is flipped (MainTabsActivity.a11yRefreshTabs), so the bar goes or comes
+    without a restart. The tab pages themselves are untouched, and the menu's own entries reach
+    Contacts, Calls and Settings.
+    """
+    mt = JAVA / "org/telegram/ui/MainTabsActivity.java"
+    _gate_once(
+        mt,
+        "    private final BoolAnimator animatorTabsVisible = new BoolAnimator(ANIMATOR_ID_TABS_VISIBLE,\n"
+        "        this, CubicBezierInterpolator.EASE_OUT_QUINT, 380, true);\n",
+        "    private final BoolAnimator animatorTabsVisible = new BoolAnimator(ANIMATOR_ID_TABS_VISIBLE,\n"
+        "        this, CubicBezierInterpolator.EASE_OUT_QUINT, 380, true);\n"
+        "\n"
+        "    // a11y-fork: bottom tabs hidden while the old-style main menu is on\n"
+        "    private boolean a11yTabsWanted = true;\n"
+        "    private static java.lang.ref.WeakReference<MainTabsActivity> a11yInstance;\n"
+        "\n"
+        "    public static void a11yRefreshTabs() {\n"
+        "        final MainTabsActivity a = a11yInstance != null ? a11yInstance.get() : null;\n"
+        "        if (a != null) {\n"
+        "            a.a11yApplyTabs(true);\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    private void a11yApplyTabs(boolean animated) {\n"
+        "        try {\n"
+        "            animatorTabsVisible.setValue(a11yTabsWanted && !org.telegram.messenger.A11yConfig.getOldStyleMenu(), animated);\n"
+        "        } catch (Throwable e) {\n"
+        "            org.telegram.messenger.FileLog.e(e);\n"
+        "        }\n"
+        "    }\n",
+        "MainTabsActivity tabs-hidden state")
+    _gate_once(
+        mt,
+        "        public void setTabsVisible(boolean visible) {\n"
+        "            animatorTabsVisible.setValue(visible, true);\n"
+        "        }\n",
+        "        public void setTabsVisible(boolean visible) {\n"
+        "            a11yTabsWanted = visible; // a11y-fork: remember what the screen asked for\n"
+        "            animatorTabsVisible.setValue(visible && !org.telegram.messenger.A11yConfig.getOldStyleMenu(), true);\n"
+        "        }\n",
+        "MainTabsActivity setTabsVisible")
+    _gate_once(
+        mt,
+        "        checkUnreadCount(true);\n"
+        "\n"
+        "        showAccountChangeHint();\n"
+        "    }\n",
+        "        checkUnreadCount(true);\n"
+        "\n"
+        "        showAccountChangeHint();\n"
+        "        a11yInstance = new java.lang.ref.WeakReference<>(this); // a11y-fork: apply the old-style menu's tabs state\n"
+        "        a11yApplyTabs(false);\n"
+        "    }\n",
+        "MainTabsActivity onResume tabs state")
+
+
 def patch_message_tap_sound() -> None:
     """The same optional system click for a tap on a message (setting "Touch sound", default OFF).
 
@@ -4765,6 +4940,8 @@ def main() -> int:
     patch_chat_open_sound()
     patch_message_tap_sound()
     patch_proxy_toolbar_button()
+    patch_old_style_menu()
+    patch_old_menu_hides_tabs()
     patch_dialog_row_tap_sound()
     patch_voice_share()
     patch_player_seek_buttons()
