@@ -2683,7 +2683,7 @@ def patch_chat_open_sound() -> None:
     new = (old +
            "        if (isOpen && !backward && !a11yChatOpenSoundPlayed && !isInPreviewMode() && !isInsideContainer) { // a11y-fork: chat-open sound\n"
            "            a11yChatOpenSoundPlayed = true;\n"
-           "            org.telegram.messenger.A11yConfig.playChatOpenSound();\n"
+           "            org.telegram.messenger.A11yConfig.playChatOpenSoundUnlessJustTapped();\n"
            "        }\n")
     field_anchor = "    long startMs;\n    @Override\n    public void onTransitionAnimationStart(boolean isOpen, boolean backward) {\n"
     if not ca.exists():
@@ -2732,6 +2732,52 @@ def patch_unlabeled_buttons() -> None:
         "        floatingButton.setContentDescription(getString(R.string.Next));\n",
         "        floatingButton.setContentDescription((isNeverShare || isAlwaysShare || addToGroup) ? getString(R.string.A11yAddMembersConfirm) : getString(R.string.Next)); // a11y-fork: label\n",
         "GroupCreateActivity confirm button label")
+
+
+def patch_audit_unlabeled_buttons() -> None:
+    """Buttons found with no name by reading the Telegram source (not reported by hand).
+
+    A scan of the whole source for (a) round / icon buttons that have a click listener but no content
+    description and (b) icon-only toolbar items without one, then reading each hit, left these:
+
+      * Business links (BusinessLinksActivity): the round link button of a link's row copies the
+        link and was read as "unlabeled" -> "Copy link".
+      * Channel / group colour and wallpaper pages (ChannelColorActivity, ChannelWallpaperActivity):
+        the sun / moon button of the toolbar switches the preview between the day and night theme
+        and had no name. It is named for what a press does, asked each time (the very strings the
+        profile colour page already uses), because the theme can change while the page is open.
+
+    Everything else the scan listed was already named some other way (the name is set in
+    onInitializeAccessibilityNodeInfo, by setSearchFieldHint, further down the file), was a picture
+    inside a row, or sits in commented-out code, so it is left alone.
+    """
+    bl = JAVA / "org/telegram/ui/Business/BusinessLinksActivity.java"
+    _gate_once(
+        bl,
+        "            imageView.setBackground(Theme.createCircleDrawable(dp(36), Theme.getColor(Theme.key_featuredStickers_addButton)));\n"
+        "            imageView.setOnClickListener(view -> {\n"
+        "                if (businessLink != null) {\n",
+        "            imageView.setBackground(Theme.createCircleDrawable(dp(36), Theme.getColor(Theme.key_featuredStickers_addButton)));\n"
+        "            imageView.setContentDescription(LocaleController.getString(R.string.CopyLink)); // a11y-fork: label\n"
+        "            imageView.setOnClickListener(view -> {\n"
+        "                if (businessLink != null) {\n",
+        "BusinessLinksActivity copy link button label")
+    delegate_tpl = (
+        "{indent}dayNightItem.setAccessibilityDelegate(new android.view.View.AccessibilityDelegate() {{ // a11y-fork: label\n"
+        "{indent}    @Override\n"
+        "{indent}    public void onInitializeAccessibilityNodeInfo(android.view.View host, android.view.accessibility.AccessibilityNodeInfo info) {{\n"
+        "{indent}        super.onInitializeAccessibilityNodeInfo(host, info);\n"
+        "{indent}        info.setContentDescription(LocaleController.getString({dark} ? R.string.AccDescrSwitchToDayTheme : R.string.AccDescrSwitchToNightTheme));\n"
+        "{indent}    }}\n"
+        "{indent}}});\n")
+    cc = JAVA / "org/telegram/ui/ChannelColorActivity.java"
+    a = "        dayNightItem = actionBar.createMenu().addItem(1, sunDrawable);\n"
+    _gate_once(cc, a, a + delegate_tpl.format(indent="        ", dark="isDark"),
+               "ChannelColorActivity day/night button label")
+    cw = JAVA / "org/telegram/ui/ChannelWallpaperActivity.java"
+    b = "            dayNightItem = actionBar.createMenu().addItem(1, sunDrawable);\n"
+    _gate_once(cw, b, b + delegate_tpl.format(indent="            ", dark="isDark()"),
+               "ChannelWallpaperActivity day/night button label")
 
 
 def patch_contacts_list_accessibility() -> None:
@@ -3127,6 +3173,35 @@ def patch_a11y_settings_dialog_stays_open() -> None:
             if (am != null) {
                 am.playSoundEffect(android.media.AudioManager.FX_KEY_CLICK);
             }
+        } catch (Throwable ignore) {
+        }
+    }
+
+    private static long lastRowTapSoundMs = -100000;
+
+    /** The click for a tap on a chat row of a list: played at the tap itself, before the chat starts to open. */
+    public static void playRowTapSound() {
+        try {
+            if (!getChatOpenSound()) {
+                return;
+            }
+            lastRowTapSoundMs = android.os.SystemClock.elapsedRealtime();
+            playChatOpenSound();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /**
+     * The click for a chat that has just opened. A chat opened by a tap on its row has already
+     * clicked at the tap (playRowTapSound), so it stays quiet; a chat opened any other way
+     * (a notification, a link, a shortcut) still clicks, as it opens.
+     */
+    public static void playChatOpenSoundUnlessJustTapped() {
+        try {
+            if (android.os.SystemClock.elapsedRealtime() - lastRowTapSoundMs < 3000) {
+                return;
+            }
+            playChatOpenSound();
         } catch (Throwable ignore) {
         }
     }
@@ -4007,6 +4082,37 @@ def patch_exact_progress_steps() -> None:
     cfg.write_text(t2, encoding="utf-8")
     print("Progress steps 1/5/10/20 OK")
 
+def patch_dialog_row_tap_sound() -> None:
+    """The click of a tap on a chat of the chat list comes at the tap, not when the chat opens.
+
+    It used to come from the chat fragment starting to open, which is a moment after the tap.
+    A TalkBack double tap on a chat row reaches DialogCell as ACTION_CLICK and is passed on to the
+    list (RecyclerListView.clickItem); the click is played right there, before that, the same way as
+    for a message (same switch, same A11yConfig). The chat that then opens stays quiet once
+    (A11yConfig.playChatOpenSoundUnlessJustTapped); chats opened any other way still click as
+    they open. That list hand-over exists only with the fork's patch; without it nothing is
+    changed here and the click stays on the opening of the chat.
+    """
+    dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
+    anchor = ("                if (action == AccessibilityNodeInfo.ACTION_CLICK) {\n"
+              "                    list.clickItem(this, position, getMeasuredWidth() / 2f, getMeasuredHeight() / 2f);\n")
+    if not dc.exists():
+        print("WARN: DialogCell.java missing (row tap sound)")
+        return
+    t = dc.read_text(encoding="utf-8")
+    if "playRowTapSound" in t:
+        print("DialogCell row tap sound already patched")
+        return
+    if t.count(anchor) != 1:
+        print("DialogCell row tap sound: list hand-over not present (%d), left as is" % t.count(anchor))
+        return
+    new = ("                if (action == AccessibilityNodeInfo.ACTION_CLICK) {\n"
+           "                    org.telegram.messenger.A11yConfig.playRowTapSound(); // a11y-fork: click at the tap on a chat row\n"
+           "                    list.clickItem(this, position, getMeasuredWidth() / 2f, getMeasuredHeight() / 2f);\n")
+    dc.write_text(t.replace(anchor, new, 1), encoding="utf-8")
+    print("DialogCell row tap sound OK")
+
+
 def patch_message_tap_sound() -> None:
     """The same optional system click for a tap on a message (setting "Touch sound", default OFF).
 
@@ -4579,12 +4685,14 @@ def main() -> int:
     patch_share_send_button_label()
     patch_chat_open_sound()
     patch_message_tap_sound()
+    patch_dialog_row_tap_sound()
     patch_voice_share()
     patch_player_seek_buttons()
     patch_sender_options_menu()
     patch_selection_announce()
     patch_dialogs_select_all()
     patch_unlabeled_buttons()
+    patch_audit_unlabeled_buttons()
     patch_contacts_list_accessibility()
     patch_topics_hide_chat_list_from_screen_reader()
     patch_more_unlabeled_buttons()
