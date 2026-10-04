@@ -210,6 +210,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yUserStatusLabel": "User status announcements (typing, recording, online): %s",
         "A11yChatOpenSoundLabel": "Sound when a chat opens: %s",
         "A11ySenderOptionsLabel": "Sender options in message menu: %s",
+        "A11yVoiceShareSaveLabel": "Share and save to music for voice messages: %s",
+        "A11yPlayerSeekLabel": "Rewind and forward in audio player: %s",
+        "A11yPlayerRewind": "Rewind 10 seconds",
+        "A11yPlayerForward": "Forward 10 seconds",
         "A11yUnselected": "Unselected",
         "A11ySelectAllDone": "%1$d chats selected",
         "A11yMutualContact": "Mutual contact",
@@ -269,6 +273,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yUserStatusLabel": "اعلام وضعیت کاربر (در حال تایپ، ضبط ویس، آنلاین): %s",
         "A11yChatOpenSoundLabel": "صدا هنگام باز شدن چت: %s",
         "A11ySenderOptionsLabel": "گزینه‌های فرستنده در منوی پیام: %s",
+        "A11yVoiceShareSaveLabel": "اشتراک‌گذاری و ذخیره در موسیقی برای پیام‌های صوتی: %s",
+        "A11yPlayerSeekLabel": "عقب و جلو در پخش‌کننده‌ی صدا: %s",
+        "A11yPlayerRewind": "۱۰ ثانیه عقب",
+        "A11yPlayerForward": "۱۰ ثانیه جلو",
         "A11yUnselected": "از انتخاب خارج شد",
         "A11ySelectAllDone": "%1$d گفتگو انتخاب شد",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -3141,6 +3149,41 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    public static final String PREF_VOICE_SHARE_SAVE = "a11y_voice_share_save";
+    public static final String PREF_PLAYER_SEEK = "a11y_player_seek_buttons";
+
+    /** Share + Save to music in the menu of a downloaded voice message. Default OFF. */
+    public static boolean getVoiceShareSave() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_VOICE_SHARE_SAVE, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setVoiceShareSave(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_VOICE_SHARE_SAVE, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /** Rewind / Forward 10 s beside Close in the audio player bar. Default OFF. */
+    public static boolean getPlayerSeekButtons() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_PLAYER_SEEK, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setPlayerSeekButtons(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_PLAYER_SEEK, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static java.util.ArrayList<String> buildSettingsItems() {
         final java.util.ArrayList<String> items = new java.util.ArrayList<>();
         items.add(LocaleController.formatString(R.string.A11yProgressAnnounceLabel, progressStepLabel()));
@@ -3159,6 +3202,8 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yUserStatusLabel, onOff(getUserStatusAnnounce())));
         items.add(LocaleController.formatString(R.string.A11yChatOpenSoundLabel, onOff(getChatOpenSound())));
         items.add(LocaleController.formatString(R.string.A11ySenderOptionsLabel, onOff(getSenderOptionsInMenu())));
+        items.add(LocaleController.formatString(R.string.A11yVoiceShareSaveLabel, onOff(getVoiceShareSave())));
+        items.add(LocaleController.formatString(R.string.A11yPlayerSeekLabel, onOff(getPlayerSeekButtons())));
         return items;
     }
 
@@ -3251,6 +3296,14 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                 case 15:
                     setSenderOptionsInMenu(!getSenderOptionsInMenu());
                     message = LocaleController.formatString(R.string.A11ySenderOptionsLabel, onOff(getSenderOptionsInMenu()));
+                    break;
+                case 16:
+                    setVoiceShareSave(!getVoiceShareSave());
+                    message = LocaleController.formatString(R.string.A11yVoiceShareSaveLabel, onOff(getVoiceShareSave()));
+                    break;
+                case 17:
+                    setPlayerSeekButtons(!getPlayerSeekButtons());
+                    message = LocaleController.formatString(R.string.A11yPlayerSeekLabel, onOff(getPlayerSeekButtons()));
                     break;
                 default:
                     return;
@@ -3969,8 +4022,11 @@ def patch_voice_share() -> None:
         ca,
         "                if (type == 2) {\n"
         "                    if (chatMode != MODE_SCHEDULED) {\n",
-        "                // a11y-fork: Share for a downloaded voice message (same place as the other media)\n"
-        "                if (type == 2 && selectedObject.isVoice() && !noforwardsOrPaidMedia && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce() && selectedObject.getDocument() != null && a11yMessageFileExists(selectedObject)) {\n"
+        "                // a11y-fork: Save to music + Share for a downloaded voice message (setting, default OFF)\n"
+        "                if (type == 2 && org.telegram.messenger.A11yConfig.getVoiceShareSave() && selectedObject.isVoice() && !noforwardsOrPaidMedia && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce() && selectedObject.getDocument() != null && a11yMessageFileExists(selectedObject)) {\n"
+        "                    items.add(LocaleController.getString(R.string.SaveToMusic));\n"
+        "                    options.add(212);\n"
+        "                    icons.add(R.drawable.msg_download);\n"
         "                    items.add(LocaleController.getString(R.string.ShareFile));\n"
         "                    options.add(OPTION_SHARE);\n"
         "                    icons.add(R.drawable.msg_shareout);\n"
@@ -3995,6 +4051,137 @@ def patch_voice_share() -> None:
         "    }\n\n"
         "    private boolean showWelcomeMessageRevertOption(MessageObject messageObject) {\n",
         "ChatActivity voice file-exists helper")
+
+    _gate_once(
+        ca,
+        "            case OPTION_LEAVE_COMMENT: { // a11y-fork: leave comment handler\n",
+        "            case 212: { // a11y-fork: save a voice message to the phone's music\n"
+        "                try {\n"
+        "                    if (Build.VERSION.SDK_INT >= 23 && (Build.VERSION.SDK_INT <= 28 || BuildVars.NO_SCOPED_STORAGE) && getParentActivity().checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {\n"
+        "                        getParentActivity().requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 4);\n"
+        "                        selectedObject = null;\n"
+        "                        selectedObjectGroup = null;\n"
+        "                        selectedObjectToEditCaption = null;\n"
+        "                        return;\n"
+        "                    }\n"
+        "                    final MessageObject a11yVoice = selectedObject;\n"
+        "                    String a11yPath = a11yVoice.messageOwner != null ? a11yVoice.messageOwner.attachPath : null;\n"
+        "                    if (TextUtils.isEmpty(a11yPath) || !new File(a11yPath).exists()) {\n"
+        "                        a11yPath = FileLoader.getInstance(currentAccount).getPathToMessage(a11yVoice.messageOwner).toString();\n"
+        "                    }\n"
+        "                    if (!TextUtils.isEmpty(a11yPath) && new File(a11yPath).exists()) {\n"
+        "                        MediaController.saveFile(a11yPath, getParentActivity(), 3, null, a11yVoice.getDocument() != null ? a11yVoice.getDocument().mime_type : \"audio/ogg\", uri -> AndroidUtilities.runOnUIThread(() -> {\n"
+        "                            if (uri != null && getParentActivity() != null && fragmentView != null) {\n"
+        "                                BulletinFactory.of(ChatActivity.this).createDownloadBulletin(BulletinFactory.FileType.AUDIOS, 1, themeDelegate).show();\n"
+        "                            }\n"
+        "                        }));\n"
+        "                    }\n"
+        "                } catch (Throwable e) {\n"
+        "                    FileLog.e(e);\n"
+        "                }\n"
+        "                selectedObject = null;\n"
+        "                selectedObjectToEditCaption = null;\n"
+        "                selectedObjectGroup = null;\n"
+        "                break;\n"
+        "            }\n"
+        "            case OPTION_LEAVE_COMMENT: { // a11y-fork: leave comment handler\n",
+        "ChatActivity voice save-to-music handler")
+
+
+def patch_player_seek_buttons() -> None:
+    """Rewind / Forward 10 seconds in the audio player bar (music and voice), beside Close.
+
+    The bar on top of the chat list and of a chat (FragmentContextView, style audio player) gets
+    two small buttons to the left of the speed button, only when the Accessible Settings switch
+    "Rewind and forward in the audio player" (A11yConfig.getPlayerSeekButtons) is on; default OFF.
+    Each press moves the playing file 10 seconds, clamped to the file. The buttons are created with
+    the bar, shown when the bar shows an audio player, and the title leaves room for them.
+    """
+    fcv = JAVA / "org/telegram/ui/Components/FragmentContextView.java"
+    _gate_once(
+        fcv,
+        "    private ImageView closeButton;\n",
+        "    private ImageView closeButton;\n"
+        "    private TextView a11yRewindButton, a11yForwardButton; // a11y-fork: rewind / forward 10 s (setting, default OFF)\n",
+        "FragmentContextView seek button fields")
+    _gate_once(
+        fcv,
+        "        addView(closeButton, LayoutHelper.createFrame(36, 36, Gravity.RIGHT | Gravity.TOP, 0, 0, 4, 0));\n",
+        "        addView(closeButton, LayoutHelper.createFrame(36, 36, Gravity.RIGHT | Gravity.TOP, 0, 0, 4, 0));\n"
+        "        // a11y-fork: optional Rewind / Forward 10 s beside Close (left of the speed button)\n"
+        "        a11yRewindButton = a11yCreateSeekButton(context, \"\\u2039 10\", R.string.A11yPlayerRewind, -10000);\n"
+        "        a11yForwardButton = a11yCreateSeekButton(context, \"10 \\u203a\", R.string.A11yPlayerForward, 10000);\n"
+        "        addView(a11yForwardButton, LayoutHelper.createFrame(44, 36, Gravity.RIGHT | Gravity.TOP, 0, 0, 72, 0));\n"
+        "        addView(a11yRewindButton, LayoutHelper.createFrame(44, 36, Gravity.RIGHT | Gravity.TOP, 0, 0, 116, 0));\n",
+        "FragmentContextView seek buttons created")
+    _gate_once(
+        fcv,
+        "        currentStyle = style;\n"
+        "        frameLayout.setWillNotDraw(currentStyle != STYLE_INACTIVE_GROUP_CALL);\n",
+        "        currentStyle = style;\n"
+        "        a11yUpdateSeekButtons(style == STYLE_AUDIO_PLAYER); // a11y-fork: rewind / forward visibility\n"
+        "        frameLayout.setWillNotDraw(currentStyle != STYLE_INACTIVE_GROUP_CALL);\n",
+        "FragmentContextView seek buttons visibility")
+    _gate_once(
+        fcv,
+        "                titleTextView.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36, Gravity.LEFT | Gravity.TOP, 37, 0, (isSideMenued ? 64 : 0) + 36, 0));\n",
+        "                titleTextView.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36, Gravity.LEFT | Gravity.TOP, 37, 0, (isSideMenued ? 64 : 0) + 36 + a11yPlayerSeekExtra(), 0)); // a11y-fork: room for rewind / forward\n",
+        "FragmentContextView title room for seek buttons")
+    _gate_once(
+        fcv,
+        "    private void updateStyle(@Style int style) {\n"
+        "        updateStyle(style, false);\n"
+        "    }\n",
+        "    private void updateStyle(@Style int style) {\n"
+        "        updateStyle(style, false);\n"
+        "    }\n\n"
+        "    // a11y-fork: Rewind / Forward 10 s buttons of the audio player bar\n"
+        "    private TextView a11yCreateSeekButton(Context context, String label, int descRes, final int deltaMs) {\n"
+        "        TextView b = new TextView(context);\n"
+        "        b.setText(label);\n"
+        "        b.setGravity(Gravity.CENTER);\n"
+        "        b.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);\n"
+        "        b.setTypeface(AndroidUtilities.bold());\n"
+        "        b.setTextColor(getThemedColor(Theme.key_inappPlayerClose));\n"
+        "        b.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_inappPlayerClose) & 0x19ffffff, 1, dp(14)));\n"
+        "        b.setContentDescription(getString(descRes));\n"
+        "        b.setVisibility(GONE);\n"
+        "        b.setOnClickListener(v -> a11ySeekBy(deltaMs));\n"
+        "        return b;\n"
+        "    }\n\n"
+        "    private int a11yPlayerSeekExtra() {\n"
+        "        return org.telegram.messenger.A11yConfig.getPlayerSeekButtons() ? 124 : 0;\n"
+        "    }\n\n"
+        "    private void a11yUpdateSeekButtons(boolean audioStyle) {\n"
+        "        final int vis = audioStyle && org.telegram.messenger.A11yConfig.getPlayerSeekButtons() ? VISIBLE : GONE;\n"
+        "        if (a11yRewindButton != null) {\n"
+        "            a11yRewindButton.setVisibility(vis);\n"
+        "        }\n"
+        "        if (a11yForwardButton != null) {\n"
+        "            a11yForwardButton.setVisibility(vis);\n"
+        "        }\n"
+        "    }\n\n"
+        "    private void a11ySeekBy(int deltaMs) {\n"
+        "        try {\n"
+        "            final MessageObject m = MediaController.getInstance().getPlayingMessageObject();\n"
+        "            if (m == null) {\n"
+        "                return;\n"
+        "            }\n"
+        "            final long cur = MediaController.getInstance().getProgressMs(m);\n"
+        "            if (cur < 0) {\n"
+        "                return;\n"
+        "            }\n"
+        "            long target = Math.max(0, cur + deltaMs);\n"
+        "            final long dur = MediaController.getInstance().getDuration();\n"
+        "            if (dur > 0) {\n"
+        "                target = Math.min(target, Math.max(0, dur - 300));\n"
+        "            }\n"
+        "            MediaController.getInstance().seekToProgressMs(m, target);\n"
+        "        } catch (Throwable e) {\n"
+        "            org.telegram.messenger.FileLog.e(e);\n"
+        "        }\n"
+        "    }\n",
+        "FragmentContextView seek helpers")
 
 
 def patch_sender_options_menu() -> None:
@@ -4362,6 +4549,7 @@ def main() -> int:
     patch_share_send_button_label()
     patch_chat_open_sound()
     patch_voice_share()
+    patch_player_seek_buttons()
     patch_sender_options_menu()
     patch_selection_announce()
     patch_dialogs_select_all()
