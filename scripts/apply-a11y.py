@@ -4271,7 +4271,7 @@ def patch_old_style_menu() -> None:
     importing a whole older navigation. What can be given back is the menu itself: with the switch
     "Old-style main menu button in the chat list toolbar" (A11yConfig.getOldStyleMenu, default OFF)
     a button "Main menu" appears in the top bar of the chat list, before the proxy button. It opens a
-    list with the drawer's entries -- My Profile, New Group, New Channel, Contacts, Calls, Saved
+    list with the drawer's entries -- the day / night switch first, My Profile, the side-menu bots, New Group, Contacts, Calls, Saved
     Messages, Settings, Invite Friends, Telegram Features -- each one opening the same screen the drawer opened. The
     bottom tabs of the current Telegram stay as they are. The switch is read when the chat list
     refreshes its top bar, so it shows when you come back to the list.
@@ -4316,11 +4316,6 @@ def patch_old_style_menu() -> None:
         "                presentFragment(new ProfileActivity(args, null));\n"
         "            });\n"
         "            io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> presentFragment(new GroupCreateActivity(new Bundle())));\n"
-        "            io.add(R.drawable.msg_channel, getString(R.string.NewChannel), () -> {\n"
-        "                Bundle args = new Bundle();\n"
-        "                args.putInt(\"step\", 0);\n"
-        "                presentFragment(new ChannelCreateActivity(args));\n"
-        "            });\n"
         "            io.add(R.drawable.msg_contacts, getString(R.string.Contacts), () -> {\n"
         "                Bundle args = new Bundle();\n"
         "                args.putBoolean(\"needFinishFragment\", false);\n"
@@ -4612,9 +4607,10 @@ def patch_old_menu_hides_options() -> None:
 def patch_old_menu_extras() -> None:
     """Theme switch and the bots of the side menu in the old-style main menu (the proxy is not here: it has its own top bar button).
 
-    With the old-style menu on, the new "More options" button is hidden, and these three lived only in
-    its popup. They are added to the end of the old-style menu, copied from that popup's own code as the
-    generated file has it (so they act exactly as there, even if the popup changes). The proxy entry is
+    With the old-style menu on, the new "More options" button is hidden, and these two lived only in
+    its popup. They are copied from that popup's own code as the generated file has it (so they act
+    exactly as there, even if the popup changes) and put where the 11.4.2 drawer had them: the day / night
+    switch first (it was the button of the drawer's header), the bots right after My Profile. The proxy entry is
     left out on purpose: it is the proxy button of the top bar (its own Accessible Settings switch), which
     comes right after the Main menu button.
     """
@@ -4640,10 +4636,20 @@ def patch_old_menu_extras() -> None:
     launch_decl = (
         "        final Activity a11yAct = getParentActivity();\n"
         "        final LaunchActivity launchActivity = a11yAct instanceof LaunchActivity ? (LaunchActivity) a11yAct : null;\n")
-    anchor = "            io.add(R.drawable.msg_help, getString(R.string.TelegramFeatures), () -> Browser.openUrl(getParentActivity(), getString(R.string.TelegramFeaturesUrl)));\n"
-    insert = ("        // a11y-fork: the theme switch and the side-menu bots of the More options popup\n"
-              + theme_block + launch_decl + bots_block)
-    _gate_once(da, anchor, anchor + insert, "DialogsActivity old-style menu extras")
+    a_anchor = ("            io.setDimAlpha(0x08);\n"
+                "            io.add(R.drawable.msg_openprofile, getString(R.string.MyProfile), () -> {\n")
+    b_anchor = ("                presentFragment(new ProfileActivity(args, null));\n"
+                "            });\n")
+    # first: the day / night switch (in the old drawer it was the button of the header, the first thing)
+    _gate_once(da, a_anchor,
+               "            // a11y-fork: the day / night switch comes first, as the old drawer's header button did\n"
+               + theme_block + a_anchor,
+               "DialogsActivity old-style menu theme switch first")
+    # then, after My Profile: the bots of the side menu (the old drawer listed them right there)
+    _gate_once(da, b_anchor,
+               b_anchor + "            // a11y-fork: the side-menu bots, right after My Profile as in the old drawer\n"
+               + launch_decl + bots_block,
+               "DialogsActivity old-style menu bots after My Profile")
 
 
 def patch_message_tap_sound() -> None:
