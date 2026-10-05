@@ -217,6 +217,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yProxyButtonLabel": "Proxy button in the chat list toolbar: %s",
         "A11yOldMenuLabel": "Old-style main menu instead of the bottom tabs: %s",
         "A11yMainMenu": "Main menu",
+        "A11yCategoryLabel": "Chat category filter in the chat list: %s",
+        "A11yCategoryButton": "Category: %s",
+        "A11yCategoryPrivate": "Private chats",
+        "A11yCategoryShowing": "Showing: %s",
         "A11yUnselected": "Unselected",
         "A11ySelectAllDone": "%1$d chats selected",
         "A11yMutualContact": "Mutual contact",
@@ -283,6 +287,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yProxyButtonLabel": "دکمه‌ی پروکسی در نوار بالای لیست چت: %s",
         "A11yOldMenuLabel": "منوی قدیمی تلگرام به‌جای نوار پایین: %s",
         "A11yMainMenu": "منوی اصلی",
+        "A11yCategoryLabel": "فیلتر دسته‌بندی چت‌ها در لیست چت: %s",
+        "A11yCategoryButton": "دسته‌بندی: %s",
+        "A11yCategoryPrivate": "گفتگوهای خصوصی",
+        "A11yCategoryShowing": "نمایش: %s",
         "A11yUnselected": "از انتخاب خارج شد",
         "A11ySelectAllDone": "%1$d گفتگو انتخاب شد",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -3301,6 +3309,26 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    public static final String PREF_CATEGORY_FILTER = "a11y_category_filter";
+    /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots. Not saved. */
+    public static int categoryFilterValue = 0;
+
+    /** Category filter (All / Private chats / Groups / Channels / Bots) for the chat list. Default OFF. */
+    public static boolean getCategoryFilter() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_CATEGORY_FILTER, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setCategoryFilter(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_CATEGORY_FILTER, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static java.util.ArrayList<String> buildSettingsItems() {
         final java.util.ArrayList<String> items = new java.util.ArrayList<>();
         items.add(LocaleController.formatString(R.string.A11yProgressAnnounceLabel, progressStepLabel()));
@@ -3323,6 +3351,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yPlayerSeekLabel, onOff(getPlayerSeekButtons())));
         items.add(LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar())));
         items.add(LocaleController.formatString(R.string.A11yOldMenuLabel, onOff(getOldStyleMenu())));
+        items.add(LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter())));
         return items;
     }
 
@@ -3432,9 +3461,21 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                     setOldStyleMenu(!getOldStyleMenu());
                     try {
                         org.telegram.ui.MainTabsActivity.a11yRefreshTabs();
+                        org.telegram.ui.DialogsActivity.a11yRefreshCategory();
                     } catch (Throwable ignore) {
                     }
                     message = LocaleController.formatString(R.string.A11yOldMenuLabel, onOff(getOldStyleMenu()));
+                    break;
+                case 20:
+                    setCategoryFilter(!getCategoryFilter());
+                    if (!getCategoryFilter()) {
+                        categoryFilterValue = 0;
+                    }
+                    try {
+                        org.telegram.ui.DialogsActivity.a11yRefreshCategory();
+                    } catch (Throwable ignore) {
+                    }
+                    message = LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter()));
                     break;
                 default:
                     return;
@@ -4229,7 +4270,7 @@ def patch_old_style_menu() -> None:
     Telegram removed the side drawer from its code; the old class cannot be put back without
     importing a whole older navigation. What can be given back is the menu itself: with the switch
     "Old-style main menu button in the chat list toolbar" (A11yConfig.getOldStyleMenu, default OFF)
-    a button "Main menu" appears in the top bar of the chat list, after the proxy button. It opens a
+    a button "Main menu" appears in the top bar of the chat list, before the proxy button. It opens a
     list with the drawer's entries -- My Profile, New Group, New Channel, Contacts, Calls, Saved
     Messages, Settings, Invite Friends, Telegram Features -- each one opening the same screen the drawer opened. The
     bottom tabs of the current Telegram stay as they are. The switch is read when the chat list
@@ -4244,12 +4285,13 @@ def patch_old_style_menu() -> None:
         "DialogsActivity old-style menu field")
     _gate_once(
         da,
-        "            a11yProxyItem.setOnClickListener(v -> presentFragment(new ProxyListActivity()));\n",
-        "            a11yProxyItem.setOnClickListener(v -> presentFragment(new ProxyListActivity()));\n"
-        "            a11yMenuItem = menu.addItem(6, R.drawable.msg_list); // a11y-fork: old-style main menu button\n"
+        "            // a11y-fork: proxy button in the top bar, as older versions had it\n",
+        "            a11yMenuItem = menu.addItem(6, R.drawable.msg_list); // a11y-fork: old-style main menu button, before the proxy button\n"
         "            a11yMenuItem.setContentDescription(getString(R.string.A11yMainMenu));\n"
         "            a11yMenuItem.setVisibility(org.telegram.messenger.A11yConfig.getOldStyleMenu() ? View.VISIBLE : View.GONE);\n"
-        "            a11yMenuItem.setOnClickListener(v -> a11yShowOldStyleMenu());\n",
+        "            a11yMenuItem.setOnClickListener(v -> a11yShowOldStyleMenu());\n"
+        "\n"
+        "            // a11y-fork: proxy button in the top bar, as older versions had it\n",
         "DialogsActivity old-style menu button created")
     _gate_once(
         da,
@@ -4365,6 +4407,243 @@ def patch_old_menu_hides_tabs() -> None:
         "        a11yApplyTabs(false);\n"
         "    }\n",
         "MainTabsActivity onResume tabs state")
+
+
+def patch_category_filter() -> None:
+    """A category filter for the main chat list: All / Private chats / Groups / Channels / Bots.
+
+    Accessible Settings switch "Chat category filter in the chat list" (A11yConfig.getCategoryFilter,
+    default OFF). With it on, a button "Category: ..." sits in the top bar of the chat list; it opens
+    a list of checkable items (All, Private chats, Groups, Channels, Bots). The choice (kept while
+    the app runs, back to All when the switch is turned off) filters the main list and each of its
+    folder tabs. The filter is applied in one place, DialogsActivity.getDialogsArray (the method every
+    part of the list asks for its chats), so the adapter, the positions and the clicks all agree. Pickers
+    (forward, share...), the archive and communities are never filtered. A secret chat counts as a private
+    chat; a user whose account is a bot counts as a bot; a megagroup / forum counts as a group.
+    """
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    _gate_once(
+        da,
+        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
+        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n"
+        "    private ActionBarMenuItem a11yCategoryItem; // a11y-fork: category filter button (setting, default OFF)\n"
+        "    private static java.lang.ref.WeakReference<DialogsActivity> a11yCategoryInstance;\n",
+        "DialogsActivity category filter fields")
+    _gate_once(
+        da,
+        "            a11yProxyItem.setOnClickListener(v -> presentFragment(new ProxyListActivity()));\n",
+        "            a11yProxyItem.setOnClickListener(v -> presentFragment(new ProxyListActivity()));\n"
+        "            a11yCategoryItem = menu.addItem(7, R.drawable.msg_folders); // a11y-fork: category filter button\n"
+        "            a11yCategoryItem.setOnClickListener(v -> a11yShowCategoryMenu());\n"
+        "            a11yCategoryInstance = new java.lang.ref.WeakReference<>(this);\n"
+        "            a11yUpdateCategoryButton();\n",
+        "DialogsActivity category filter button created")
+    _gate_once(
+        da,
+        "        if (a11yMenuItem != null) { // a11y-fork: old-style main menu button\n",
+        "        a11yUpdateCategoryButton(); // a11y-fork: category filter button\n"
+        "        if (a11yMenuItem != null) { // a11y-fork: old-style main menu button\n",
+        "DialogsActivity category filter refresh")
+    _gate_once(
+        da,
+        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
+        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n"
+        "        final ArrayList<TLRPC.Dialog> a11yBase = a11yGetDialogsArrayBase(currentAccount, dialogsType, folderId, frozen);\n"
+        "        // a11y-fork: category filter of the main chat list (setting, default OFF)\n"
+        "        if (a11yBase == null || !org.telegram.messenger.A11yConfig.getCategoryFilter() || org.telegram.messenger.A11yConfig.categoryFilterValue == 0\n"
+        "                || initialDialogsType != DIALOGS_TYPE_DEFAULT || onlySelect || folderId != 0 || communityId != 0\n"
+        "                || !(dialogsType == DIALOGS_TYPE_DEFAULT || dialogsType == 7 || dialogsType == 8)\n"
+        "                || (frozen && frozenDialogsList != null)) {\n"
+        "            return a11yBase;\n"
+        "        }\n"
+        "        return a11yFilterByCategory(a11yBase, currentAccount);\n"
+        "    }\n"
+        "\n"
+        "    private ArrayList<TLRPC.Dialog> a11yGetDialogsArrayBase(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
+        "DialogsActivity category filter in getDialogsArray")
+    funcs = (
+        "    // a11y-fork: category filter -- 0 all, 1 private chats, 2 groups, 3 channels, 4 bots\n"
+        "    private ArrayList<TLRPC.Dialog> a11yFilterByCategory(ArrayList<TLRPC.Dialog> base, int account) {\n"
+        "        final int cat = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
+        "        final ArrayList<TLRPC.Dialog> out = new ArrayList<>();\n"
+        "        final MessagesController mc = MessagesController.getInstance(account);\n"
+        "        for (int i = 0; i < base.size(); i++) {\n"
+        "            final TLRPC.Dialog d = base.get(i);\n"
+        "            if (d == null || d instanceof TLRPC.TL_dialogFolder) {\n"
+        "                continue;\n"
+        "            }\n"
+        "            boolean match;\n"
+        "            if (DialogObject.isEncryptedDialog(d.id)) {\n"
+        "                match = cat == 1;\n"
+        "            } else if (DialogObject.isUserDialog(d.id)) {\n"
+        "                final TLRPC.User u = mc.getUser(d.id);\n"
+        "                match = cat == (u != null && u.bot ? 4 : 1);\n"
+        "            } else {\n"
+        "                final TLRPC.Chat c = mc.getChat(-d.id);\n"
+        "                if (c == null) {\n"
+        "                    match = false;\n"
+        "                } else if (ChatObject.isChannelAndNotMegaGroup(c)) {\n"
+        "                    match = cat == 3;\n"
+        "                } else {\n"
+        "                    match = cat == 2;\n"
+        "                }\n"
+        "            }\n"
+        "            if (match) {\n"
+        "                out.add(d);\n"
+        "            }\n"
+        "        }\n"
+        "        return out;\n"
+        "    }\n"
+        "\n"
+        "    private String a11yCategoryName(int v) {\n"
+        "        switch (v) {\n"
+        "            case 1:\n"
+        "                return getString(R.string.A11yCategoryPrivate);\n"
+        "            case 2:\n"
+        "                return getString(R.string.FilterGroups);\n"
+        "            case 3:\n"
+        "                return getString(R.string.FilterChannels);\n"
+        "            case 4:\n"
+        "                return getString(R.string.FilterBots);\n"
+        "            default:\n"
+        "                return getString(R.string.FilterAllChats);\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    private void a11yUpdateCategoryButton() {\n"
+        "        if (a11yCategoryItem == null) {\n"
+        "            return;\n"
+        "        }\n"
+        "        a11yCategoryItem.setVisibility(org.telegram.messenger.A11yConfig.getCategoryFilter() ? View.VISIBLE : View.GONE);\n"
+        "        a11yCategoryItem.setContentDescription(LocaleController.formatString(R.string.A11yCategoryButton, a11yCategoryName(org.telegram.messenger.A11yConfig.categoryFilterValue)));\n"
+        "    }\n"
+        "\n"
+        "    private void a11yApplyCategory() {\n"
+        "        try {\n"
+        "            if (!org.telegram.messenger.A11yConfig.getCategoryFilter()) {\n"
+        "                org.telegram.messenger.A11yConfig.categoryFilterValue = 0;\n"
+        "            }\n"
+        "            frozenDialogsList = null;\n"
+        "            dialogsListFrozen = false;\n"
+        "            if (viewPages != null) {\n"
+        "                for (int i = 0; i < viewPages.length; i++) {\n"
+        "                    if (viewPages[i] != null && viewPages[i].dialogsAdapter != null) {\n"
+        "                        viewPages[i].dialogsAdapter.notifyDataSetChanged();\n"
+        "                    }\n"
+        "                }\n"
+        "            }\n"
+        "            a11yUpdateCategoryButton();\n"
+        "        } catch (Throwable e) {\n"
+        "            FileLog.e(e);\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    public static void a11yRefreshCategory() {\n"
+        "        final DialogsActivity a = a11yCategoryInstance != null ? a11yCategoryInstance.get() : null;\n"
+        "        if (a != null) {\n"
+        "            a.a11yApplyCategory();\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    private void a11ySetCategory(int v) {\n"
+        "        org.telegram.messenger.A11yConfig.categoryFilterValue = v;\n"
+        "        a11yApplyCategory();\n"
+        "        if (fragmentView != null) {\n"
+        "            fragmentView.announceForAccessibility(LocaleController.formatString(R.string.A11yCategoryShowing, a11yCategoryName(v)));\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    private void a11yShowCategoryMenu() {\n"
+        "        try {\n"
+        "            ItemOptions io = ItemOptions.makeOptions(this, a11yCategoryItem);\n"
+        "            io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));\n"
+        "            io.setDimAlpha(0x08);\n"
+        "            final int cur = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
+        "            for (int v = 0; v <= 4; v++) {\n"
+        "                final int value = v;\n"
+        "                io.addChecked(cur == value, a11yCategoryName(value), () -> a11ySetCategory(value));\n"
+        "            }\n"
+        "            io.show();\n"
+        "            io.setTranslationY(-dp(64));\n"
+        "        } catch (Throwable e) {\n"
+        "            FileLog.e(e);\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    private void showItemOptions() {\n")
+    _gate_once(da, "    private void showItemOptions() {\n", funcs, "DialogsActivity category filter functions")
+
+
+def patch_old_menu_hides_options() -> None:
+    """With the old-style main menu on, the top-right "More options" button of the new menu is gone.
+
+    The button's visibility is one function, DialogsActivity.checkUi_itemOptionsVisibility (an
+    animated factor; searching, sliding and the done button already hide it through it). The old-style
+    menu being on is one more reason for a factor of 0 there. The function is also run whenever the
+    chat list refreshes its top bar and right when the switch is flipped, so the button goes or comes
+    at once. Things that live only in that popup (switching the theme, the bots of the side menu, the
+    proxy entry) are not in the old-style menu; the proxy has its own switch for a button of the top bar.
+    """
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    _gate_once(
+        da,
+        "        final float factor = factor1 * factor2 * factor3;\n"
+        "        FragmentFloatingButton.setAnimatedVisibility(optionsItem, factor);\n",
+        "        final float factor = org.telegram.messenger.A11yConfig.getOldStyleMenu() ? 0f : factor1 * factor2 * factor3; // a11y-fork: hidden while the old-style menu is on\n"
+        "        FragmentFloatingButton.setAnimatedVisibility(optionsItem, factor);\n",
+        "DialogsActivity options button hidden by old-style menu")
+    _gate_once(
+        da,
+        "        a11yCategoryItem.setContentDescription(LocaleController.formatString(R.string.A11yCategoryButton, a11yCategoryName(org.telegram.messenger.A11yConfig.categoryFilterValue)));\n"
+        "    }\n",
+        "        a11yCategoryItem.setContentDescription(LocaleController.formatString(R.string.A11yCategoryButton, a11yCategoryName(org.telegram.messenger.A11yConfig.categoryFilterValue)));\n"
+        "        // a11y-fork: the top bar follows the old-style menu switch (its button in, More options out)\n"
+        "        if (a11yMenuItem != null) {\n"
+        "            a11yMenuItem.setVisibility(org.telegram.messenger.A11yConfig.getOldStyleMenu() ? View.VISIBLE : View.GONE);\n"
+        "        }\n"
+        "        try {\n"
+        "            checkUi_itemOptionsVisibility();\n"
+        "        } catch (Throwable ignore) {\n"
+        "        }\n"
+        "    }\n",
+        "DialogsActivity top bar follows old-style menu switch")
+
+
+def patch_old_menu_extras() -> None:
+    """Theme switch and the bots of the side menu in the old-style main menu (the proxy is not here: it has its own top bar button).
+
+    With the old-style menu on, the new "More options" button is hidden, and these three lived only in
+    its popup. They are added to the end of the old-style menu, copied from that popup's own code as the
+    generated file has it (so they act exactly as there, even if the popup changes). The proxy entry is
+    left out on purpose: it is the proxy button of the top bar (its own Accessible Settings switch), which
+    comes right after the Main menu button.
+    """
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    t = da.read_text(encoding="utf-8")
+    th_start = "        final boolean isCurrentThemeDark;\n        if (resourceProvider != null) {\n"
+    th_end = "        io.addGap();\n        io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup)"
+    bt_start = "        TLRPC.TL_attachMenuBots menuBots = MediaDataController.getInstance(UserConfig.selectedAccount).getAttachMenuBots();\n"
+    bt_end = "        if (getUserConfig().showCallsTab) {\n"
+    for name, marker in (("theme start", th_start), ("theme end", th_end), ("bots start", bt_start), ("bots end", bt_end)):
+        if t.count(marker) != 1:
+            print("WARN: old-style menu extras: %s marker found %d times" % (name, t.count(marker)))
+            return
+    a = t.index(th_start)
+    b = t.index(th_end, a)
+    c = t.index(bt_start, b)
+    d = t.index(bt_end, c)
+    theme_block = t[a:b]
+    bots_block = t[c:d]
+    if "io.add(" not in theme_block or "addBot" not in bots_block:
+        print("WARN: old-style menu extras: extracted blocks look wrong")
+        return
+    launch_decl = (
+        "        final Activity a11yAct = getParentActivity();\n"
+        "        final LaunchActivity launchActivity = a11yAct instanceof LaunchActivity ? (LaunchActivity) a11yAct : null;\n")
+    anchor = "            io.add(R.drawable.msg_help, getString(R.string.TelegramFeatures), () -> Browser.openUrl(getParentActivity(), getString(R.string.TelegramFeaturesUrl)));\n"
+    insert = ("        // a11y-fork: the theme switch and the side-menu bots of the More options popup\n"
+              + theme_block + launch_decl + bots_block)
+    _gate_once(da, anchor, anchor + insert, "DialogsActivity old-style menu extras")
 
 
 def patch_message_tap_sound() -> None:
@@ -4942,6 +5221,9 @@ def main() -> int:
     patch_proxy_toolbar_button()
     patch_old_style_menu()
     patch_old_menu_hides_tabs()
+    patch_category_filter()
+    patch_old_menu_hides_options()
+    patch_old_menu_extras()
     patch_dialog_row_tap_sound()
     patch_voice_share()
     patch_player_seek_buttons()
