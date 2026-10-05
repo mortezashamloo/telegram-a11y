@@ -221,8 +221,6 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryButton": "Category: %s",
         "A11yCategoryPrivate": "Private chats",
         "A11yCategoryShowing": "Showing: %s",
-        "A11yCategoryUnread": "Unread chats",
-        "A11yCategoryRead": "Read chats",
         "A11yUnselected": "Unselected",
         "A11ySelectAllDone": "%1$d chats selected",
         "A11yMutualContact": "Mutual contact",
@@ -293,8 +291,6 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryButton": "دسته‌بندی: %s",
         "A11yCategoryPrivate": "گفتگوهای خصوصی",
         "A11yCategoryShowing": "نمایش: %s",
-        "A11yCategoryUnread": "گفتگوهای خوانده‌نشده",
-        "A11yCategoryRead": "گفتگوهای خوانده‌شده",
         "A11yUnselected": "از انتخاب خارج شد",
         "A11ySelectAllDone": "%1$d گفتگو انتخاب شد",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -3314,7 +3310,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
     }
 
     public static final String PREF_CATEGORY_FILTER = "a11y_category_filter";
-    /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots, 5 unread, 6 read. Not saved. */
+    /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots. Not saved. */
     public static int categoryFilterValue = 0;
 
     /** Category filter (All / Private chats / Groups / Channels / Bots) for the chat list. Default OFF. */
@@ -4268,25 +4264,28 @@ def patch_proxy_toolbar_button() -> None:
         "DialogsActivity proxy toolbar refresh")
 
 
-def patch_old_style_menu() -> None:
-    """An old-style main menu (the old side drawer's entries) behind an Accessible Settings switch.
 
-    Telegram removed the side drawer from its code; the old class cannot be put back without
-    importing a whole older navigation. What can be given back is the menu itself: with the switch
-    "Old-style main menu button in the chat list toolbar" (A11yConfig.getOldStyleMenu, default OFF)
-    a button "Main menu" appears in the top bar of the chat list, before the proxy button. It opens a
-    list with the drawer's entries -- the day / night switch first, My Profile, the side-menu bots, New Group, Contacts, Calls, Saved
-    Messages, Settings, Invite Friends, Telegram Features -- each one opening the same screen the drawer opened. The
-    bottom tabs of the current Telegram stay as they are. The switch is read when the chat list
-    refreshes its top bar, so it shows when you come back to the list.
-    """
+def install_a11y_main_drawer() -> None:
+    """Install the accessibility-friendly replacement for Telegram's removed left drawer."""
+    out = JAVA / "org/telegram/ui/A11yMainDrawer.java"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    source = 'package org.telegram.ui;\n\nimport android.app.Activity;\nimport android.graphics.Color;\nimport android.graphics.drawable.ColorDrawable;\nimport android.os.Handler;\nimport android.os.Looper;\nimport android.view.Gravity;\nimport android.view.KeyEvent;\nimport android.view.View;\nimport android.view.ViewGroup;\nimport android.view.ViewParent;\nimport android.view.accessibility.AccessibilityEvent;\nimport android.widget.FrameLayout;\nimport android.widget.LinearLayout;\nimport android.widget.TextView;\n\nimport org.telegram.messenger.AndroidUtilities;\nimport org.telegram.messenger.LocaleController;\nimport org.telegram.messenger.R;\nimport org.telegram.ui.ActionBar.Theme;\n\npublic final class A11yMainDrawer {\n    public static final int ITEM_PROFILE = 1;\n    public static final int ITEM_NEW_GROUP = 2;\n    public static final int ITEM_NEW_CHANNEL = 3;\n    public static final int ITEM_CONTACTS = 4;\n    public static final int ITEM_CALLS = 5;\n    public static final int ITEM_SAVED_MESSAGES = 6;\n    public static final int ITEM_SETTINGS = 7;\n    public static final int ITEM_INVITE_FRIENDS = 8;\n    public static final int ITEM_TELEGRAM_FEATURES = 9;\n    public interface Callback { void onItemSelected(int itemId); }\n    private final Activity activity;\n    private final Callback callback;\n    private FrameLayout overlay;\n    private LinearLayout panel;\n    private boolean open;\n    public A11yMainDrawer(Activity activity, Callback callback) { this.activity = activity; this.callback = callback; }\n    public boolean isOpen() { return open && overlay != null; }\n    public void show() {\n        if (activity == null || activity.isFinishing()) return;\n        if (isOpen()) { close(); return; }\n        View decor = activity.getWindow().getDecorView();\n        if (!(decor instanceof ViewGroup)) return;\n        overlay = new FrameLayout(activity);\n        overlay.setFocusable(true);\n        overlay.setFocusableInTouchMode(true);\n        overlay.setContentDescription(LocaleController.getString(R.string.A11yMainMenu));\n        overlay.setBackgroundColor(0x66000000);\n        overlay.setOnClickListener(v -> close());\n        overlay.setOnKeyListener((v, keyCode, event) -> {\n            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) { close(); return true; }\n            return false;\n        });\n        panel = new LinearLayout(activity);\n        panel.setOrientation(LinearLayout.VERTICAL);\n        panel.setGravity(Gravity.TOP);\n        panel.setFocusable(false);\n        panel.setBackground(new ColorDrawable(Theme.getColor(Theme.key_windowBackgroundWhite)));\n        panel.setElevation(AndroidUtilities.dp(8));\n        panel.setTranslationX(-AndroidUtilities.dp(320));\n        panel.setOnClickListener(v -> {});\n        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(AndroidUtilities.dp(320), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.TOP);\n        overlay.addView(panel, panelParams);\n        ((ViewGroup) decor).addView(overlay, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));\n        addItems();\n        open = true;\n        panel.animate().translationX(0).setDuration(180).start();\n        if (panel.getChildCount() > 0) {\n            View first = panel.getChildAt(0);\n            new Handler(Looper.getMainLooper()).postDelayed(() -> { if (isOpen()) { first.requestFocus(); first.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED); } }, 220);\n        }\n        overlay.requestFocus();\n    }\n    public void close() {\n        if (!isOpen()) return;\n        final FrameLayout oldOverlay = overlay;\n        final LinearLayout oldPanel = panel;\n        open = false; overlay = null; panel = null;\n        if (oldPanel != null) oldPanel.animate().translationX(-AndroidUtilities.dp(320)).setDuration(150).start();\n        if (oldOverlay != null) new Handler(Looper.getMainLooper()).postDelayed(() -> { ViewParentHack.remove(oldOverlay); }, 160);\n    }\n    private void addItems() {\n        addItem(ITEM_PROFILE, R.string.MyProfile);\n        addItem(ITEM_NEW_GROUP, R.string.NewGroup);\n        addItem(ITEM_NEW_CHANNEL, R.string.NewChannel);\n        addItem(ITEM_CONTACTS, R.string.Contacts);\n        addItem(ITEM_CALLS, R.string.Calls);\n        addItem(ITEM_SAVED_MESSAGES, R.string.SavedMessages);\n        addItem(ITEM_SETTINGS, R.string.Settings);\n        addItem(ITEM_INVITE_FRIENDS, R.string.InviteFriends);\n        addItem(ITEM_TELEGRAM_FEATURES, R.string.TelegramFeatures);\n    }\n    private void addItem(int id, int stringRes) {\n        final String label = LocaleController.getString(stringRes);\n        TextView row = new TextView(activity);\n        row.setText(label); row.setTextSize(16);\n        row.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));\n        row.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);\n        row.setPadding(AndroidUtilities.dp(24), 0, AndroidUtilities.dp(16), 0);\n        row.setMinHeight(AndroidUtilities.dp(56)); row.setFocusable(true); row.setClickable(true);\n        row.setContentDescription(label); row.setBackgroundColor(Color.TRANSPARENT);\n        row.setOnClickListener(v -> { close(); if (callback != null) callback.onItemSelected(id); });\n        panel.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(56)));\n    }\n    private static final class ViewParentHack {\n        static void remove(View v) {\n            ViewParent p = v.getParent();\n            if (p instanceof ViewGroup) ((ViewGroup)p).removeView(v);\n        }\n    }\n}\n'
+    if out.exists() and out.read_text(encoding="utf-8") == source:
+        print("A11yMainDrawer already installed")
+        return
+    out.write_text(source, encoding="utf-8")
+    print("A11yMainDrawer installed")
+
+def patch_old_style_menu() -> None:
+    """Use an accessibility-friendly left navigation drawer when OldStyleMenu is enabled."""
     da = JAVA / "org/telegram/ui/DialogsActivity.java"
     _gate_once(
         da,
         "    private ProxyDrawable a11yProxyDrawable;\n",
         "    private ProxyDrawable a11yProxyDrawable;\n"
-        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
-        "DialogsActivity old-style menu field")
+        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n"
+        "    private A11yMainDrawer a11yMainDrawer; // a11y-fork: real left drawer replacement\n",
+        "DialogsActivity old-style menu fields")
     _gate_once(
         da,
         "            // a11y-fork: proxy button in the top bar, as older versions had it\n",
@@ -4308,40 +4307,65 @@ def patch_old_style_menu() -> None:
     _gate_once(
         da,
         "    private void showItemOptions() {\n",
-        "    // a11y-fork: the entries of the old side drawer, each opening the screen the drawer opened\n"
+        "    // a11y-fork: real left navigation drawer replacement\n"
         "    private void a11yShowOldStyleMenu() {\n"
         "        try {\n"
-        "            ItemOptions io = ItemOptions.makeOptions(this, a11yMenuItem);\n"
-        "            io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));\n"
-        "            io.setDimAlpha(0x08);\n"
-        "            io.add(R.drawable.msg_openprofile, getString(R.string.MyProfile), () -> {\n"
-        "                Bundle args = new Bundle();\n"
-        "                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
-        "                presentFragment(new ProfileActivity(args, null));\n"
-        "            });\n"
-        "            io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> presentFragment(new GroupCreateActivity(new Bundle())));\n"
-        "            io.add(R.drawable.msg_contacts, getString(R.string.Contacts), () -> {\n"
-        "                Bundle args = new Bundle();\n"
-        "                args.putBoolean(\"needFinishFragment\", false);\n"
-        "                presentFragment(new ContactsActivity(args));\n"
-        "            });\n"
-        "            io.add(R.drawable.msg_calls, getString(R.string.Calls), () -> presentFragment(new CallLogActivity()));\n"
-        "            io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {\n"
-        "                Bundle args = new Bundle();\n"
-        "                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
-        "                presentFragment(new ChatActivity(args));\n"
-        "            });\n"
-        "            io.add(R.drawable.msg_settings_old, getString(R.string.Settings), () -> presentFragment(new SettingsActivity()));\n"
-        "            io.add(R.drawable.msg_invited, getString(R.string.InviteFriends), () -> presentFragment(new InviteContactsActivity()));\n"
-        "            io.add(R.drawable.msg_help, getString(R.string.TelegramFeatures), () -> Browser.openUrl(getParentActivity(), getString(R.string.TelegramFeaturesUrl)));\n"
-        "            io.show();\n"
-        "            io.setTranslationY(-dp(64));\n"
+        "            if (a11yMainDrawer == null) {\n"
+        "                a11yMainDrawer = new A11yMainDrawer(getParentActivity(), itemId -> {\n"
+        "                    try {\n"
+        "                        switch (itemId) {\n"
+        "                            case A11yMainDrawer.ITEM_PROFILE: {\n"
+        "                                Bundle args = new Bundle();\n"
+        "                                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
+        "                                presentFragment(new ProfileActivity(args, null));\n"
+        "                                break;\n"
+        "                            }\n"
+        "                            case A11yMainDrawer.ITEM_NEW_GROUP:\n"
+        "                                presentFragment(new GroupCreateActivity(new Bundle()));\n"
+        "                                break;\n"
+        "                            case A11yMainDrawer.ITEM_NEW_CHANNEL: {\n"
+        "                                Bundle args = new Bundle();\n"
+        "                                args.putInt(\"step\", 0);\n"
+        "                                presentFragment(new ChannelCreateActivity(args));\n"
+        "                                break;\n"
+        "                            }\n"
+        "                            case A11yMainDrawer.ITEM_CONTACTS: {\n"
+        "                                Bundle args = new Bundle();\n"
+        "                                args.putBoolean(\"needFinishFragment\", false);\n"
+        "                                presentFragment(new ContactsActivity(args));\n"
+        "                                break;\n"
+        "                            }\n"
+        "                            case A11yMainDrawer.ITEM_CALLS:\n"
+        "                                presentFragment(new CallLogActivity());\n"
+        "                                break;\n"
+        "                            case A11yMainDrawer.ITEM_SAVED_MESSAGES: {\n"
+        "                                Bundle args = new Bundle();\n"
+        "                                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
+        "                                presentFragment(new ChatActivity(args));\n"
+        "                                break;\n"
+        "                            }\n"
+        "                            case A11yMainDrawer.ITEM_SETTINGS:\n"
+        "                                presentFragment(new SettingsActivity());\n"
+        "                                break;\n"
+        "                            case A11yMainDrawer.ITEM_INVITE_FRIENDS:\n"
+        "                                presentFragment(new InviteContactsActivity());\n"
+        "                                break;\n"
+        "                            case A11yMainDrawer.ITEM_TELEGRAM_FEATURES:\n"
+        "                                Browser.openUrl(getParentActivity(), getString(R.string.TelegramFeaturesUrl));\n"
+        "                                break;\n"
+        "                        }\n"
+        "                    } catch (Throwable e) {\n"
+        "                        FileLog.e(e);\n"
+        "                    }\n"
+        "                });\n"
+        "            }\n"
+        "            a11yMainDrawer.show();\n"
         "        } catch (Throwable e) {\n"
         "            FileLog.e(e);\n"
         "        }\n"
         "    }\n\n"
         "    private void showItemOptions() {\n",
-        "DialogsActivity old-style menu list")
+        "DialogsActivity old-style menu drawer")
 
 
 def patch_old_menu_hides_tabs() -> None:
@@ -4461,7 +4485,7 @@ def patch_category_filter() -> None:
         "    private ArrayList<TLRPC.Dialog> a11yGetDialogsArrayBase(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
         "DialogsActivity category filter in getDialogsArray")
     funcs = (
-        "    // a11y-fork: category filter -- 0 all, 1 private chats, 2 groups, 3 channels, 4 bots, 5 unread, 6 read\n"
+        "    // a11y-fork: category filter -- 0 all, 1 private chats, 2 groups, 3 channels, 4 bots\n"
         "    private ArrayList<TLRPC.Dialog> a11yFilterByCategory(ArrayList<TLRPC.Dialog> base, int account) {\n"
         "        final int cat = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
         "        final ArrayList<TLRPC.Dialog> out = new ArrayList<>();\n"
@@ -4472,10 +4496,7 @@ def patch_category_filter() -> None:
         "                continue;\n"
         "            }\n"
         "            boolean match;\n"
-        "            if (cat >= 5) {\n"
-        "                final boolean isUnread = d.unread_count > 0 || d.unread_mark;\n"
-        "                match = (cat == 5) == isUnread;\n"
-        "            } else if (DialogObject.isEncryptedDialog(d.id)) {\n"
+        "            if (DialogObject.isEncryptedDialog(d.id)) {\n"
         "                match = cat == 1;\n"
         "            } else if (DialogObject.isUserDialog(d.id)) {\n"
         "                final TLRPC.User u = mc.getUser(d.id);\n"
@@ -4507,10 +4528,6 @@ def patch_category_filter() -> None:
         "                return getString(R.string.FilterChannels);\n"
         "            case 4:\n"
         "                return getString(R.string.FilterBots);\n"
-        "            case 5:\n"
-        "                return getString(R.string.A11yCategoryUnread);\n"
-        "            case 6:\n"
-        "                return getString(R.string.A11yCategoryRead);\n"
         "            default:\n"
         "                return getString(R.string.FilterAllChats);\n"
         "        }\n"
@@ -4565,7 +4582,7 @@ def patch_category_filter() -> None:
         "            io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));\n"
         "            io.setDimAlpha(0x08);\n"
         "            final int cur = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
-        "            for (int v = 0; v <= 6; v++) {\n"
+        "            for (int v = 0; v <= 4; v++) {\n"
         "                final int value = v;\n"
         "                io.addChecked(cur == value, a11yCategoryName(value), () -> a11ySetCategory(value));\n"
         "            }\n"
@@ -4616,51 +4633,8 @@ def patch_old_menu_hides_options() -> None:
 
 
 def patch_old_menu_extras() -> None:
-    """Theme switch and the bots of the side menu in the old-style main menu (the proxy is not here: it has its own top bar button).
-
-    With the old-style menu on, the new "More options" button is hidden, and these two lived only in
-    its popup. They are copied from that popup's own code as the generated file has it (so they act
-    exactly as there, even if the popup changes) and put where the 11.4.2 drawer had them: the day / night
-    switch first (it was the button of the drawer's header), the bots right after My Profile. The proxy entry is
-    left out on purpose: it is the proxy button of the top bar (its own Accessible Settings switch), which
-    comes right after the Main menu button.
-    """
-    da = JAVA / "org/telegram/ui/DialogsActivity.java"
-    t = da.read_text(encoding="utf-8")
-    th_start = "        final boolean isCurrentThemeDark;\n        if (resourceProvider != null) {\n"
-    th_end = "        io.addGap();\n        io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup)"
-    bt_start = "        TLRPC.TL_attachMenuBots menuBots = MediaDataController.getInstance(UserConfig.selectedAccount).getAttachMenuBots();\n"
-    bt_end = "        if (getUserConfig().showCallsTab) {\n"
-    for name, marker in (("theme start", th_start), ("theme end", th_end), ("bots start", bt_start), ("bots end", bt_end)):
-        if t.count(marker) != 1:
-            print("WARN: old-style menu extras: %s marker found %d times" % (name, t.count(marker)))
-            return
-    a = t.index(th_start)
-    b = t.index(th_end, a)
-    c = t.index(bt_start, b)
-    d = t.index(bt_end, c)
-    theme_block = t[a:b]
-    bots_block = t[c:d]
-    if "io.add(" not in theme_block or "addBot" not in bots_block:
-        print("WARN: old-style menu extras: extracted blocks look wrong")
-        return
-    launch_decl = (
-        "        final Activity a11yAct = getParentActivity();\n"
-        "        final LaunchActivity launchActivity = a11yAct instanceof LaunchActivity ? (LaunchActivity) a11yAct : null;\n")
-    a_anchor = ("            io.setDimAlpha(0x08);\n"
-                "            io.add(R.drawable.msg_openprofile, getString(R.string.MyProfile), () -> {\n")
-    b_anchor = ("                presentFragment(new ProfileActivity(args, null));\n"
-                "            });\n")
-    # first: the day / night switch (in the old drawer it was the button of the header, the first thing)
-    _gate_once(da, a_anchor,
-               "            // a11y-fork: the day / night switch comes first, as the old drawer's header button did\n"
-               + theme_block + a_anchor,
-               "DialogsActivity old-style menu theme switch first")
-    # then, after My Profile: the bots of the side menu (the old drawer listed them right there)
-    _gate_once(da, b_anchor,
-               b_anchor + "            // a11y-fork: the side-menu bots, right after My Profile as in the old drawer\n"
-               + launch_decl + bots_block,
-               "DialogsActivity old-style menu bots after My Profile")
+    """The old popup-only extras are intentionally left in Telegram's normal controls."""
+    print("Old-style menu extras: kept in Telegram's normal controls")
 
 
 def patch_message_tap_sound() -> None:
@@ -5236,6 +5210,7 @@ def main() -> int:
     patch_chat_open_sound()
     patch_message_tap_sound()
     patch_proxy_toolbar_button()
+    install_a11y_main_drawer()
     patch_old_style_menu()
     patch_old_menu_hides_tabs()
     patch_category_filter()
