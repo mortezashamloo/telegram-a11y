@@ -221,6 +221,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryButton": "Category: %s",
         "A11yCategoryPrivate": "Private chats",
         "A11yCategoryShowing": "Showing: %s",
+        "A11yCategoryUnread": "Unread chats",
+        "A11yCategoryRead": "Read chats",
         "A11yUnselected": "Unselected",
         "A11ySelectAllDone": "%1$d chats selected",
         "A11yMutualContact": "Mutual contact",
@@ -291,6 +293,8 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryButton": "دسته‌بندی: %s",
         "A11yCategoryPrivate": "گفتگوهای خصوصی",
         "A11yCategoryShowing": "نمایش: %s",
+        "A11yCategoryUnread": "گفتگوهای خوانده‌نشده",
+        "A11yCategoryRead": "گفتگوهای خوانده‌شده",
         "A11yUnselected": "از انتخاب خارج شد",
         "A11ySelectAllDone": "%1$d گفتگو انتخاب شد",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -3310,7 +3314,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
     }
 
     public static final String PREF_CATEGORY_FILTER = "a11y_category_filter";
-    /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots. Not saved. */
+    /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots, 5 unread, 6 read. Not saved. */
     public static int categoryFilterValue = 0;
 
     /** Category filter (All / Private chats / Groups / Channels / Bots) for the chat list. Default OFF. */
@@ -4457,7 +4461,7 @@ def patch_category_filter() -> None:
         "    private ArrayList<TLRPC.Dialog> a11yGetDialogsArrayBase(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
         "DialogsActivity category filter in getDialogsArray")
     funcs = (
-        "    // a11y-fork: category filter -- 0 all, 1 private chats, 2 groups, 3 channels, 4 bots\n"
+        "    // a11y-fork: category filter -- 0 all, 1 private chats, 2 groups, 3 channels, 4 bots, 5 unread, 6 read\n"
         "    private ArrayList<TLRPC.Dialog> a11yFilterByCategory(ArrayList<TLRPC.Dialog> base, int account) {\n"
         "        final int cat = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
         "        final ArrayList<TLRPC.Dialog> out = new ArrayList<>();\n"
@@ -4468,7 +4472,10 @@ def patch_category_filter() -> None:
         "                continue;\n"
         "            }\n"
         "            boolean match;\n"
-        "            if (DialogObject.isEncryptedDialog(d.id)) {\n"
+        "            if (cat >= 5) {\n"
+        "                final boolean isUnread = d.unread_count > 0 || d.unread_mark;\n"
+        "                match = (cat == 5) == isUnread;\n"
+        "            } else if (DialogObject.isEncryptedDialog(d.id)) {\n"
         "                match = cat == 1;\n"
         "            } else if (DialogObject.isUserDialog(d.id)) {\n"
         "                final TLRPC.User u = mc.getUser(d.id);\n"
@@ -4500,6 +4507,10 @@ def patch_category_filter() -> None:
         "                return getString(R.string.FilterChannels);\n"
         "            case 4:\n"
         "                return getString(R.string.FilterBots);\n"
+        "            case 5:\n"
+        "                return getString(R.string.A11yCategoryUnread);\n"
+        "            case 6:\n"
+        "                return getString(R.string.A11yCategoryRead);\n"
         "            default:\n"
         "                return getString(R.string.FilterAllChats);\n"
         "        }\n"
@@ -4554,7 +4565,7 @@ def patch_category_filter() -> None:
         "            io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));\n"
         "            io.setDimAlpha(0x08);\n"
         "            final int cur = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
-        "            for (int v = 0; v <= 4; v++) {\n"
+        "            for (int v = 0; v <= 6; v++) {\n"
         "                final int value = v;\n"
         "                io.addChecked(cur == value, a11yCategoryName(value), () -> a11ySetCategory(value));\n"
         "            }\n"
