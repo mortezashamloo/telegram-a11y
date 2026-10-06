@@ -222,7 +222,11 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryPrivate": "Private chats",
         "A11yCategoryShowing": "Showing: %s",
         "A11yCategoryUnread": "Unread chats",
-        "A11yLegacyDrawerLabel": "Use legacy navigation drawer: %s",
+        "A11yMenuStyleLabel": "Main menu style: %s",
+        "A11yMenuStylePickerTitle": "Main menu style",
+        "A11yMenuStyleCurrent": "Current Telegram (bottom tabs)",
+        "A11yMenuStyleOld": "Old-style popup menu (no bottom tabs)",
+        "A11yMenuStyleDrawer": "Use legacy navigation drawer (no bottom tabs)",
         "A11yLegacyDrawerRestart": "Close and reopen the app to apply",
         "A11yCategoryRead": "Read chats",
         "A11yUnselected": "Unselected",
@@ -296,7 +300,11 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryPrivate": "گفتگوهای خصوصی",
         "A11yCategoryShowing": "نمایش: %s",
         "A11yCategoryUnread": "گفتگوهای خوانده‌نشده",
-        "A11yLegacyDrawerLabel": "استفاده از منوی کشویی قدیمی: %s",
+        "A11yMenuStyleLabel": "سبک منوی اصلی: %s",
+        "A11yMenuStylePickerTitle": "سبک منوی اصلی",
+        "A11yMenuStyleCurrent": "تلگرام فعلی (نوار پایین)",
+        "A11yMenuStyleOld": "منوی بازشوی قدیمی (بدون نوار پایین)",
+        "A11yMenuStyleDrawer": "استفاده از منوی کشویی قدیمی (بدون نوار پایین)",
         "A11yLegacyDrawerRestart": "برای اعمال، برنامه را کامل ببندید و دوباره باز کنید",
         "A11yCategoryRead": "گفتگوهای خوانده‌شده",
         "A11yUnselected": "از انتخاب خارج شد",
@@ -3303,18 +3311,73 @@ def patch_a11y_settings_dialog_stays_open() -> None:
 
     /** Old-style main menu button (the old side drawer's entries) in the chat list's top bar. Default OFF. */
     public static boolean getOldStyleMenu() {
-        try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_OLD_MENU, false);
-        } catch (Throwable ignore) {
-            return false;
-        }
+        return getMenuStyle() >= 1; // popup menu (1) or classic drawer (2): both replace the bottom tabs
     }
 
     public static void setOldStyleMenu(boolean value) {
+        setMenuStyle(value ? 1 : 0);
+    }
+
+    public static final String PREF_MENU_STYLE = "a11y_menu_style";
+
+    /** Main menu style: 0 = current Telegram (bottom tabs), 1 = old-style popup menu, 2 = classic navigation drawer. */
+    public static int getMenuStyle() {
         try {
-            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_OLD_MENU, value).apply();
+            android.content.SharedPreferences sp = MessagesController.getGlobalMainSettings();
+            if (sp.contains(PREF_MENU_STYLE)) {
+                int v = sp.getInt(PREF_MENU_STYLE, 0);
+                return v < 0 || v > 2 ? 0 : v;
+            }
+            if (sp.getBoolean(PREF_LEGACY_DRAWER, false)) {
+                return 2;
+            }
+            return sp.getBoolean(PREF_OLD_MENU, false) ? 1 : 0;
+        } catch (Throwable ignore) {
+            return 0;
+        }
+    }
+
+    public static void setMenuStyle(int value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit()
+                    .putInt(PREF_MENU_STYLE, value)
+                    .putBoolean(PREF_OLD_MENU, value >= 1)
+                    .putBoolean(PREF_LEGACY_DRAWER, value == 2)
+                    .apply();
         } catch (Throwable ignore) {
         }
+    }
+
+    private static String[] menuStyleLabels() {
+        return new String[]{
+                LocaleController.getString(R.string.A11yMenuStyleCurrent),
+                LocaleController.getString(R.string.A11yMenuStyleOld),
+                LocaleController.getString(R.string.A11yMenuStyleDrawer)
+        };
+    }
+
+    private static void showMenuStylePicker(final Activity activity, final Runnable onChanged) {
+        final String[] labels = menuStyleLabels();
+        final int before = getMenuStyle();
+        new AlertDialog.Builder(activity)
+                .setTitle(LocaleController.getString(R.string.A11yMenuStylePickerTitle))
+                .setSingleChoiceItems(labels, before, (d, which) -> {
+                    setMenuStyle(which);
+                    d.dismiss();
+                    try {
+                        org.telegram.ui.MainTabsActivity.a11yRefreshTabs();
+                        org.telegram.ui.DialogsActivity.a11yRefreshCategory();
+                    } catch (Throwable ignore) {
+                    }
+                    if (onChanged != null) onChanged.run();
+                    String msg = labels[which];
+                    if ((which == 2) != (before == 2)) {
+                        msg += ". " + LocaleController.getString(R.string.A11yLegacyDrawerRestart);
+                    }
+                    announce(activity, msg);
+                })
+                .setNegativeButton(LocaleController.getString(R.string.A11yCancel), null)
+                .show();
     }
 
     public static final String PREF_LEGACY_DRAWER = "a11y_legacy_navigation_drawer";
@@ -3322,18 +3385,11 @@ def patch_a11y_settings_dialog_stays_open() -> None:
     public static boolean useLegacyNavigationDrawer = false;
 
     public static boolean getLegacyNavigationDrawer() {
-        try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_LEGACY_DRAWER, false);
-        } catch (Throwable ignore) {
-            return false;
-        }
+        return getMenuStyle() == 2;
     }
 
     public static void setLegacyNavigationDrawer(boolean value) {
-        try {
-            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_LEGACY_DRAWER, value).apply();
-        } catch (Throwable ignore) {
-        }
+        setMenuStyle(value ? 2 : (getMenuStyle() == 2 ? 1 : getMenuStyle()));
     }
 
     public static void loadLegacyNavigationDrawer() {
@@ -3381,9 +3437,8 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yVoiceShareSaveLabel, onOff(getVoiceShareSave())));
         items.add(LocaleController.formatString(R.string.A11yPlayerSeekLabel, onOff(getPlayerSeekButtons())));
         items.add(LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar())));
-        items.add(LocaleController.formatString(R.string.A11yOldMenuLabel, onOff(getOldStyleMenu())));
+        items.add(LocaleController.formatString(R.string.A11yMenuStyleLabel, menuStyleLabels()[getMenuStyle()]));
         items.add(LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter())));
-        items.add(LocaleController.formatString(R.string.A11yLegacyDrawerLabel, onOff(getLegacyNavigationDrawer())));
         return items;
     }
 
@@ -3490,14 +3545,8 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                     message = LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar()));
                     break;
                 case 19:
-                    setOldStyleMenu(!getOldStyleMenu());
-                    try {
-                        org.telegram.ui.MainTabsActivity.a11yRefreshTabs();
-                        org.telegram.ui.DialogsActivity.a11yRefreshCategory();
-                    } catch (Throwable ignore) {
-                    }
-                    message = LocaleController.formatString(R.string.A11yOldMenuLabel, onOff(getOldStyleMenu()));
-                    break;
+                    showMenuStylePicker(activity, refresh);
+                    return;
                 case 20:
                     setCategoryFilter(!getCategoryFilter());
                     if (!getCategoryFilter()) {
@@ -3508,14 +3557,6 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                     } catch (Throwable ignore) {
                     }
                     message = LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter()));
-                    break;
-                case 21:
-                    setLegacyNavigationDrawer(!getLegacyNavigationDrawer());
-                    try {
-                        org.telegram.ui.DialogsActivity.a11yRefreshCategory();
-                    } catch (Throwable ignore) {
-                    }
-                    message = LocaleController.formatString(R.string.A11yLegacyDrawerLabel, onOff(getLegacyNavigationDrawer())) + ". " + LocaleController.getString(R.string.A11yLegacyDrawerRestart);
                     break;
                 default:
                     return;
