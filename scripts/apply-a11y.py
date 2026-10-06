@@ -4328,8 +4328,8 @@ def patch_old_style_menu() -> None:
         "            // a11y-fork: proxy button in the top bar, as older versions had it\n",
         "            a11yMenuItem = menu.addItem(6, R.drawable.msg_list); // a11y-fork: old-style main menu button, before the proxy button\n"
         "            a11yMenuItem.setContentDescription(getString(R.string.A11yMainMenu));\n"
-        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() || org.telegram.messenger.A11yConfig.getLegacyNavigationDrawer()) ? View.VISIBLE : View.GONE);\n"
-        "            a11yMenuItem.setOnClickListener(v -> { if (org.telegram.ui.LegacyDrawerHelper.isActive()) { org.telegram.ui.LegacyDrawerHelper.open(); } else { a11yShowOldStyleMenu(); } });\n"
+        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() && !org.telegram.ui.LegacyDrawerHelper.isActive()) ? View.VISIBLE : View.GONE);\n"
+        "            a11yMenuItem.setOnClickListener(v -> a11yShowOldStyleMenu());\n"
         "\n"
         "            // a11y-fork: proxy button in the top bar, as older versions had it\n",
         "DialogsActivity old-style menu button created")
@@ -4337,7 +4337,7 @@ def patch_old_style_menu() -> None:
         da,
         "        if (a11yProxyItem != null) { // a11y-fork: proxy button in the top bar\n",
         "        if (a11yMenuItem != null) { // a11y-fork: old-style main menu button\n"
-        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() || org.telegram.messenger.A11yConfig.getLegacyNavigationDrawer()) ? View.VISIBLE : View.GONE);\n"
+        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() && !org.telegram.ui.LegacyDrawerHelper.isActive()) ? View.VISIBLE : View.GONE);\n"
         "        }\n"
         "        if (a11yProxyItem != null) { // a11y-fork: proxy button in the top bar\n",
         "DialogsActivity old-style menu refresh")
@@ -5099,8 +5099,8 @@ def patch_legacy_navigation_drawer() -> None:
     created, so the app must be reopened after changing it). With it on, LaunchActivity creates a
     LegacyDrawerLayoutContainer (the current container plus the classic side panel, swipe gesture, scrim,
     shadow and open/close) and LegacyDrawerHelper builds the classic side menu from the original adapter and
-    cells. It opens by swiping from the left edge of the chat list, or with the "Main menu" button of the
-    chat list's top bar. Back closes it. Off: nothing of this is created.
+    cells. It opens by swiping from the left edge of the chat list, or with the classic hamburger button at the
+    top-left of the chat list's top bar. Back closes it. Off: nothing of this is created.
     """
     import base64
     import io
@@ -5160,6 +5160,36 @@ def patch_legacy_navigation_drawer() -> None:
         "        }\n",
         "LaunchActivity legacy drawer back")
 
+    # The classic hamburger: top-left of the chat list's top bar (it was the bar's back button).
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    _gate_once(
+        da,
+        "            if (searchString != null || folderId != 0 || communityId != 0) {\n"
+        "                actionBar.setBackButtonDrawable(backDrawable = new BackDrawable(false));\n"
+        "            }\n",
+        "            if (searchString != null || folderId != 0 || communityId != 0) {\n"
+        "                actionBar.setBackButtonDrawable(backDrawable = new BackDrawable(false));\n"
+        "            } else if (org.telegram.ui.LegacyDrawerHelper.isActive()) { // a11y-fork: classic hamburger, top-left\n"
+        "                org.telegram.ui.ActionBar.MenuDrawable a11yMenuDrawable = new org.telegram.ui.ActionBar.MenuDrawable();\n"
+        "                a11yMenuDrawable.setRoundCap();\n"
+        "                actionBar.setBackButtonDrawable(a11yMenuDrawable);\n"
+        "                actionBar.setBackButtonContentDescription(getString(R.string.AccDescrOpenMenu));\n"
+        "            }\n",
+        "DialogsActivity legacy hamburger button")
+    _gate_once(
+        da,
+        "                    } else if (onlySelect || folderId != 0 || communityId != 0) {\n"
+        "                        finishFragment();\n"
+        "                    }\n"
+        "                } else if (id == 1) {\n",
+        "                    } else if (onlySelect || folderId != 0 || communityId != 0) {\n"
+        "                        finishFragment();\n"
+        "                    } else if (org.telegram.ui.LegacyDrawerHelper.isActive()) { // a11y-fork: hamburger opens the classic drawer\n"
+        "                        org.telegram.ui.LegacyDrawerHelper.open();\n"
+        "                    }\n"
+        "                } else if (id == 1) {\n",
+        "DialogsActivity legacy hamburger click")
+
 
 def patch_old_menu_hides_options() -> None:
     """With the old-style main menu on, the top-right "More options" button of the new menu is gone.
@@ -5186,7 +5216,7 @@ def patch_old_menu_hides_options() -> None:
         "        a11yCategoryItem.setContentDescription(LocaleController.formatString(R.string.A11yCategoryButton, a11yCategoryName(org.telegram.messenger.A11yConfig.categoryFilterValue)));\n"
         "        // a11y-fork: the top bar follows the old-style menu switch (its button in, More options out)\n"
         "        if (a11yMenuItem != null) {\n"
-        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() || org.telegram.messenger.A11yConfig.getLegacyNavigationDrawer()) ? View.VISIBLE : View.GONE);\n"
+        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() && !org.telegram.ui.LegacyDrawerHelper.isActive()) ? View.VISIBLE : View.GONE);\n"
         "        }\n"
         "        try {\n"
         "            checkUi_itemOptionsVisibility();\n"
