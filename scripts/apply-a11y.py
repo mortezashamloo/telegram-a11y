@@ -1767,17 +1767,21 @@ def patch_links_as_menu() -> None:
     private void a11yShowMessageLinks(MessageObject message) {
         try {
             java.util.ArrayList<String> links = new java.util.ArrayList<>();
+            java.util.ArrayList<String> a11yLabels = new java.util.ArrayList<>(); // what the menu shows: the link as the author wrote it
             String raw = message != null && message.messageOwner != null ? message.messageOwner.message : null;
             if (raw == null) raw = "";
             if (message != null && message.messageOwner != null && message.messageOwner.entities != null) {
                 for (TLRPC.MessageEntity e : message.messageOwner.entities) {
                     String url = null;
+                    String a11yLabel = null;
                     if (e instanceof TLRPC.TL_messageEntityTextUrl) {
                         url = ((TLRPC.TL_messageEntityTextUrl)e).url;
+                        a11yLabel = url;
                     } else if (e instanceof TLRPC.TL_messageEntityUrl || e instanceof TLRPC.TL_messageEntityEmail) {
                         int s=Math.max(0,Math.min(raw.length(),e.offset));
                         int end=Math.max(s,Math.min(raw.length(),s+e.length));
                         url=raw.substring(s,end);
+                        a11yLabel = url; // as written: no https:// / mailto: added
                         if (e instanceof TLRPC.TL_messageEntityEmail) url="mailto:"+url;
                         else {
                             String a11yLow = url.toLowerCase();
@@ -1788,28 +1792,38 @@ def patch_links_as_menu() -> None:
                         int s=Math.max(0,Math.min(raw.length(),e.offset));
                         int end=Math.max(s,Math.min(raw.length(),s+e.length));
                         String uname=raw.substring(s,end);
+                        a11yLabel = uname; // as written, with the @
                         if (uname.startsWith("@")) uname=uname.substring(1);
                         if (uname.length()>0) url="https://t.me/"+uname;
                     } else if (e instanceof TLRPC.TL_messageEntityMentionName) {
                         // a11y-fork: tap-to-profile mention (no @ in raw text) -> t.me deep link by user id
                         long uid = ((TLRPC.TL_messageEntityMentionName)e).user_id;
-                        if (uid != 0) url="tg://user?id="+uid;
+                        if (uid != 0) {
+                            url="tg://user?id="+uid;
+                            int s=Math.max(0,Math.min(raw.length(),e.offset));
+                            int end=Math.max(s,Math.min(raw.length(),s+e.length));
+                            a11yLabel = raw.substring(s,end);
+                        }
                     }
-                    if (url != null && url.length()>0 && !links.contains(url)) links.add(url);
+                    if (url != null && url.length()>0 && !links.contains(url)) {
+                        links.add(url);
+                        a11yLabels.add(a11yLabel != null && a11yLabel.trim().length() > 0 ? a11yLabel : url);
+                    }
                 }
             }
             java.util.regex.Matcher m=java.util.regex.Pattern.compile("https?://[^\\\\s<>\\"]+").matcher(raw);
             while(m.find()) {
                 String url=m.group();
                 while(url.endsWith(".")||url.endsWith(",")||url.endsWith(")")||url.endsWith("]")) url=url.substring(0,url.length()-1);
-                if(url.length()>0&&!links.contains(url)) links.add(url);
+                if(url.length()>0&&!links.contains(url)) { links.add(url); a11yLabels.add(url); }
             }
             if(links.isEmpty()) {
                 if(getParentActivity()!=null) getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11yNoLinks));
                 return;
             }
             final String[] values=links.toArray(new String[0]);
-            new AlertDialog.Builder(getParentActivity()).setTitle(LocaleController.getString(R.string.A11yLinks)).setItems(values,(dialog,which)->{
+            final String[] a11yShown=a11yLabels.toArray(new String[0]);
+            new AlertDialog.Builder(getParentActivity()).setTitle(LocaleController.getString(R.string.A11yLinks)).setItems(a11yShown,(dialog,which)->{
                 if(which>=0&&which<values.length) {
                     // a11y-fork: Telegram's own links (t.me / telegram.me / telegram.dog / tg://) must be
                     // handled INSIDE Telegram (same path a normal tap on such a link takes), never handed
