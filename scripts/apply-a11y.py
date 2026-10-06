@@ -221,6 +221,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryButton": "Category: %s",
         "A11yCategoryPrivate": "Private chats",
         "A11yCategoryShowing": "Showing: %s",
+        "A11yCategoryUnread": "Unread chats",
+        "A11yLegacyDrawerLabel": "Use legacy navigation drawer: %s",
+        "A11yLegacyDrawerRestart": "Close and reopen the app to apply",
+        "A11yCategoryRead": "Read chats",
         "A11yUnselected": "Unselected",
         "A11ySelectAllDone": "%1$d chats selected",
         "A11yMutualContact": "Mutual contact",
@@ -291,6 +295,10 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryButton": "دسته‌بندی: %s",
         "A11yCategoryPrivate": "گفتگوهای خصوصی",
         "A11yCategoryShowing": "نمایش: %s",
+        "A11yCategoryUnread": "گفتگوهای خوانده‌نشده",
+        "A11yLegacyDrawerLabel": "استفاده از منوی کشویی قدیمی: %s",
+        "A11yLegacyDrawerRestart": "برای اعمال، برنامه را کامل ببندید و دوباره باز کنید",
+        "A11yCategoryRead": "گفتگوهای خوانده‌شده",
         "A11yUnselected": "از انتخاب خارج شد",
         "A11ySelectAllDone": "%1$d گفتگو انتخاب شد",
         "A11yMutualContact": "مخاطب دوطرفه",
@@ -3309,8 +3317,31 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         }
     }
 
+    public static final String PREF_LEGACY_DRAWER = "a11y_legacy_navigation_drawer";
+    /** Read once when the main screen is created (LaunchActivity.onCreate): true = the classic navigation drawer. Default false. */
+    public static boolean useLegacyNavigationDrawer = false;
+
+    public static boolean getLegacyNavigationDrawer() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_LEGACY_DRAWER, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setLegacyNavigationDrawer(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_LEGACY_DRAWER, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    public static void loadLegacyNavigationDrawer() {
+        useLegacyNavigationDrawer = getLegacyNavigationDrawer();
+    }
+
     public static final String PREF_CATEGORY_FILTER = "a11y_category_filter";
-    /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots. Not saved. */
+    /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots, 5 unread, 6 read. Not saved. */
     public static int categoryFilterValue = 0;
 
     /** Category filter (All / Private chats / Groups / Channels / Bots) for the chat list. Default OFF. */
@@ -3352,6 +3383,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar())));
         items.add(LocaleController.formatString(R.string.A11yOldMenuLabel, onOff(getOldStyleMenu())));
         items.add(LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter())));
+        items.add(LocaleController.formatString(R.string.A11yLegacyDrawerLabel, onOff(getLegacyNavigationDrawer())));
         return items;
     }
 
@@ -3476,6 +3508,14 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                     } catch (Throwable ignore) {
                     }
                     message = LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter()));
+                    break;
+                case 21:
+                    setLegacyNavigationDrawer(!getLegacyNavigationDrawer());
+                    try {
+                        org.telegram.ui.DialogsActivity.a11yRefreshCategory();
+                    } catch (Throwable ignore) {
+                    }
+                    message = LocaleController.formatString(R.string.A11yLegacyDrawerLabel, onOff(getLegacyNavigationDrawer())) + ". " + LocaleController.getString(R.string.A11yLegacyDrawerRestart);
                     break;
                 default:
                     return;
@@ -4264,35 +4304,32 @@ def patch_proxy_toolbar_button() -> None:
         "DialogsActivity proxy toolbar refresh")
 
 
-
-def install_a11y_main_drawer() -> None:
-    """Install the accessibility-friendly replacement for Telegram's removed left drawer."""
-    out = JAVA / "org/telegram/ui/A11yMainDrawer.java"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    source = 'package org.telegram.ui;\n\nimport android.app.Activity;\nimport android.graphics.Color;\nimport android.graphics.drawable.ColorDrawable;\nimport android.os.Handler;\nimport android.os.Looper;\nimport android.view.Gravity;\nimport android.view.KeyEvent;\nimport android.view.View;\nimport android.view.ViewGroup;\nimport android.view.ViewParent;\nimport android.view.accessibility.AccessibilityEvent;\nimport android.widget.FrameLayout;\nimport android.widget.LinearLayout;\nimport android.widget.TextView;\n\nimport org.telegram.messenger.AndroidUtilities;\nimport org.telegram.messenger.LocaleController;\nimport org.telegram.messenger.R;\nimport org.telegram.ui.ActionBar.Theme;\n\npublic final class A11yMainDrawer {\n    public static final int ITEM_PROFILE = 1;\n    public static final int ITEM_NEW_GROUP = 2;\n    public static final int ITEM_NEW_CHANNEL = 3;\n    public static final int ITEM_CONTACTS = 4;\n    public static final int ITEM_CALLS = 5;\n    public static final int ITEM_SAVED_MESSAGES = 6;\n    public static final int ITEM_SETTINGS = 7;\n    public static final int ITEM_INVITE_FRIENDS = 8;\n    public static final int ITEM_TELEGRAM_FEATURES = 9;\n    public interface Callback { void onItemSelected(int itemId); }\n    private final Activity activity;\n    private final Callback callback;\n    private FrameLayout overlay;\n    private LinearLayout panel;\n    private boolean open;\n    public A11yMainDrawer(Activity activity, Callback callback) { this.activity = activity; this.callback = callback; }\n    public boolean isOpen() { return open && overlay != null; }\n    public void show() {\n        if (activity == null || activity.isFinishing()) return;\n        if (isOpen()) { close(); return; }\n        View decor = activity.getWindow().getDecorView();\n        if (!(decor instanceof ViewGroup)) return;\n        overlay = new FrameLayout(activity);\n        overlay.setFocusable(true);\n        overlay.setFocusableInTouchMode(true);\n        overlay.setContentDescription(LocaleController.getString(R.string.A11yMainMenu));\n        overlay.setBackgroundColor(0x66000000);\n        overlay.setOnClickListener(v -> close());\n        overlay.setOnKeyListener((v, keyCode, event) -> {\n            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) { close(); return true; }\n            return false;\n        });\n        panel = new LinearLayout(activity);\n        panel.setOrientation(LinearLayout.VERTICAL);\n        panel.setGravity(Gravity.TOP);\n        panel.setFocusable(false);\n        panel.setBackground(new ColorDrawable(Theme.getColor(Theme.key_windowBackgroundWhite)));\n        panel.setElevation(AndroidUtilities.dp(8));\n        panel.setTranslationX(-AndroidUtilities.dp(320));\n        panel.setOnClickListener(v -> {});\n        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(AndroidUtilities.dp(320), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.TOP);\n        overlay.addView(panel, panelParams);\n        ((ViewGroup) decor).addView(overlay, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));\n        addItems();\n        open = true;\n        panel.animate().translationX(0).setDuration(180).start();\n        if (panel.getChildCount() > 0) {\n            View first = panel.getChildAt(0);\n            new Handler(Looper.getMainLooper()).postDelayed(() -> { if (isOpen()) { first.requestFocus(); first.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED); } }, 220);\n        }\n        overlay.requestFocus();\n    }\n    public void close() {\n        if (!isOpen()) return;\n        final FrameLayout oldOverlay = overlay;\n        final LinearLayout oldPanel = panel;\n        open = false; overlay = null; panel = null;\n        if (oldPanel != null) oldPanel.animate().translationX(-AndroidUtilities.dp(320)).setDuration(150).start();\n        if (oldOverlay != null) new Handler(Looper.getMainLooper()).postDelayed(() -> { ViewParentHack.remove(oldOverlay); }, 160);\n    }\n    private void addItems() {\n        addItem(ITEM_PROFILE, R.string.MyProfile);\n        addItem(ITEM_NEW_GROUP, R.string.NewGroup);\n        addItem(ITEM_NEW_CHANNEL, R.string.NewChannel);\n        addItem(ITEM_CONTACTS, R.string.Contacts);\n        addItem(ITEM_CALLS, R.string.Calls);\n        addItem(ITEM_SAVED_MESSAGES, R.string.SavedMessages);\n        addItem(ITEM_SETTINGS, R.string.Settings);\n        addItem(ITEM_INVITE_FRIENDS, R.string.InviteFriends);\n        addItem(ITEM_TELEGRAM_FEATURES, R.string.TelegramFeatures);\n    }\n    private void addItem(int id, int stringRes) {\n        final String label = LocaleController.getString(stringRes);\n        TextView row = new TextView(activity);\n        row.setText(label); row.setTextSize(16);\n        row.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));\n        row.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);\n        row.setPadding(AndroidUtilities.dp(24), 0, AndroidUtilities.dp(16), 0);\n        row.setMinHeight(AndroidUtilities.dp(56)); row.setFocusable(true); row.setClickable(true);\n        row.setContentDescription(label); row.setBackgroundColor(Color.TRANSPARENT);\n        row.setOnClickListener(v -> { close(); if (callback != null) callback.onItemSelected(id); });\n        panel.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(56)));\n    }\n    private static final class ViewParentHack {\n        static void remove(View v) {\n            ViewParent p = v.getParent();\n            if (p instanceof ViewGroup) ((ViewGroup)p).removeView(v);\n        }\n    }\n}\n'
-    if out.exists() and out.read_text(encoding="utf-8") == source:
-        print("A11yMainDrawer already installed")
-        return
-    out.write_text(source, encoding="utf-8")
-    print("A11yMainDrawer installed")
-
 def patch_old_style_menu() -> None:
-    """Use an accessibility-friendly left navigation drawer when OldStyleMenu is enabled."""
+    """An old-style main menu (the old side drawer's entries) behind an Accessible Settings switch.
+
+    Telegram removed the side drawer from its code; the old class cannot be put back without
+    importing a whole older navigation. What can be given back is the menu itself: with the switch
+    "Old-style main menu button in the chat list toolbar" (A11yConfig.getOldStyleMenu, default OFF)
+    a button "Main menu" appears in the top bar of the chat list, before the proxy button. It opens a
+    list with the drawer's entries -- the day / night switch first, My Profile, the side-menu bots, New Group, Contacts, Calls, Saved
+    Messages, Settings, Invite Friends, Telegram Features -- each one opening the same screen the drawer opened. The
+    bottom tabs of the current Telegram stay as they are. The switch is read when the chat list
+    refreshes its top bar, so it shows when you come back to the list.
+    """
     da = JAVA / "org/telegram/ui/DialogsActivity.java"
     _gate_once(
         da,
         "    private ProxyDrawable a11yProxyDrawable;\n",
         "    private ProxyDrawable a11yProxyDrawable;\n"
-        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n"
-        "    private A11yMainDrawer a11yMainDrawer; // a11y-fork: real left drawer replacement\n",
-        "DialogsActivity old-style menu fields")
+        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
+        "DialogsActivity old-style menu field")
     _gate_once(
         da,
         "            // a11y-fork: proxy button in the top bar, as older versions had it\n",
         "            a11yMenuItem = menu.addItem(6, R.drawable.msg_list); // a11y-fork: old-style main menu button, before the proxy button\n"
         "            a11yMenuItem.setContentDescription(getString(R.string.A11yMainMenu));\n"
-        "            a11yMenuItem.setVisibility(org.telegram.messenger.A11yConfig.getOldStyleMenu() ? View.VISIBLE : View.GONE);\n"
-        "            a11yMenuItem.setOnClickListener(v -> a11yShowOldStyleMenu());\n"
+        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() || org.telegram.messenger.A11yConfig.getLegacyNavigationDrawer()) ? View.VISIBLE : View.GONE);\n"
+        "            a11yMenuItem.setOnClickListener(v -> { if (org.telegram.ui.LegacyDrawerHelper.isActive()) { org.telegram.ui.LegacyDrawerHelper.open(); } else { a11yShowOldStyleMenu(); } });\n"
         "\n"
         "            // a11y-fork: proxy button in the top bar, as older versions had it\n",
         "DialogsActivity old-style menu button created")
@@ -4300,72 +4337,47 @@ def patch_old_style_menu() -> None:
         da,
         "        if (a11yProxyItem != null) { // a11y-fork: proxy button in the top bar\n",
         "        if (a11yMenuItem != null) { // a11y-fork: old-style main menu button\n"
-        "            a11yMenuItem.setVisibility(org.telegram.messenger.A11yConfig.getOldStyleMenu() ? View.VISIBLE : View.GONE);\n"
+        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() || org.telegram.messenger.A11yConfig.getLegacyNavigationDrawer()) ? View.VISIBLE : View.GONE);\n"
         "        }\n"
         "        if (a11yProxyItem != null) { // a11y-fork: proxy button in the top bar\n",
         "DialogsActivity old-style menu refresh")
     _gate_once(
         da,
         "    private void showItemOptions() {\n",
-        "    // a11y-fork: real left navigation drawer replacement\n"
+        "    // a11y-fork: the entries of the old side drawer, each opening the screen the drawer opened\n"
         "    private void a11yShowOldStyleMenu() {\n"
         "        try {\n"
-        "            if (a11yMainDrawer == null) {\n"
-        "                a11yMainDrawer = new A11yMainDrawer(getParentActivity(), itemId -> {\n"
-        "                    try {\n"
-        "                        switch (itemId) {\n"
-        "                            case A11yMainDrawer.ITEM_PROFILE: {\n"
-        "                                Bundle args = new Bundle();\n"
-        "                                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
-        "                                presentFragment(new ProfileActivity(args, null));\n"
-        "                                break;\n"
-        "                            }\n"
-        "                            case A11yMainDrawer.ITEM_NEW_GROUP:\n"
-        "                                presentFragment(new GroupCreateActivity(new Bundle()));\n"
-        "                                break;\n"
-        "                            case A11yMainDrawer.ITEM_NEW_CHANNEL: {\n"
-        "                                Bundle args = new Bundle();\n"
-        "                                args.putInt(\"step\", 0);\n"
-        "                                presentFragment(new ChannelCreateActivity(args));\n"
-        "                                break;\n"
-        "                            }\n"
-        "                            case A11yMainDrawer.ITEM_CONTACTS: {\n"
-        "                                Bundle args = new Bundle();\n"
-        "                                args.putBoolean(\"needFinishFragment\", false);\n"
-        "                                presentFragment(new ContactsActivity(args));\n"
-        "                                break;\n"
-        "                            }\n"
-        "                            case A11yMainDrawer.ITEM_CALLS:\n"
-        "                                presentFragment(new CallLogActivity());\n"
-        "                                break;\n"
-        "                            case A11yMainDrawer.ITEM_SAVED_MESSAGES: {\n"
-        "                                Bundle args = new Bundle();\n"
-        "                                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
-        "                                presentFragment(new ChatActivity(args));\n"
-        "                                break;\n"
-        "                            }\n"
-        "                            case A11yMainDrawer.ITEM_SETTINGS:\n"
-        "                                presentFragment(new SettingsActivity());\n"
-        "                                break;\n"
-        "                            case A11yMainDrawer.ITEM_INVITE_FRIENDS:\n"
-        "                                presentFragment(new InviteContactsActivity());\n"
-        "                                break;\n"
-        "                            case A11yMainDrawer.ITEM_TELEGRAM_FEATURES:\n"
-        "                                Browser.openUrl(getParentActivity(), getString(R.string.TelegramFeaturesUrl));\n"
-        "                                break;\n"
-        "                        }\n"
-        "                    } catch (Throwable e) {\n"
-        "                        FileLog.e(e);\n"
-        "                    }\n"
-        "                });\n"
-        "            }\n"
-        "            a11yMainDrawer.show();\n"
+        "            ItemOptions io = ItemOptions.makeOptions(this, a11yMenuItem);\n"
+        "            io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));\n"
+        "            io.setDimAlpha(0x08);\n"
+        "            io.add(R.drawable.msg_openprofile, getString(R.string.MyProfile), () -> {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
+        "                presentFragment(new ProfileActivity(args, null));\n"
+        "            });\n"
+        "            io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> presentFragment(new GroupCreateActivity(new Bundle())));\n"
+        "            io.add(R.drawable.msg_contacts, getString(R.string.Contacts), () -> {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putBoolean(\"needFinishFragment\", false);\n"
+        "                presentFragment(new ContactsActivity(args));\n"
+        "            });\n"
+        "            io.add(R.drawable.msg_calls, getString(R.string.Calls), () -> presentFragment(new CallLogActivity()));\n"
+        "            io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putLong(\"user_id\", UserConfig.getInstance(currentAccount).getClientUserId());\n"
+        "                presentFragment(new ChatActivity(args));\n"
+        "            });\n"
+        "            io.add(R.drawable.msg_settings_old, getString(R.string.Settings), () -> presentFragment(new SettingsActivity()));\n"
+        "            io.add(R.drawable.msg_invited, getString(R.string.InviteFriends), () -> presentFragment(new InviteContactsActivity()));\n"
+        "            io.add(R.drawable.msg_help, getString(R.string.TelegramFeatures), () -> Browser.openUrl(getParentActivity(), getString(R.string.TelegramFeaturesUrl)));\n"
+        "            io.show();\n"
+        "            io.setTranslationY(-dp(64));\n"
         "        } catch (Throwable e) {\n"
         "            FileLog.e(e);\n"
         "        }\n"
         "    }\n\n"
         "    private void showItemOptions() {\n",
-        "DialogsActivity old-style menu drawer")
+        "DialogsActivity old-style menu list")
 
 
 def patch_old_menu_hides_tabs() -> None:
@@ -4485,7 +4497,7 @@ def patch_category_filter() -> None:
         "    private ArrayList<TLRPC.Dialog> a11yGetDialogsArrayBase(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
         "DialogsActivity category filter in getDialogsArray")
     funcs = (
-        "    // a11y-fork: category filter -- 0 all, 1 private chats, 2 groups, 3 channels, 4 bots\n"
+        "    // a11y-fork: category filter -- 0 all, 1 private chats, 2 groups, 3 channels, 4 bots, 5 unread, 6 read\n"
         "    private ArrayList<TLRPC.Dialog> a11yFilterByCategory(ArrayList<TLRPC.Dialog> base, int account) {\n"
         "        final int cat = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
         "        final ArrayList<TLRPC.Dialog> out = new ArrayList<>();\n"
@@ -4496,7 +4508,10 @@ def patch_category_filter() -> None:
         "                continue;\n"
         "            }\n"
         "            boolean match;\n"
-        "            if (DialogObject.isEncryptedDialog(d.id)) {\n"
+        "            if (cat >= 5) {\n"
+        "                final boolean isUnread = d.unread_count > 0 || d.unread_mark;\n"
+        "                match = (cat == 5) == isUnread;\n"
+        "            } else if (DialogObject.isEncryptedDialog(d.id)) {\n"
         "                match = cat == 1;\n"
         "            } else if (DialogObject.isUserDialog(d.id)) {\n"
         "                final TLRPC.User u = mc.getUser(d.id);\n"
@@ -4528,6 +4543,10 @@ def patch_category_filter() -> None:
         "                return getString(R.string.FilterChannels);\n"
         "            case 4:\n"
         "                return getString(R.string.FilterBots);\n"
+        "            case 5:\n"
+        "                return getString(R.string.A11yCategoryUnread);\n"
+        "            case 6:\n"
+        "                return getString(R.string.A11yCategoryRead);\n"
         "            default:\n"
         "                return getString(R.string.FilterAllChats);\n"
         "        }\n"
@@ -4582,7 +4601,7 @@ def patch_category_filter() -> None:
         "            io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));\n"
         "            io.setDimAlpha(0x08);\n"
         "            final int cur = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
-        "            for (int v = 0; v <= 4; v++) {\n"
+        "            for (int v = 0; v <= 6; v++) {\n"
         "                final int value = v;\n"
         "                io.addChecked(cur == value, a11yCategoryName(value), () -> a11ySetCategory(value));\n"
         "            }\n"
@@ -4595,6 +4614,552 @@ def patch_category_filter() -> None:
         "\n"
         "    private void showItemOptions() {\n")
     _gate_once(da, "    private void showItemOptions() {\n", funcs, "DialogsActivity category filter functions")
+
+
+# ---------------------------------------------------------------------------------------------
+# Classic navigation drawer (Telegram release-11.4.2-5469) behind an Accessible Settings switch.
+# The blob is a zip: java/... (LegacyDrawerLayoutContainer, LegacyDrawerHelper, Legacy* adapter and
+# cells, SideMenultItemAnimator -- all taken from that release's git tag and adapted to the current
+# source) and res/... (the few drawables the current Telegram no longer has).
+# ---------------------------------------------------------------------------------------------
+_LEGACY_DRAWER_BLOB = (
+    "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"
+    "v2r0lZoMB6QVEiRsnpwKJUi3J1FbfFAht65yxclM970X9b/gZTA+ESvudvpltwNK6d1jmDs2KW9LfXHGqqMc+/Jk1Zrjzn+HOOrM11laWnma8G"
+    "3VqqbFW3yIzfh73+07mI5+GP/kUpC9Zs2riVOWVtA8csjhcxjEcinZRysj9YHLyxk9F9kefiVKXo1nZhhVlb6q4tN31uWpnGqFRpLLVSUWNfTr"
+    "+lccd13uo5AgcFnQyULa502AjJbFbIvtQsL9TZt8hDxVommtul6fEuz61beVwucbewdrSESyW6Hfmw1TZx+4b00+tq7+yIWPRBqeuHUtf+7EWr"
+    "Nwq9qd+xZvJj/l3rI7my/vz+CUyODJ6ufi7rnBKaAFBLAwQUAAAACACcoUVdHxJm81gCAABrAgAAJQAAAHJlcy9kcmF3YWJsZS14eGhkcGkvYm"
+    "90dG9tX3NoYWRvdy5wbmfrDPBz5+WS4mJgYOD19HAJAtJCDAyMrBzMQNbNLe6fgJRBgE+Iq3uBz39SgIvdGyagXoGSIL9ghpntVRPzkticzMR4"
+    "FML8tGb5ngwBWnLL08UxpOLW2x72piRDHmfX9wX/b6+TP1ch/PflXgVto/+ujuZ3v+hu/VhZdvpk7eJebjPZ678XHT727N81l48FydeeFRicPq"
+    "g24fXci/8SpjXmSN7m3ifvJviwzkViUfPnBMsbl7UaXiWuWOew7Lvr8b28axf/vDdtYo6sZWZfRCWH3hVml9Nfzr0o2rKw9OBdwdPRKbtalZzc"
+    "79S9nCWqE8XMOvOe7NsckfQrfm/XzdFdNkd3M88T5yvLH0kAJSRzyx9fnOZ7JWzdnJhV9013rZt3gUtQ9WOurv5Fp/dt53a4cypllXyPtHr9/+"
+    "vcqbxGvt2zsxI+Sl6ODF21pLWryWe923IHdWn3nhOFJbNe3Gtft33B1rNbtn4TC5g4I7N7mqHrA20v7fJLW5QCmD3ert4tELkjyvm4YJVZ1NpC"
+    "vbS1vw7EhK7eHXj7rkrSK7fCUzIBxyetii3XLKtbznXVdVvM+xaxTrG7Du1hSVEbL3uKrQrfuujpYs6FTy89mte+Tt/xc2sk37t8y5NhvltzMn"
+    "5m2PXLrOFoPiW7SkRyebNSu5DudfEFT++k34rq6r6osOxz7X9XydB7tzd5bZ02c+e73J0ygV+uzb6Yw+EqdaVHxoltk6gxywk3P7msj/vslY4l"
+    "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"
+    "YXZhL29yZy90ZWxlZ3JhbS91aS9DZWxscy9MZWdhY3lEcmF3ZXJQcm9maWxlQ2VsbC5qYXZhUEsBAhQDFAAAAAgAFp9FXXN6j5NeCQAA0iIAAD"
+    "QAAAAAAAAAAAAAAKSB2SwAAGphdmEvb3JnL3RlbGVncmFtL3VpL0NlbGxzL0xlZ2FjeURyYXdlclVzZXJDZWxsLmphdmFQSwECFAMUAAAACAAB"
+    "n0VdRdnsxX8IAADIHQAANgAAAAAAAAAAAAAApIGJNgAAamF2YS9vcmcvdGVsZWdyYW0vdWkvQ2VsbHMvTGVnYWN5RHJhd2VyQWN0aW9uQ2VsbC"
+    "5qYXZhUEsBAhQDFAAAAAgAAZ9FXWKDYaBkDAAAwTgAADwAAAAAAAAAAAAAAKSBXD8AAGphdmEvb3JnL3RlbGVncmFtL3VpL0FkYXB0ZXJzL0xl"
+    "Z2FjeURyYXdlckxheW91dEFkYXB0ZXIuamF2YVBLAQIUAxQAAAAIABafRV1YmxnVfA4AANlEAAA/AAAAAAAAAAAAAACkgRpMAABqYXZhL29yZy"
+    "90ZWxlZ3JhbS91aS9BY3Rpb25CYXIvTGVnYWN5RHJhd2VyTGF5b3V0Q29udGFpbmVyLmphdmFQSwECFAMUAAAACABVn0VdBU2cZgIOAADEXQAA"
+    "OwAAAAAAAAAAAAAApIHzWgAAamF2YS9vcmcvdGVsZWdyYW0vdWkvQ29tcG9uZW50cy9TaWRlTWVudWx0SXRlbUFuaW1hdG9yLmphdmFQSwECFA"
+    "MUAAAACACcoUVdS5AWy9oBAAAGAgAAJAAAAAAAAAAAAAAApIFOaQAAcmVzL2RyYXdhYmxlLWhkcGkvbXNnX3N0YXR1c19zZXQucG5nUEsBAhQD"
+    "FAAAAAgAnKFFXTbAUBuaAQAAuAEAACMAAAAAAAAAAAAAAKSBamsAAHJlcy9kcmF3YWJsZS1oZHBpL2JvdHRvbV9zaGFkb3cucG5nUEsBAhQDFA"
+    "AAAAgAnKFFXdzuboFfAAAAcwAAACEAAAAAAAAAAAAAAKSBRW0AAHJlcy9kcmF3YWJsZS1oZHBpL21lbnVfc2hhZG93LnBuZ1BLAQIUAxQAAAAI"
+    "AJyhRV21rS455gEAABYCAAAlAAAAAAAAAAAAAACkgeNtAAByZXMvZHJhd2FibGUtaGRwaS9tc2dfc3RhdHVzX2VkaXQucG5nUEsBAhQDFAAAAA"
+    "gAnKFFXcTogz51AQAAnAEAACAAAAAAAAAAAAAAAKSBDHAAAHJlcy9kcmF3YWJsZS1oZHBpL21zZ19pbnZpdGUucG5nUEsBAhQDFAAAAAgAnKFF"
+    "XQB9bos7AgAAWgIAACUAAAAAAAAAAAAAAKSBv3EAAHJlcy9kcmF3YWJsZS14aGRwaS9tc2dfc3RhdHVzX3NldC5wbmdQSwECFAMUAAAACACcoU"
+    "Vd4rYAYpkBAAC2AQAAJAAAAAAAAAAAAAAApIE9dAAAcmVzL2RyYXdhYmxlLXhoZHBpL2JvdHRvbV9zaGFkb3cucG5nUEsBAhQDFAAAAAgAnKFF"
+    "XUM2lc1MAAAAUAAAACIAAAAAAAAAAAAAAKSBGHYAAHJlcy9kcmF3YWJsZS14aGRwaS9tZW51X3NoYWRvdy5wbmdQSwECFAMUAAAACACcoUVd6k"
+    "kf+EsCAABpAgAAJgAAAAAAAAAAAAAApIGkdgAAcmVzL2RyYXdhYmxlLXhoZHBpL21zZ19zdGF0dXNfZWRpdC5wbmdQSwECFAMUAAAACACcoUVd"
+    "0GR9pqoBAADJAQAAIQAAAAAAAAAAAAAApIEzeQAAcmVzL2RyYXdhYmxlLXhoZHBpL21zZ19pbnZpdGUucG5nUEsBAhQDFAAAAAgAnKFFXbhqGp"
+    "9BAQAAegEAACQAAAAAAAAAAAAAAKSBHHsAAHJlcy9kcmF3YWJsZS1tZHBpL21zZ19zdGF0dXNfc2V0LnBuZ1BLAQIUAxQAAAAIAJyhRV023LGS"
+    "1wAAANQAAAAjAAAAAAAAAAAAAACkgZ98AAByZXMvZHJhd2FibGUtbWRwaS9ib3R0b21fc2hhZG93LnBuZ1BLAQIUAxQAAAAIAJyhRV3mb1m1Rg"
+    "AAAEsAAAAhAAAAAAAAAAAAAACkgbd9AAByZXMvZHJhd2FibGUtbWRwaS9tZW51X3NoYWRvdy5wbmdQSwECFAMUAAAACACcoUVda3a3oEkBAACA"
+    "AQAAJQAAAAAAAAAAAAAApIE8fgAAcmVzL2RyYXdhYmxlLW1kcGkvbXNnX3N0YXR1c19lZGl0LnBuZ1BLAQIUAxQAAAAIAJyhRV0C0uWyDgEAAD"
+    "4BAAAgAAAAAAAAAAAAAACkgch/AAByZXMvZHJhd2FibGUtbWRwaS9tc2dfaW52aXRlLnBuZ1BLAQIUAxQAAAAIAJyhRV2+s+Qj6AIAAP4CAAAm"
+    "AAAAAAAAAAAAAACkgRSBAAByZXMvZHJhd2FibGUteHhoZHBpL21zZ19zdGF0dXNfc2V0LnBuZ1BLAQIUAxQAAAAIAJyhRV0fEmbzWAIAAGsCAA"
+    "AlAAAAAAAAAAAAAACkgUCEAAByZXMvZHJhd2FibGUteHhoZHBpL2JvdHRvbV9zaGFkb3cucG5nUEsBAhQDFAAAAAgAnKFFXaRfW3xNAAAAUgAA"
+    "ACMAAAAAAAAAAAAAAKSB24YAAHJlcy9kcmF3YWJsZS14eGhkcGkvbWVudV9zaGFkb3cucG5nUEsBAhQDFAAAAAgAnKFFXXtTErUMAwAAHwMAAC"
+    "cAAAAAAAAAAAAAAKSBaYcAAHJlcy9kcmF3YWJsZS14eGhkcGkvbXNnX3N0YXR1c19lZGl0LnBuZ1BLAQIUAxQAAAAIAJyhRV2JDT1N6AEAAP0B"
+    "AAAiAAAAAAAAAAAAAACkgbqKAAByZXMvZHJhd2FibGUteHhoZHBpL21zZ19pbnZpdGUucG5nUEsFBgAAAAAcABwAgQkAAOKMAAAAAA=="
+)
+
+
+def patch_legacy_navigation_drawer() -> None:
+    """Real classic navigation drawer, selectable from Accessible Settings (default OFF = current Telegram).
+
+    "Use legacy navigation drawer" (A11yConfig.useLegacyNavigationDrawer, read when the main screen is
+    created, so the app must be reopened after changing it). With it on, LaunchActivity creates a
+    LegacyDrawerLayoutContainer (the current container plus the classic side panel, swipe gesture, scrim,
+    shadow and open/close) and LegacyDrawerHelper builds the classic side menu from the original adapter and
+    cells. It opens by swiping from the left edge of the chat list, or with the "Main menu" button of the
+    chat list's top bar. Back closes it. Off: nothing of this is created.
+    """
+    import base64
+    import io
+    import zipfile
+
+    data = base64.b64decode("".join(_LEGACY_DRAWER_BLOB))
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except Exception as e:  # pragma: no cover
+        print("WARN: legacy drawer blob unreadable: %s" % e)
+        return
+    count = 0
+    for name in zf.namelist():
+        if name.endswith("/"):
+            continue
+        if name.startswith("java/"):
+            dst = JAVA / name[len("java/"):]
+        elif name.startswith("res/"):
+            dst = RES / name[len("res/"):]
+        else:
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(zf.read(name))
+        count += 1
+    print("Legacy drawer: %d files installed OK" % count)
+
+    la = JAVA / "org/telegram/ui/LaunchActivity.java"
+    _gate_once(
+        la,
+        "        drawerLayoutContainer = new DrawerLayoutContainer(this);\n",
+        "        org.telegram.messenger.A11yConfig.loadLegacyNavigationDrawer(); // a11y-fork: classic drawer switch\n"
+        "        drawerLayoutContainer = org.telegram.messenger.A11yConfig.useLegacyNavigationDrawer\n"
+        "                ? new org.telegram.ui.ActionBar.LegacyDrawerLayoutContainer(this)\n"
+        "                : new DrawerLayoutContainer(this);\n",
+        "LaunchActivity legacy drawer container")
+    _gate_once(
+        la,
+        "        drawerLayoutContainer.setParentActionBarLayout(actionBarLayout);\n",
+        "        drawerLayoutContainer.setParentActionBarLayout(actionBarLayout);\n"
+        "        org.telegram.ui.LegacyDrawerHelper.setup(this, drawerLayoutContainer); // a11y-fork: builds the classic side menu when the switch is on\n",
+        "LaunchActivity legacy drawer setup")
+    _gate_once(
+        la,
+        "    public boolean onBackPressed(boolean invoked) {\n"
+        "        if (FloatingDebugController.onBackPressed(invoked)) {\n"
+        "            return false;\n"
+        "        }\n",
+        "    public boolean onBackPressed(boolean invoked) {\n"
+        "        if (FloatingDebugController.onBackPressed(invoked)) {\n"
+        "            return false;\n"
+        "        }\n"
+        "        if (org.telegram.ui.LegacyDrawerHelper.isOpen()) { // a11y-fork: Back closes the classic drawer\n"
+        "            if (invoked) {\n"
+        "                org.telegram.ui.LegacyDrawerHelper.closeIfOpen();\n"
+        "            }\n"
+        "            return false;\n"
+        "        }\n",
+        "LaunchActivity legacy drawer back")
 
 
 def patch_old_menu_hides_options() -> None:
@@ -4622,7 +5187,7 @@ def patch_old_menu_hides_options() -> None:
         "        a11yCategoryItem.setContentDescription(LocaleController.formatString(R.string.A11yCategoryButton, a11yCategoryName(org.telegram.messenger.A11yConfig.categoryFilterValue)));\n"
         "        // a11y-fork: the top bar follows the old-style menu switch (its button in, More options out)\n"
         "        if (a11yMenuItem != null) {\n"
-        "            a11yMenuItem.setVisibility(org.telegram.messenger.A11yConfig.getOldStyleMenu() ? View.VISIBLE : View.GONE);\n"
+        "            a11yMenuItem.setVisibility((org.telegram.messenger.A11yConfig.getOldStyleMenu() || org.telegram.messenger.A11yConfig.getLegacyNavigationDrawer()) ? View.VISIBLE : View.GONE);\n"
         "        }\n"
         "        try {\n"
         "            checkUi_itemOptionsVisibility();\n"
@@ -4633,8 +5198,51 @@ def patch_old_menu_hides_options() -> None:
 
 
 def patch_old_menu_extras() -> None:
-    """The old popup-only extras are intentionally left in Telegram's normal controls."""
-    print("Old-style menu extras: kept in Telegram's normal controls")
+    """Theme switch and the bots of the side menu in the old-style main menu (the proxy is not here: it has its own top bar button).
+
+    With the old-style menu on, the new "More options" button is hidden, and these two lived only in
+    its popup. They are copied from that popup's own code as the generated file has it (so they act
+    exactly as there, even if the popup changes) and put where the 11.4.2 drawer had them: the day / night
+    switch first (it was the button of the drawer's header), the bots right after My Profile. The proxy entry is
+    left out on purpose: it is the proxy button of the top bar (its own Accessible Settings switch), which
+    comes right after the Main menu button.
+    """
+    da = JAVA / "org/telegram/ui/DialogsActivity.java"
+    t = da.read_text(encoding="utf-8")
+    th_start = "        final boolean isCurrentThemeDark;\n        if (resourceProvider != null) {\n"
+    th_end = "        io.addGap();\n        io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup)"
+    bt_start = "        TLRPC.TL_attachMenuBots menuBots = MediaDataController.getInstance(UserConfig.selectedAccount).getAttachMenuBots();\n"
+    bt_end = "        if (getUserConfig().showCallsTab) {\n"
+    for name, marker in (("theme start", th_start), ("theme end", th_end), ("bots start", bt_start), ("bots end", bt_end)):
+        if t.count(marker) != 1:
+            print("WARN: old-style menu extras: %s marker found %d times" % (name, t.count(marker)))
+            return
+    a = t.index(th_start)
+    b = t.index(th_end, a)
+    c = t.index(bt_start, b)
+    d = t.index(bt_end, c)
+    theme_block = t[a:b]
+    bots_block = t[c:d]
+    if "io.add(" not in theme_block or "addBot" not in bots_block:
+        print("WARN: old-style menu extras: extracted blocks look wrong")
+        return
+    launch_decl = (
+        "        final Activity a11yAct = getParentActivity();\n"
+        "        final LaunchActivity launchActivity = a11yAct instanceof LaunchActivity ? (LaunchActivity) a11yAct : null;\n")
+    a_anchor = ("            io.setDimAlpha(0x08);\n"
+                "            io.add(R.drawable.msg_openprofile, getString(R.string.MyProfile), () -> {\n")
+    b_anchor = ("                presentFragment(new ProfileActivity(args, null));\n"
+                "            });\n")
+    # first: the day / night switch (in the old drawer it was the button of the header, the first thing)
+    _gate_once(da, a_anchor,
+               "            // a11y-fork: the day / night switch comes first, as the old drawer's header button did\n"
+               + theme_block + a_anchor,
+               "DialogsActivity old-style menu theme switch first")
+    # then, after My Profile: the bots of the side menu (the old drawer listed them right there)
+    _gate_once(da, b_anchor,
+               b_anchor + "            // a11y-fork: the side-menu bots, right after My Profile as in the old drawer\n"
+               + launch_decl + bots_block,
+               "DialogsActivity old-style menu bots after My Profile")
 
 
 def patch_message_tap_sound() -> None:
@@ -5210,10 +5818,10 @@ def main() -> int:
     patch_chat_open_sound()
     patch_message_tap_sound()
     patch_proxy_toolbar_button()
-    install_a11y_main_drawer()
     patch_old_style_menu()
     patch_old_menu_hides_tabs()
     patch_category_filter()
+    patch_legacy_navigation_drawer()
     patch_old_menu_hides_options()
     patch_old_menu_extras()
     patch_dialog_row_tap_sound()
