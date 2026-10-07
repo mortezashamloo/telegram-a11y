@@ -1644,6 +1644,50 @@ def patch_locale_controller_solar_date_chat() -> None:
     print("LocaleController solar formatDateChat OK")
 
 
+def patch_solar_last_seen() -> None:
+    """Solar Hijri for "last seen" (LocaleController.formatDateOnline).
+
+    With the Solar calendar setting on, the date inside "last seen <date> at <time>" (chat header,
+    profile, contact lists) is shown in Solar Hijri, like the chat's date separators: short form
+    ("21 Mehr") inside the last year, with the year ("21 Mehr, 1403") when older. "today" and
+    "yesterday" are unchanged, and the time part is untouched. Off: the original Gregorian text.
+    """
+    lc = JAVA / "org/telegram/messenger/LocaleController.java"
+    old = (
+        "            } else if (Math.abs(System.currentTimeMillis() - date) < 31536000000L) {\n"
+        "                String format = LocaleController.formatString(\"formatDateAtTime\", R.string.formatDateAtTime, getInstance().getFormatterDayMonth().format(new Date(date)), getInstance().getFormatterDay().format(new Date(date)));\n"
+        "                return LocaleController.formatString(\"LastSeenDateFormatted\", R.string.LastSeenDateFormatted, format);\n"
+        "            } else {\n"
+        "                String format = LocaleController.formatString(\"formatDateAtTime\", R.string.formatDateAtTime, getInstance().getFormatterYear().format(new Date(date)), getInstance().getFormatterDay().format(new Date(date)));\n"
+        "                return LocaleController.formatString(\"LastSeenDateFormatted\", R.string.LastSeenDateFormatted, format);\n"
+        "            }\n"
+    )
+    new = (
+        "            } else if (Math.abs(System.currentTimeMillis() - date) < 31536000000L) {\n"
+        "                String a11yDate = null; // a11y-fork: solar last seen\n"
+        "                try {\n"
+        "                    if (A11yConfig.getSolarCalendar()) {\n"
+        "                        a11yDate = A11yConfig.formatSolarDateChat(date / 1000L, false);\n"
+        "                    }\n"
+        "                } catch (Throwable ignore) {\n"
+        "                }\n"
+        "                String format = LocaleController.formatString(\"formatDateAtTime\", R.string.formatDateAtTime, (a11yDate != null && a11yDate.length() > 0) ? a11yDate : getInstance().getFormatterDayMonth().format(new Date(date)), getInstance().getFormatterDay().format(new Date(date)));\n"
+        "                return LocaleController.formatString(\"LastSeenDateFormatted\", R.string.LastSeenDateFormatted, format);\n"
+        "            } else {\n"
+        "                String a11yDate = null; // a11y-fork: solar last seen\n"
+        "                try {\n"
+        "                    if (A11yConfig.getSolarCalendar()) {\n"
+        "                        a11yDate = A11yConfig.formatSolarDateChat(date / 1000L, false);\n"
+        "                    }\n"
+        "                } catch (Throwable ignore) {\n"
+        "                }\n"
+        "                String format = LocaleController.formatString(\"formatDateAtTime\", R.string.formatDateAtTime, (a11yDate != null && a11yDate.length() > 0) ? a11yDate : getInstance().getFormatterYear().format(new Date(date)), getInstance().getFormatterDay().format(new Date(date)));\n"
+        "                return LocaleController.formatString(\"LastSeenDateFormatted\", R.string.LastSeenDateFormatted, format);\n"
+        "            }\n"
+    )
+    _gate_once(lc, old, new, "LocaleController solar last seen")
+
+
 def patch_hide_sponsor_channel() -> None:
     """
     Accessibility-fork: when A11yConfig.getHideSponsorChannel() is on,
@@ -5904,6 +5948,7 @@ def main() -> int:
     patch_go_to_first_message()
     patch_file_description_spacing()
     patch_locale_controller_solar_date_chat()
+    patch_solar_last_seen()
     if MEHRAN:
         patch_fork_selection_vs_options()
     patch_chat_message_cell_accessibility_long_click()
