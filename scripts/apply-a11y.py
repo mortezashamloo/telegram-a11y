@@ -4469,6 +4469,8 @@ def patch_old_menu_hides_tabs() -> None:
         "    private void a11yApplyTabs(boolean animated) {\n"
         "        try {\n"
         "            animatorTabsVisible.setValue(a11yTabsWanted && !org.telegram.messenger.A11yConfig.getOldStyleMenu(), animated);\n"
+        "            checkUi_tabsPosition(); // the value may already be right while the bar was not built yet\n"
+        "            checkUi_fadeView();\n"
         "        } catch (Throwable e) {\n"
         "            org.telegram.messenger.FileLog.e(e);\n"
         "        }\n"
@@ -4497,6 +4499,20 @@ def patch_old_menu_hides_tabs() -> None:
         "        a11yApplyTabs(false);\n"
         "    }\n",
         "MainTabsActivity onResume tabs state")
+    # Crash fix: DialogsActivity.createView asks setTabsVisible() while MainTabsActivity.createView is still
+    # building its pages, i.e. before tabsView / tabsViewWrapper exist. Upstream never changes the animator's
+    # value at that moment (it is already "visible"), so nothing runs; with the bar hidden by us the value
+    # changes and checkUi_tabsPosition dereferenced null -> NullPointerException at start-up (Android 13 log).
+    _gate_once(
+        mt,
+        "    private void checkUi_tabsPosition() {\n"
+        "        final boolean isUpdateLayoutVisible = updateLayoutWrapper.isUpdateLayoutVisible();\n",
+        "    private void checkUi_tabsPosition() {\n"
+        "        if (tabsView == null || tabsViewWrapper == null || updateLayoutWrapper == null) {\n"
+        "            return; // a11y-fork: can run before the bar is built (tabs hidden at start-up)\n"
+        "        }\n"
+        "        final boolean isUpdateLayoutVisible = updateLayoutWrapper.isUpdateLayoutVisible();\n",
+        "MainTabsActivity tabs position null guard")
 
 
 def patch_category_filter() -> None:
