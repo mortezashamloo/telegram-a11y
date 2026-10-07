@@ -1728,38 +1728,23 @@ def patch_hide_sponsor_channel() -> None:
 
 def patch_ghost_mode() -> None:
     """
-    Accessibility-fork: Ghost Mode -- when A11yConfig.getGhostMode() is on,
-    skip calling markDialogAsRead(...) from ChatActivity so the sender
-    never gets a "seen" / read-receipt signal. Local unread badges for this
-    account may not clear while Ghost Mode is on -- an accepted trade-off.
+    Accessibility-fork: Ghost Mode -- when A11yConfig.getGhostMode() is on, the client never tells the
+    server that messages were read, so senders never see "seen".  It is done in ONE place,
+    MessagesController.completeReadTask: every read receipt (private chats, groups, channels, comment
+    threads, saved/monoforum chats, secret chats) is sent from there.  markDialogAsRead still runs, so the
+    unread counter and notifications are cleared LOCALLY (the chat does not show the same unread messages
+    again after you read them).  The server keeps its old "read" position, so the counter may come back
+    after a full refresh from the server.
     """
-    ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    if not ca.exists():
-        print("WARN: ChatActivity missing (ghost mode)")
-        return
-    t = ca.read_text(encoding="utf-8")
-    if "a11y-fork: ghost mode" in t:
-        print("ChatActivity ghost-mode already patched")
-        return
-    count = t.count("getMessagesController().markDialogAsRead(")
-    if count == 0:
-        print("WARN: ChatActivity markDialogAsRead call sites not found (ghost mode)")
-        return
-    import re
-    pattern = re.compile(r"(\s*)getMessagesController\(\)\.markDialogAsRead\(([^;]*)\);")
-    def guard(m):
-        indent, args = m.group(1), m.group(2)
-        return (
-            f"{indent}if (!org.telegram.messenger.A11yConfig.getGhostMode()) {{ /* a11y-fork: ghost mode */\n"
-            f"{indent}    getMessagesController().markDialogAsRead({args});\n"
-            f"{indent}}}"
-        )
-    new_text, n = pattern.subn(guard, t)
-    if n == 0:
-        print("WARN: ChatActivity ghost-mode regex found no matches")
-        return
-    ca.write_text(new_text, encoding="utf-8")
-    print(f"ChatActivity ghost-mode OK ({n} call sites guarded)")
+    mc = JAVA / "org/telegram/messenger/MessagesController.java"
+    _gate_once(
+        mc,
+        "    private void completeReadTask(ReadTask task) {\n",
+        "    private void completeReadTask(ReadTask task) {\n"
+        "        if (A11yConfig.getGhostMode()) { // a11y-fork: ghost mode -- never send read receipts\n"
+        "            return;\n"
+        "        }\n",
+        "MessagesController ghost mode (read receipts)")
 
 
 
