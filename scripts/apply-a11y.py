@@ -50,6 +50,7 @@ OPTION_SELECT_MESSAGE = 203
 OPTION_LEAVE_COMMENT = 204
 OPTION_BOT_BUTTONS_MENU = 205
 OPTION_LINKS_MENU = 206
+OPTION_FORWARD_HERE = 208
 
 
 def apply_mehran_patch() -> None:
@@ -218,6 +219,9 @@ def _patch_a11y_string_resources() -> None:
         "A11yOldMenuLabel": "Old-style main menu instead of the bottom tabs: %s",
         "A11yMainMenu": "Main menu",
         "A11yCategoryLabel": "Chat category filter in the chat list: %s",
+        "A11yForwardHere": "Forward here",
+        "A11yForwardHereLabel": "Forward here in message options: %s",
+        "A11yForwardedHere": "Forwarded here",
         "A11yCategoryButton": "Category: %s",
         "A11yCategoryPrivate": "Private chats",
         "A11yCategoryShowing": "Showing: %s",
@@ -296,6 +300,9 @@ def _patch_a11y_string_resources() -> None:
         "A11yOldMenuLabel": "منوی قدیمی تلگرام به‌جای نوار پایین: %s",
         "A11yMainMenu": "منوی اصلی",
         "A11yCategoryLabel": "فیلتر دسته‌بندی چت‌ها در لیست چت: %s",
+        "A11yForwardHere": "فوروارد همین‌جا",
+        "A11yForwardHereLabel": "فوروارد همین‌جا در گزینه‌های پیام: %s",
+        "A11yForwardedHere": "پیام دوباره در همین گفتگو ارسال شد",
         "A11yCategoryButton": "دسته‌بندی: %s",
         "A11yCategoryPrivate": "گفتگوهای خصوصی",
         "A11yCategoryShowing": "نمایش: %s",
@@ -821,6 +828,38 @@ def patch_forward_handler(t: str) -> str:
     if "a11y-fork: forward to Saved Messages" not in t:
         saved = '''            case OPTION_FORWARD_TO_SAVED: { // a11y-fork: forward to Saved Messages\n                if (selectedObject != null) {\n                    try {\n                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {\n                            toSend.addAll(selectedObjectGroup.messages);\n                        } else {\n                            toSend.add(selectedObject);\n                        }\n                        IS_FORWARD_NO_QUOTE = org.telegram.messenger.A11yConfig.getForwardSavedNoQuote();\n                        long savedId = getUserConfig().getClientUserId();\n                        getSendMessagesHelper().sendMessage(toSend, savedId, false, false, true, 0, 0);\n                        try {\n                            if (getParentActivity() != null) {\n                                getParentActivity().getWindow().getDecorView().announceForAccessibility(\"Forwarded to Saved Messages\");\n                            }\n                        } catch (Throwable ignore) {}\n                    } catch (Throwable e) {\n                        FileLog.e(e);\n                    }\n                }\n                selectedObject = null;\n                selectedObjectToEditCaption = null;\n                selectedObjectGroup = null;\n                break;\n            }\n'''
         t = t[:saved_start] + saved + t[saved_start:]
+    if "a11y-fork: forward here handler" not in t:
+        here = (
+            "            case OPTION_FORWARD_HERE: { // a11y-fork: forward here handler\n"
+            "                if (selectedObject != null) {\n"
+            "                    try {\n"
+            "                        java.util.ArrayList<MessageObject> toSend = new java.util.ArrayList<>();\n"
+            "                        if (selectedObjectGroup != null && selectedObjectGroup.messages != null) {\n"
+            "                            toSend.addAll(selectedObjectGroup.messages);\n"
+            "                        } else {\n"
+            "                            toSend.add(selectedObject);\n"
+            "                        }\n"
+            "                        IS_FORWARD_NO_QUOTE = false;\n"
+            "                        getSendMessagesHelper().sendMessage(toSend, dialog_id, false, false, true, 0, getThreadMessage(), 0, 0);\n"
+            "                        try {\n"
+            "                            if (getParentActivity() != null) {\n"
+            "                                getParentActivity().getWindow().getDecorView().announceForAccessibility(LocaleController.getString(R.string.A11yForwardedHere));\n"
+            "                            }\n"
+            "                        } catch (Throwable ignore) {}\n"
+            "                    } catch (Throwable e) {\n"
+            "                        FileLog.e(e);\n"
+            "                    }\n"
+            "                }\n"
+            "                selectedObject = null;\n"
+            "                selectedObjectToEditCaption = null;\n"
+            "                selectedObjectGroup = null;\n"
+            "                break;\n"
+            "            }\n"
+        )
+        idx = t.find(marker)
+        if idx < 0:
+            raise RuntimeError("forward here handler anchor not found")
+        t = t[:idx] + here + t[idx:]
     return t
 
 
@@ -854,7 +893,8 @@ def patch_forward_menu_extras() -> None:
     # script do not exist in the generated Java source.
     option_decl = (
         "private static final int OPTION_FORWARD_NO_QUOTE = 200;\n"
-        "    private static final int OPTION_FORWARD_TO_SAVED = 202;"
+        "    private static final int OPTION_FORWARD_TO_SAVED = 202;\n"
+        "    private static final int OPTION_FORWARD_HERE = %d;" % OPTION_FORWARD_HERE
     )
     if "private static final int OPTION_FORWARD_NO_QUOTE = 200;" not in t:
         field_anchor = "public static boolean IS_FORWARD_NO_QUOTE = false;"
@@ -877,6 +917,11 @@ def patch_forward_menu_extras() -> None:
              "                    items.add(LocaleController.getString(R.string.A11yForwardWithoutQuote));\n"
              f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
              "                    icons.add(R.drawable.msg_forward);\n"
+             "                    if (org.telegram.messenger.A11yConfig.getForwardHere()) { // a11y-fork: forward here (setting, default OFF)\n"
+             "                        items.add(LocaleController.getString(R.string.A11yForwardHere));\n"
+             f"                        options.add({OPTION_FORWARD_HERE});\n"
+             "                        icons.add(R.drawable.msg_forward);\n"
+             "                    }\n"
              "                    items.add(LocaleController.getString(R.string.A11yForwardToSaved));\n"
              f"                    options.add({OPTION_FORWARD_TO_SAVED});\n"
              "                    icons.add(R.drawable.msg_forward);\n"
@@ -3439,6 +3484,24 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         useLegacyNavigationDrawer = getLegacyNavigationDrawer();
     }
 
+    public static final String PREF_FORWARD_HERE = "a11y_forward_here";
+
+    /** "Forward here" item in the message options (re-sends the message into the same chat). Default OFF. */
+    public static boolean getForwardHere() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_FORWARD_HERE, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setForwardHere(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_FORWARD_HERE, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
     public static final String PREF_CATEGORY_FILTER = "a11y_category_filter";
     /** The chosen category of the chat list filter: 0 all, 1 private chats, 2 groups, 3 channels, 4 bots, 5 unread, 6 read. Not saved. */
     public static int categoryFilterValue = 0;
@@ -3482,6 +3545,7 @@ def patch_a11y_settings_dialog_stays_open() -> None:
         items.add(LocaleController.formatString(R.string.A11yProxyButtonLabel, onOff(getProxyButtonInToolbar())));
         items.add(LocaleController.formatString(R.string.A11yMenuStyleLabel, menuStyleLabels()[getMenuStyle()]));
         items.add(LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter())));
+        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));
         return items;
     }
 
@@ -3600,6 +3664,10 @@ def patch_a11y_settings_dialog_stays_open() -> None:
                     } catch (Throwable ignore) {
                     }
                     message = LocaleController.formatString(R.string.A11yCategoryLabel, onOff(getCategoryFilter()));
+                    break;
+                case 21:
+                    setForwardHere(!getForwardHere());
+                    message = LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere()));
                     break;
                 default:
                     return;
@@ -5226,6 +5294,28 @@ def patch_legacy_navigation_drawer() -> None:
         dst.write_bytes(zf.read(name))
         count += 1
     print("Legacy drawer: %d files installed OK" % count)
+
+    # a11y-fork: bring "New Channel" back into the classic drawer (right after New Group, as in 11.4.2)
+    _gate_once(
+        JAVA / "org/telegram/ui/Adapters/LegacyDrawerLayoutAdapter.java",
+        "        //items.add(new Item(4, LocaleController.getString(R.string.NewChannel), newChannelIcon));\n",
+        "        items.add(new Item(4, LocaleController.getString(R.string.NewChannel), newChannelIcon)); // a11y-fork: New Channel restored\n",
+        "Legacy drawer New Channel item")
+    _gate_once(
+        JAVA / "org/telegram/ui/Adapters/LegacyDrawerLayoutAdapter.java",
+        "        newGroupIcon = R.drawable.msg_groups;\n",
+        "        newGroupIcon = R.drawable.msg_groups;\n        newChannelIcon = R.drawable.msg_channel; // a11y-fork\n",
+        "Legacy drawer New Channel icon")
+    _gate_once(
+        JAVA / "org/telegram/ui/LegacyDrawerHelper.java",
+        "            } else if (id == 3) {\n",
+        "            } else if (id == 4) { // a11y-fork: New Channel\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putInt(\"step\", 0);\n"
+        "                activity.presentFragment(new ChannelCreateActivity(args));\n"
+        "                container.closeDrawer(false);\n"
+        "            } else if (id == 3) {\n",
+        "Legacy drawer New Channel click")
 
     la = JAVA / "org/telegram/ui/LaunchActivity.java"
     _gate_once(
