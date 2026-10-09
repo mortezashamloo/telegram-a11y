@@ -5,25 +5,61 @@
 TalkBack-friendly patches for official [Telegram Android](https://github.com/DrKLO/Telegram), plus a GitHub Actions workflow to build an APK **without a powerful PC**.
 
 > This is an **accessibility fork kit** (patches + CI), not the official Telegram app.  
-> Package id: `org.telegram.messenger.accessible` (installs **next to** official Telegram).
+> Package id: `com.shamloo.telegram.accessible` (installs **next to** official Telegram).
 
 ---
 
 ## Features (TalkBack)
 
-| Feature | Description |
-|--------|-------------|
-| Chat list order | **Name first, then type** (e.g. “Grok, channel”) |
-| Less clutter between messages | Hide **Share** and on-bubble **Leave comment**; comment stays in the message menu |
-| Progress | Announce **upload/download percent** |
-| Long-press | Opens the **single-message menu** (not multi-select by default under TalkBack) |
-| Select | **Select** is a menu item and starts action mode properly |
-| Reactions | **Reactions** menu item shows/hides the reaction strip |
-| Bot buttons | One **Bot buttons** item → dialog with the real bot actions (not scattered; not between messages) |
-| Labels | Settings camera/avatar/search, Storage usage, and related controls |
-| Language | Labels via `LocaleController` — **Persian when UI is Persian**, English otherwise |
-| Forward without quote | Separate menu option (does not replace normal Forward) |
-| APK size | **arm64-v8a only** (smaller; fine for modern phones) |
+Everything below is applied by `scripts/apply-a11y.py` on top of the latest official source. Options marked **(setting)** live in **Settings → Accessible settings** and are **off by default** unless a default is given.
+
+### Chat list
+- Chat name first, then its type (e.g. "Grok, channel"); "Muted" is not read; longer message preview.
+- Sent / received time is read last, in Telegram's own wording.
+- **(setting)** Contact status (online / last seen) in the preview — default **on**.
+- **(setting)** Hide the sponsored channel.
+- **(setting)** Category filter button: All / Private chats / Groups / Channels / Bots.
+- "Selected" / "Unselected" is spoken when a chat is picked; **Select all** in the selection bar's More options.
+
+### Reading messages
+- Upload / download **percent** is announced only while TalkBack focus is on that message; the step (1 / 5 / 10 / 20 %) is a **(setting)**.
+- Files are read as "File: name" with the real file name, not a long number.
+- Share and the on-bubble Leave comment button are hidden between messages.
+- Reading by character and by word works inside a message.
+- **(setting)** Media album grouping ("photo 2 of 5"), admin / owner tags, "Downloaded / not downloaded" status, user status (typing, recording, online).
+- **(setting)** Solar (Persian) calendar for date headers and last seen.
+- **(setting)** Touch click sound when a chat opens or a message is tapped.
+
+### Message options (long-press)
+- Long-press opens the single-message menu, also on replies, files and photos.
+- **Leave comment** (with the comment count) is the first item; **Select** is the last.
+- **Bot buttons** — one item that opens the real bot actions.
+- **Reactions** — one item instead of a reaction strip in the way.
+- **Forward without quote** and **Forward to Saved Messages** next to Forward; **(setting)** Saved Messages without quote.
+- **(setting)** **Forward here** — sends the message again into the same chat.
+- **(setting)** **Links** — lists the links and @mentions of a message as written; t.me links open inside Telegram.
+- **(setting)** Sender options (profile, send message, mention, search).
+- **(setting)** Share and Save to music for voice messages.
+
+### Voice and audio
+- Voice message quality: Low / Medium (default) / High.
+- Vibration when recording starts; **(setting)** start beep.
+- **(setting)** Rewind and forward buttons in the audio player bar.
+
+### Menus and toolbar
+- **(setting)** Main menu style: current Telegram (bottom tabs) / old-style popup menu / classic side drawer (My Profile, New Group, New Channel, Contacts, Calls, Saved Messages, Settings, Invite Friends, Telegram Features). The classic drawer needs the app reopened.
+- **(setting)** Proxy button in the chat list toolbar.
+- The Accessible settings dialog stays open while you change options.
+
+### Network and privacy
+- **(setting)** Ghost mode: read receipts are not sent to the server.
+- **(setting)** Auto-download of small files: automatic / voice messages only (default) / none.
+
+### Other
+- Labels for unlabeled buttons (settings, contacts, video player, add member, and more).
+- Persian and English texts through `LocaleController`.
+- Features ported from Mehran Latifi's fork (see Credits).
+- APK size: **arm64-v8a only**; own package id and private signing key.
 
 ---
 
@@ -57,7 +93,6 @@ If Play Protect warns on older public debug builds, this kit uses a **unique pac
 | `A11Y_STORE_PASSWORD` | `telegram-a11y-local` (if you used defaults) |
 | `A11Y_KEY_PASSWORD` | same as store password |
 | `A11Y_KEY_ALIAS` | `a11ykey` |
-| `A11Y_APP_PACKAGE` | optional; default `org.telegram.messenger.accessible` |
 
 **Windows (PowerShell) — copy keystore to clipboard as Base64:**
 
@@ -73,7 +108,7 @@ Order of secrets does **not** matter. A trailing blank line in Base64 is usually
 
 ## Build your own fork (another blind developer / friend)
 
-1. Fork this repo **or** create an empty repo and copy `scripts/`, `.github/workflows/`, `patches/`.
+1. Fork this repo **or** create an empty repo and copy `scripts/` and `.github/workflows/`.
 2. Add secrets above on **your** fork.
 3. Run **Build APK**.
 4. Keep **your** keystore private; do not commit it to git.
@@ -102,13 +137,22 @@ See also [RELEASE_NOTES_TEMPLATE.md](RELEASE_NOTES_TEMPLATE.md).
 ## Project layout
 
 ```
-.github/workflows/build-apk.yml   # CI build
-scripts/apply-a11y.py             # core TalkBack patches
-scripts/post-a11y-menu.py         # menu order, bot submenu, labels
-scripts/prepare-release-signing.py# unique package + keystore + google-services
-scripts/slim-arm64.py             # arm64-only APK
-patches/                          # docs + some .patch files
+.github/workflows/build-apk.yml    # CI build
+scripts/apply-a11y.py              # core TalkBack patches (applied on a fresh DrKLO/Telegram clone)
+scripts/A11yConfig.java            # Accessible Settings (copied into the source by apply-a11y.py)
+scripts/mehran-a11y.patch          # features ported from Mehran Latifi's fork
+scripts/inject-api.py              # API ID / HASH from GitHub Secrets
+scripts/prepare-release-signing.py # private keystore + google-services
+scripts/slim-arm64.py              # arm64-only APK
 ```
+
+The package id (`com.shamloo.telegram.accessible`) is set by the workflow step "Set package name".
+
+---
+
+## Credits
+
+Many accessibility features (for example playback position and labels for unlabeled buttons) come from the fork of **Mehran Latifi**: <https://github.com/mehranlatifi83/Telegram> — thank you.
 
 ---
 
@@ -124,21 +168,59 @@ Not affiliated with Telegram FZ-LLC. Use at your own risk.
 پچ‌های دوستدار **TalkBack** برای [تلگرام اندروید رسمی](https://github.com/DrKLO/Telegram) + بیلد با **GitHub Actions** بدون نیاز به سیستم قوی.
 
 > این یک **کیت دسترس‌پذیری** است (پچ + CI)، نه اپ رسمی تلگرام.  
-> شناسه پکیج: `org.telegram.messenger.accessible` (کنار تلگرام رسمی نصب می‌شود).
+> شناسه پکیج: `com.shamloo.telegram.accessible` (کنار تلگرام رسمی نصب می‌شود).
 
 ## قابلیت‌ها (TalkBack)
 
-- لیست چت: **اول نام، بعد نوع** (مثلاً «گراک، کانال»)
-- بین پیام‌ها: مخفی **Share** و دکمهٔ روی حباب **Leave comment** (کامنت در منوی پیام)
-- اعلام **درصد** آپلود/دانلود
-- long-press: منوی **تک‌پیام** (نه multi-select پیش‌فرض زیر TalkBack)
-- **Select** از منو → حالت انتخاب
-- **Reactions** از منو (نمایش نوار واکنش)
-- **دکمه‌های ربات**: یک آیتم «Bot buttons / دکمه‌های ربات» → دیالوگ؛ بین پیام‌ها پخش نیست
-- برچسب Settings و Storage و کنترل‌های مرتبط
-- برچسب‌ها با `LocaleController`: **فارسی وقتی زبان برنامه فارسی است**
-- Forward without quote به‌صورت گزینهٔ جدا
-- حجم کمتر: فقط **arm64**
+همهٔ موارد زیر را `scripts/apply-a11y.py` روی آخرین سورس رسمی اعمال می‌کند. گزینه‌های علامت‌خورده با **(تنظیم)** در **Settings ← Accessible settings** هستند و مگر پیش‌فرض ذکر شده باشد، **خاموش**‌اند.
+
+### لیست چت
+- اول نام چت، بعد نوعش (مثلاً «گراک، کانال»)؛ کلمهٔ «Muted» خوانده نمی‌شود؛ پیش‌نمایش پیام بلندتر.
+- زمان ارسال / دریافت آخر از همه و با همان عبارت خود تلگرام خوانده می‌شود.
+- **(تنظیم)** وضعیت مخاطب (آنلاین / آخرین بازدید) در پیش‌نمایش — پیش‌فرض **روشن**.
+- **(تنظیم)** مخفی کردن کانال حامی.
+- **(تنظیم)** دکمهٔ فیلتر دسته‌بندی: همه / چت خصوصی / گروه‌ها / کانال‌ها / ربات‌ها.
+- هنگام انتخاب چت «Selected» / «Unselected» گفته می‌شود؛ **Select all** در More options نوار انتخاب.
+
+### خواندن پیام‌ها
+- **درصد** آپلود / دانلود فقط وقتی فوکوس TalkBack روی همان پیام است اعلام می‌شود؛ گام آن (۱ / ۵ / ۱۰ / ۲۰ درصد) **(تنظیم)** است.
+- فایل‌ها به شکل «File: نام» با نام واقعی خوانده می‌شوند، نه عدد طولانی.
+- Share و دکمهٔ Leave comment روی حباب بین پیام‌ها مخفی است.
+- خواندن حرف‌به‌حرف و کلمه‌به‌کلمه داخل پیام کار می‌کند.
+- **(تنظیم)** گروه‌بندی آلبوم («عکس ۲ از ۵»)، تگ ادمین / مالک، وضعیت «دانلود‌شده / دانلود‌نشده»، وضعیت کاربر (در حال تایپ، ضبط، آنلاین).
+- **(تنظیم)** تقویم خورشیدی برای سرتیتر تاریخ‌ها و آخرین بازدید.
+- **(تنظیم)** صدای لمس هنگام باز شدن چت یا ضربه روی پیام.
+
+### گزینه‌های پیام (long-press)
+- long-press منوی تک‌پیام را باز می‌کند، روی ریپلای، فایل و عکس هم.
+- **Leave comment** (با تعداد کامنت) اولین آیتم است و **Select** آخرین.
+- **Bot buttons** — یک آیتم که دکمه‌های واقعی ربات را باز می‌کند.
+- **Reactions** — یک آیتم، به‌جای نوار واکنشِ مزاحم.
+- **Forward without quote** و **Forward to Saved Messages** کنار Forward؛ **(تنظیم)** ذخیره‌شده‌ها بدون نقل‌قول.
+- **(تنظیم)** **Forward here** — پیام را دوباره در همان چت می‌فرستد.
+- **(تنظیم)** **Links** — لینک‌ها و @منشن‌های پیام را همان‌طور که نوشته شده فهرست می‌کند؛ لینک‌های t.me داخل تلگرام باز می‌شوند.
+- **(تنظیم)** گزینه‌های فرستنده (پروفایل، ارسال پیام، منشن، جستجو).
+- **(تنظیم)** Share و Save to music برای پیام‌های صوتی.
+
+### ویس و صدا
+- کیفیت پیام صوتی: Low / Medium (پیش‌فرض) / High.
+- لرزش هنگام شروع ضبط؛ **(تنظیم)** بوق شروع ضبط.
+- **(تنظیم)** دکمه‌های عقب و جلو در نوار پخش‌کنندهٔ صدا.
+
+### منوها و نوار بالا
+- **(تنظیم)** سبک منوی اصلی: تلگرام فعلی (نوار پایین) / منوی قدیمی پاپ‌آپ / منوی کشویی کلاسیک (My Profile، New Group، New Channel، Contacts، Calls، Saved Messages، Settings، Invite Friends، Telegram Features). منوی کشویی نیاز به باز کردن دوبارهٔ برنامه دارد.
+- **(تنظیم)** دکمهٔ پروکسی در نوار بالای لیست چت.
+- پنجرهٔ Accessible settings هنگام تغییر گزینه‌ها بسته نمی‌شود.
+
+### شبکه و حریم خصوصی
+- **(تنظیم)** حالت روح: رسید خواندن به سرور فرستاده نمی‌شود.
+- **(تنظیم)** دانلود خودکار فایل‌های کم‌حجم: خودکار / فقط پیام‌های صوتی (پیش‌فرض) / هیچ.
+
+### سایر
+- برچسب برای دکمه‌های بدون برچسب (تنظیمات، مخاطبین، پخش ویدیو، افزودن عضو و ...).
+- متن‌های فارسی و انگلیسی با `LocaleController`.
+- قابلیت‌های برگرفته از فورک مهران لطیفی (بخش قدردانی).
+- حجم کمتر: فقط **arm64-v8a**؛ شناسهٔ پکیج و کلید امضای اختصاصی.
 
 ## راهنمای سریع کاربران صفحه‌خوان
 
@@ -191,3 +273,7 @@ Set-Clipboard -Value ([Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\User
 
 پچ‌های حداقلی برای تلگرام اندروید (**GPL-2.0**).  
 وابسته به Telegram FZ-LLC نیست. با مسئولیت خودتان استفاده کنید.
+
+## قدردانی
+
+بخش بزرگی از قابلیت‌های دسترس‌پذیری (مثل موقعیت پخش و برچسب دکمه‌های بدون برچسب) از فورک **مهران لطیفی** گرفته شده: <https://github.com/mehranlatifi83/Telegram> — سپاس.
