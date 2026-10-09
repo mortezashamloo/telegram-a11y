@@ -14,13 +14,13 @@ jobs:
         with:
           path: patches-repo
 
-      # a11y-fork: cache key based on patch scripts, so a changed
-      # apply-a11y.py / patches/* invalidates the Telegram clone cache.
+      # a11y-fork: cache key based on the scripts folder (apply-a11y.py, A11yConfig.java,
+      # mehran-a11y.patch), so any change invalidates the Telegram clone cache.
       - name: Compute patches cache key
         id: patches_key
         run: |
           set -e
-          KEY=$(find patches-repo/scripts patches-repo/patches -type f \( -name '*.py' -o -name '*.patch' \) -print0 2>/dev/null \
+          KEY=$(find patches-repo/scripts -type f \( -name '*.py' -o -name '*.patch' -o -name '*.java' \) -print0 2>/dev/null \
                  | sort -z | xargs -0 cat 2>/dev/null | sha256sum | cut -c1-16)
           if [ -z "$KEY" ]; then KEY="nopatches"; fi
           echo "key=$KEY" >> "$GITHUB_OUTPUT"
@@ -159,12 +159,6 @@ jobs:
             exit 1
           fi
           echo "Using $A11Y ($(wc -c < "$A11Y") bytes)"
-
-          shopt -s nullglob
-          for f in patches-repo/patches/*.patch; do
-            echo "Applying $f"
-            git -C telegram apply --whitespace=nowarn "$PWD/$f" || git -C telegram apply -3 "$PWD/$f" || true
-          done
 
           python3 patches-repo/scripts/apply-a11y.py
           if [ -f "$PWD/patches-repo/scripts/slim-arm64.py" ]; then
