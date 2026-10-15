@@ -377,7 +377,7 @@ def patch_download_completion_beep() -> None:
             t = t.replace(row_anchor, row_anchor + '\n        items.add(LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));', 1)
         case_anchor = """                default:
                     return;"""
-        case = """                case 23: // a11y-fork: download-completion beep
+        case = """                case 22: // a11y-fork: download-completion beep
                     setDownloadCompleteBeep(!getDownloadCompleteBeep());
                     message = LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep()));
                     break;
@@ -6097,7 +6097,7 @@ def patch_dialogs_select_all() -> None:
 
 
 def patch_round3_a11yconfig() -> None:
-    """Accessible Settings: two new switches (both default OFF) + dialogs that follow Telegram's theme.
+    """Accessible Settings: one new switch (default OFF) + dialogs that follow Telegram's theme.
 
     - "Counts on the media tabs of groups and channels"  (A11yConfig.getTabCounts)
     - every Accessible Settings dialog (the list and its pickers) takes its background from
@@ -6136,7 +6136,6 @@ def patch_round3_a11yconfig() -> None:
         }
     }
 
-    /** Beep when a download the user started has finished, wherever TalkBack focus is. Default OFF. */
     // ---- Accessible Settings dialogs follow Telegram's current theme ----
     private static int a11yDialogBase() {
         try {
@@ -6220,7 +6219,7 @@ def patch_round3_a11yconfig() -> None:
            "                    return;\n"
            "            }\n"
            "            refresh.run();\n")
-    new = ("                case 22:\n"
+    new = ("                case 23:\n"
            "                    setTabCounts(!getTabCounts());\n"
            "                    message = LocaleController.formatString(R.string.A11yTabCountsLabel, onOff(getTabCounts()));\n"
            "                    break;\n"
@@ -6734,8 +6733,8 @@ def main() -> int:
     patch_sender_options_menu()
     patch_selection_announce()
     patch_dialogs_select_all()
-    patch_download_completion_beep()
     patch_round3_a11yconfig()
+    patch_download_completion_beep()
     patch_round3_media_tab_counts()
     patch_round3_link_long_press_copy()
     patch_round3_category_folders()
