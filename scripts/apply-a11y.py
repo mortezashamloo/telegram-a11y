@@ -395,7 +395,8 @@ def patch_download_completion_beep() -> None:
         return
     anchor = """                    if (delegate != null) {
                         delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
-                    }"""
+                    }
+                }"""
     block = anchor + """
                     // a11y-fork: download-completion beep (user-controlled; default OFF)
                     try {
