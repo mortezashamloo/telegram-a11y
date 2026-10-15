@@ -6575,7 +6575,6 @@ def patch_round3_category_folders() -> None:
     print("DialogsActivity category folders OK")
 
 def patch_round4_menu_back_focus() -> None:
-    patch_fix_talkback_menu_dismiss_freeze() -> None:
     """Message options closed with Back: TalkBack focus goes back to the message the menu was opened on,
     so swiping right continues with the next message (before, the focus was lost until a two-finger scroll)."""
     p = JAVA / "org/telegram/ui/ChatActivity.java"
