@@ -1700,20 +1700,20 @@ def patch_dialogcell_topic_solar_preview_date() -> None:
     if marker in t:
         print("DialogCell topic solar preview date already patched")
         return
-    anchor = "                timeString = LocaleController.stringForMessageListDate(lastMessageDate);\\n"
+    anchor = "                timeString = LocaleController.stringForMessageListDate(lastMessageDate);\n"
     replacement = (
         anchor +
-        "                // " + marker + ": retain Telegram's today/weekday labels, convert calendar dates only\\n"
-        "                try {\\n"
-        "                    if (isTopic && org.telegram.messenger.A11yConfig.getSolarCalendar()\\n"
-        "                            && Math.abs(System.currentTimeMillis() - lastMessageDate * 1000L) >= 7L * 24L * 60L * 60L * 1000L) {\\n"
-        "                        String a11ySolarTopicDate = org.telegram.messenger.A11yConfig.formatSolarDateChat(lastMessageDate, false);\\n"
-        "                        if (a11ySolarTopicDate != null && !a11ySolarTopicDate.isEmpty()) {\\n"
-        "                            timeString = a11ySolarTopicDate;\\n"
-        "                        }\\n"
-        "                    }\\n"
-        "                } catch (Throwable ignore) {\\n"
-        "                }\\n"
+        "                // " + marker + ": retain Telegram's today/weekday labels, convert calendar dates only\n"
+        "                try {\n"
+        "                    if (isTopic && org.telegram.messenger.A11yConfig.getSolarCalendar()\n"
+        "                            && Math.abs(System.currentTimeMillis() - lastMessageDate * 1000L) >= 7L * 24L * 60L * 60L * 1000L) {\n"
+        "                        String a11ySolarTopicDate = org.telegram.messenger.A11yConfig.formatSolarDateChat(lastMessageDate, false);\n"
+        "                        if (a11ySolarTopicDate != null && !a11ySolarTopicDate.isEmpty()) {\n"
+        "                            timeString = a11ySolarTopicDate;\n"
+        "                        }\n"
+        "                    }\n"
+        "                } catch (Throwable ignore) {\n"
+        "                }\n"
     )
     if t.count(anchor) != 1:
         print("WARN: DialogCell topic preview date anchor not found exactly once")
