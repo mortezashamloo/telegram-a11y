@@ -6751,7 +6751,6 @@ def main() -> int:
     patch_stuck_together_bubbles_long_press()
     if MEHRAN:
         patch_mehran_strings_persian()
-    patch_download_completion_beep()
     # MUST stay last: it rewrites English text injected by the patches above
     # (Selected / Bot Buttons / Forwarded to Saved / Accessible settings ...).
     patch_a11y_localization()
