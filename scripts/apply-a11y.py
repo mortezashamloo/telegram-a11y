@@ -174,6 +174,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yStatusOff": "Status preview off",
         "A11yForwardSavedNoQuoteLabel": "Forward to Saved Messages with no quote: %s",
         "A11yRecordingBeepLabel": "Recording start beep: %s",
+        "A11yDownloadCompleteBeepLabel": "Beep when download completes: %s",
         "A11ySolarCalendarLabel": "Solar calendar: %s",
         "A11yBlockSmallFilesLabel": "Do not auto-download small files: %s",
         "A11yNoAutoDownloadLabel": "Do not auto-download files: %s",
@@ -259,6 +260,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yStatusOn": "نمایش وضعیت روشن شد", "A11yStatusOff": "نمایش وضعیت خاموش شد",
         "A11yForwardSavedNoQuoteLabel": "فوروارد به پیام‌های ذخیره‌شده بدون نقل‌قول: %s",
         "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
+        "A11yDownloadCompleteBeepLabel": "بوق هنگام اتمام دانلود: %s",
         "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
         "A11yBlockSmallFilesLabel": "دانلود خودکار فایل‌های کم‌حجم را متوقف کن: %s",
         "A11yNoAutoDownloadLabel": "دانلود خودکار هیچ فایلی: %s",
@@ -332,6 +334,90 @@ def _patch_a11y_string_resources() -> None:
             continue
         for name, value in values.items():
             _set_string(path, name, value)
+
+
+
+def patch_download_completion_beep() -> None:
+    """Add an optional, disabled-by-default beep after a file finishes downloading."""
+    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
+    if cfg.exists():
+        t = cfg.read_text(encoding="utf-8")
+        if "a11y-fork: download-completion beep" not in t:
+            pref_anchor = '    public static final String PREF_RECORDING_BEEP = "a11y_recording_beep";'
+            if pref_anchor in t:
+                t = t.replace(pref_anchor, pref_anchor + '\n    public static final String PREF_DOWNLOAD_COMPLETE_BEEP = "a11y_download_complete_beep";', 1)
+            methods_anchor = "    private static java.util.ArrayList<String> buildSettingsItems() {"
+            methods = """    // a11y-fork: download-completion beep (default OFF)
+    public static boolean getDownloadCompleteBeep() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_DOWNLOAD_COMPLETE_BEEP, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setDownloadCompleteBeep(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_DOWNLOAD_COMPLETE_BEEP, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+"""
+            if methods_anchor in t:
+                t = t.replace(methods_anchor, methods + methods_anchor, 1)
+            row_anchor = "        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));"
+            if row_anchor in t:
+                t = t.replace(row_anchor, row_anchor + '\n        items.add(LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));', 1)
+            default_anchor = "                default:\n                    return;"
+            case = """                case 22: // a11y-fork: download-completion beep
+                    setDownloadCompleteBeep(!getDownloadCompleteBeep());
+                    message = LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep()));
+                    break;
+"""
+            if default_anchor in t:
+                t = t.replace(default_anchor, case + default_anchor, 1)
+            if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and "case 22:" in t:
+                cfg.write_text(t, encoding="utf-8")
+                print("Accessible Settings download-completion beep toggle OK")
+            else:
+                print("WARN: could not fully install download-completion beep setting")
+    else:
+        print("WARN: A11yConfig missing (download-completion beep)")
+
+    fl = JAVA / "org/telegram/messenger/FileLoader.java"
+    if not fl.exists():
+        print("WARN: FileLoader missing (download-completion beep)")
+        return
+    t = fl.read_text(encoding="utf-8")
+    if "a11y-fork: download-completion beep" in t:
+        print("FileLoader download-completion beep already patched")
+        return
+    anchor = """                    if (delegate != null) {
+                        delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
+                    }"""
+    block = anchor + """
+                    // a11y-fork: download-completion beep (user-controlled; default OFF)
+                    try {
+                        if (org.telegram.messenger.A11yConfig.getDownloadCompleteBeep()) {
+                            android.content.Context a11yContext = org.telegram.messenger.ApplicationLoader.applicationContext;
+                            if (a11yContext != null) {
+                                android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 85);
+                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 140);
+                                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                    try { a11yTone.release(); } catch (Throwable ignored) {}
+                                }, 200);
+                            }
+                        }
+                    } catch (Throwable a11yBeepError) {
+                        org.telegram.messenger.FileLog.e(a11yBeepError);
+                    }"""
+    if anchor not in t:
+        print("WARN: FileLoader completion callback anchor not found")
+        return
+    t = t.replace(anchor, block, 1)
+    fl.write_text(t, encoding="utf-8")
+    print("FileLoader download-completion beep OK")
 
 
 def patch_a11y_localization() -> None:
@@ -6062,6 +6148,7 @@ def main() -> int:
     patch_stuck_together_bubbles_long_press()
     if MEHRAN:
         patch_mehran_strings_persian()
+    patch_download_completion_beep()
     # MUST stay last: it rewrites English text injected by the patches above
     # (Selected / Bot Buttons / Forwarded to Saved / Accessible settings ...).
     patch_a11y_localization()
