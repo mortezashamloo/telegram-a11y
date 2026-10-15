@@ -1689,6 +1689,39 @@ def patch_locale_controller_solar_date_chat() -> None:
     print("LocaleController solar formatDateChat OK")
 
 
+def patch_dialogcell_topic_solar_preview_date() -> None:
+    """Use Solar Hijri dates in forum-topic list previews while preserving today/weekday labels."""
+    dc = JAVA / "org/telegram/ui/Cells/DialogCell.java"
+    if not dc.exists():
+        print("WARN: DialogCell missing (topic solar preview date)")
+        return
+    t = dc.read_text(encoding="utf-8")
+    marker = "a11y-fork: solar topic preview date v1"
+    if marker in t:
+        print("DialogCell topic solar preview date already patched")
+        return
+    anchor = "                timeString = LocaleController.stringForMessageListDate(lastMessageDate);\\n"
+    replacement = (
+        anchor +
+        "                // " + marker + ": retain Telegram's today/weekday labels, convert calendar dates only\\n"
+        "                try {\\n"
+        "                    if (isTopic && org.telegram.messenger.A11yConfig.getSolarCalendar()\\n"
+        "                            && Math.abs(System.currentTimeMillis() - lastMessageDate * 1000L) >= 7L * 24L * 60L * 60L * 1000L) {\\n"
+        "                        String a11ySolarTopicDate = org.telegram.messenger.A11yConfig.formatSolarDateChat(lastMessageDate, false);\\n"
+        "                        if (a11ySolarTopicDate != null && !a11ySolarTopicDate.isEmpty()) {\\n"
+        "                            timeString = a11ySolarTopicDate;\\n"
+        "                        }\\n"
+        "                    }\\n"
+        "                } catch (Throwable ignore) {\\n"
+        "                }\\n"
+    )
+    if t.count(anchor) != 1:
+        print("WARN: DialogCell topic preview date anchor not found exactly once")
+        return
+    dc.write_text(t.replace(anchor, replacement, 1), encoding="utf-8")
+    print("DialogCell topic Solar Hijri preview date OK")
+
+
 def patch_solar_last_seen() -> None:
     """Solar Hijri for "last seen" (LocaleController.formatDateOnline).
 
@@ -6023,6 +6056,7 @@ def main() -> int:
     patch_go_to_first_message()
     patch_file_description_spacing()
     patch_locale_controller_solar_date_chat()
+    patch_dialogcell_topic_solar_preview_date()
     patch_solar_last_seen()
     if MEHRAN:
         patch_fork_selection_vs_options()
