@@ -222,6 +222,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryLabel": "Chat category filter in the chat list: %s",
         "A11yForwardHere": "Forward here",
         "A11yForwardHereLabel": "Forward here in message options: %s",
+        "A11yDownloadCompleteBeepLabel": "Download completion beep: %s",
         "A11yForwardedHere": "Forwarded here",
         "A11yCategoryButton": "Category: %s",
         "A11yCategoryPrivate": "Private chats",
@@ -304,6 +305,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryLabel": "فیلتر دسته‌بندی چت‌ها در لیست چت: %s",
         "A11yForwardHere": "فوروارد همین‌جا",
         "A11yForwardHereLabel": "فوروارد همین‌جا در گزینه‌های پیام: %s",
+        "A11yDownloadCompleteBeepLabel": "بوق پایان دانلود: %s",
         "A11yForwardedHere": "پیام دوباره در همین گفتگو ارسال شد",
         "A11yCategoryButton": "دسته‌بندی: %s",
         "A11yCategoryPrivate": "گفتگوهای خصوصی",
@@ -338,14 +340,16 @@ def _patch_a11y_string_resources() -> None:
 
 
 def patch_download_completion_beep() -> None:
-    """Add an optional, disabled-by-default beep after a file finishes downloading."""
+    """Add an optional, disabled-by-default beep when a download finishes, independent of TalkBack focus."""
     cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
     if cfg.exists():
         t = cfg.read_text(encoding="utf-8")
-        if "a11y-fork: download-completion beep" not in t:
-            pref_anchor = '    public static final String PREF_RECORDING_BEEP = "a11y_recording_beep";'
-            if pref_anchor in t:
-                t = t.replace(pref_anchor, pref_anchor + '\n    public static final String PREF_DOWNLOAD_COMPLETE_BEEP = "a11y_download_complete_beep";', 1)
+        pref_anchor = '    public static final String PREF_RECORDING_BEEP = "a11y_recording_beep";'
+        if "PREF_DOWNLOAD_COMPLETE_BEEP" not in t and pref_anchor in t:
+            t = t.replace(pref_anchor, pref_anchor + '\n    public static final String PREF_DOWNLOAD_COMPLETE_BEEP = "a11y_download_complete_beep";', 1)
+
+        # Add the preference accessors exactly once.
+        if "getDownloadCompleteBeep()" not in t:
             methods_anchor = "    private static java.util.ArrayList<String> buildSettingsItems() {"
             methods = """    // a11y-fork: download-completion beep (default OFF)
     public static boolean getDownloadCompleteBeep() {
@@ -366,22 +370,28 @@ def patch_download_completion_beep() -> None:
 """
             if methods_anchor in t:
                 t = t.replace(methods_anchor, methods + methods_anchor, 1)
-            row_anchor = "        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));"
-            if row_anchor in t:
-                t = t.replace(row_anchor, row_anchor + '\n        items.add(LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));', 1)
-            default_anchor = "                default:\n                    return;"
-            case = """                case 22: // a11y-fork: download-completion beep
+
+        # Current fork uses buildSettingsItems() and indexed handleSettingsClick().
+        row_anchor = "        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));"
+        if "A11yDownloadCompleteBeepLabel" not in t and row_anchor in t:
+            t = t.replace(row_anchor, row_anchor + '\n        items.add(LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));', 1)
+        case_anchor = """                default:
+                    return;"""
+        case = """                case 22: // a11y-fork: download-completion beep
                     setDownloadCompleteBeep(!getDownloadCompleteBeep());
                     message = LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep()));
                     break;
 """
-            if default_anchor in t:
-                t = t.replace(default_anchor, case + default_anchor, 1)
-            if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and "case 22:" in t:
-                cfg.write_text(t, encoding="utf-8")
-                print("Accessible Settings download-completion beep toggle OK")
-            else:
-                print("WARN: could not fully install download-completion beep setting")
+        if "case 22: // a11y-fork: download-completion beep" not in t and case_anchor in t:
+            t = t.replace(case_anchor, case + case_anchor, 1)
+
+        # Older variants may still use a switch with no buildSettingsItems(); do not
+        # silently claim success if the expected settings structure was not found.
+        if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and "case 22:" in t:
+            cfg.write_text(t, encoding="utf-8")
+            print("Accessible Settings download-completion beep toggle OK")
+        else:
+            print("WARN: could not fully install download-completion beep setting")
     else:
         print("WARN: A11yConfig missing (download-completion beep)")
 
@@ -390,14 +400,30 @@ def patch_download_completion_beep() -> None:
         print("WARN: FileLoader missing (download-completion beep)")
         return
     t = fl.read_text(encoding="utf-8")
-    if "a11y-fork: download-completion beep" in t:
+    marker = "a11y-fork: download-completion beep"
+    if marker in t:
         print("FileLoader download-completion beep already patched")
         return
-    anchor = """                    if (delegate != null) {
+
+    anchor = """                if (!operation.isPreloadVideoOperation()) {
+                    loadOperationPathsUI.remove(fileName);
+                    if (delegate != null) {
                         delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
-                    }"""
-    block = anchor + """
-                    // a11y-fork: download-completion beep (user-controlled; default OFF)
+                    }
+                }
+
+                checkDownloadQueue(operation, operation.getQueue(), 0);"""
+    block = """                if (!operation.isPreloadVideoOperation()) {
+                    loadOperationPathsUI.remove(fileName);
+                    if (delegate != null) {
+                        delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
+                    }
+                }
+
+                // a11y-fork: download-completion beep (user-controlled; default OFF).
+                // Keep this outside the delegate/cell callback so TalkBack focus and
+                // delegate attachment do not determine whether the beep is played.
+                if (!operation.isPreloadVideoOperation()) {
                     try {
                         if (org.telegram.messenger.A11yConfig.getDownloadCompleteBeep()) {
                             android.content.Context a11yContext = org.telegram.messenger.ApplicationLoader.applicationContext;
@@ -411,14 +437,16 @@ def patch_download_completion_beep() -> None:
                         }
                     } catch (Throwable a11yBeepError) {
                         org.telegram.messenger.FileLog.e(a11yBeepError);
-                    }"""
+                    }
+                }
+
+                checkDownloadQueue(operation, operation.getQueue(), 0);"""
     if anchor not in t:
         print("WARN: FileLoader completion callback anchor not found")
         return
     t = t.replace(anchor, block, 1)
     fl.write_text(t, encoding="utf-8")
     print("FileLoader download-completion beep OK")
-
 
 def patch_a11y_localization() -> None:
     """Replace accessibility-fork hard-coded runtime text with localized resources."""
