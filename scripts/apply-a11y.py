@@ -6096,6 +6096,87 @@ def patch_dialogs_select_all() -> None:
         "DialogsActivity select-all handler")
 
 
+def patch_stuck_focus_after_longpress() -> None:
+    """Clear stale RecyclerListView touch state when message options close, preventing TalkBack focus from sticking."""
+    rl = JAVA / "org/telegram/ui/Components/RecyclerListView.java"
+    marker = "a11y-fork: reset touch state after menu v1"
+    if not rl.exists():
+        print("WARN: RecyclerListView.java missing (stuck focus)")
+        return
+    t = rl.read_text(encoding="utf-8")
+    if marker not in t:
+        anchor = "    public void cancelClickRunnables(boolean uncheck) {\n"
+        if t.count(anchor) != 1:
+            print("WARN: RecyclerListView cancelClickRunnables anchor found %d times (stuck focus)" % t.count(anchor))
+            return
+        method = (
+            "    // " + marker + "\n"
+            "    public void a11yResetTouchState() {\n"
+            "        try {\n"
+            "            if (selectChildRunnable != null) {\n"
+            "                AndroidUtilities.cancelRunOnUIThread(selectChildRunnable);\n"
+            "                selectChildRunnable = null;\n"
+            "            }\n"
+            "            if (currentChildView != null) {\n"
+            "                View a11yChild = currentChildView;\n"
+            "                MotionEvent a11yCancel = MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0);\n"
+            "                try {\n"
+            "                    a11yChild.onTouchEvent(a11yCancel);\n"
+            "                } catch (Throwable ignore) {\n"
+            "                }\n"
+            "                a11yCancel.recycle();\n"
+            "                onChildPressed(a11yChild, 0, 0, false);\n"
+            "                currentChildView = null;\n"
+            "                removeSelection(a11yChild, null);\n"
+            "            }\n"
+            "            interceptedByChild = false;\n"
+            "            if (longPressCalled) {\n"
+            "                longPressCalled = false;\n"
+            "                if (onItemLongClickListenerExtended != null) {\n"
+            "                    onItemLongClickListenerExtended.onLongClickRelease();\n"
+            "                }\n"
+            "            }\n"
+            "            selectorRect.setEmpty();\n"
+            "        } catch (Throwable e) {\n"
+            "            FileLog.e(e);\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        t = t.replace(anchor, method + anchor, 1)
+        rl.write_text(t, encoding="utf-8")
+        print("RecyclerListView a11yResetTouchState OK")
+    else:
+        print("RecyclerListView a11yResetTouchState already patched")
+
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity.java missing (stuck focus)")
+        return
+    c = ca.read_text(encoding="utf-8")
+    if marker in c:
+        print("ChatActivity stuck-focus reset already patched")
+        return
+    anchor = ("                    scrimPopupWindowItems = null;\n"
+              "                    chatLayoutManager.setCanScrollVertically(true);\n")
+    n = c.count(anchor)
+    if n < 1:
+        print("WARN: ChatActivity message-menu dismiss anchor not found (stuck focus)")
+        return
+    add = (
+        "                    // " + marker + "\n"
+        "                    try {\n"
+        "                        if (org.telegram.messenger.AndroidUtilities.isAccessibilityScreenReaderEnabled() && chatListView != null) {\n"
+        "                            chatListView.a11yResetTouchState();\n"
+        "                            chatListView.post(() -> chatListView.a11yResetTouchState());\n"
+        "                        }\n"
+        "                    } catch (Throwable ignore) {\n"
+        "                    }\n"
+    )
+    c = c.replace(anchor, anchor + add)
+    ca.write_text(c, encoding="utf-8")
+    print("ChatActivity stuck-focus reset OK (%d menu dismiss sites)" % n)
+
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -6174,6 +6255,7 @@ def main() -> int:
     if not MEHRAN:
         patch_chat_message_cell_granularity_navigation_legacy()
     patch_stuck_together_bubbles_long_press()
+    patch_stuck_focus_after_longpress()
     if MEHRAN:
         patch_mehran_strings_persian()
     patch_download_completion_beep()
