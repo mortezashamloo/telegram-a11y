@@ -938,7 +938,7 @@ index a8a2558..e5b7ffa 100644
  
  import org.telegram.SQLite.SQLiteCursor;
  import org.telegram.messenger.support.LongSparseIntArray;
-@@ -32,11 +35,61 @@ import java.io.File;
+@@ -32,10 +35,60 @@ import java.io.File;
  import java.math.BigInteger;
  import java.util.ArrayList;
  import java.util.Collections;
@@ -1996,7 +1996,8 @@ index 07142b1..09db66b 100644
 +        transferAnnouncer.appendState(info);
 +        if (miniButtonState >= 0) {
 +            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_small_button, LocaleController.getString(miniButtonState == 0 ? R.string.AccActionDownload : R.string.AccActionCancelDownload)));
-+        }+    }
++        }
++    }
 +
 +    @Override
 +    public boolean performAccessibilityAction(int action, Bundle arguments) {
@@ -2985,7 +2986,7 @@ index 6b45401..9d1f2b9 100644
      private void didClickedImage() {
          if (currentMessageObject.hasMediaSpoilers() && !currentMessageObject.needDrawBluredPreview() && !currentMessageObject.isMediaSpoilersRevealed) {
              if (delegate != null && currentMessageObject.isSensitive()) {
-@@ -6361,6 +6912,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+@@ -6361,5 +6912,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
      @Override
      protected void onDetachedFromWindow() {
          super.onDetachedFromWindow();
@@ -3881,7 +3882,7 @@ index 6b45401..9d1f2b9 100644
              for (int i = 0; i < accessibilityVirtualViewBounds.size(); i++) {
                  Rect rect = accessibilityVirtualViewBounds.valueAt(i);
                  if (rect.contains(x, y)) {
-@@ -26677,20 +27853,148 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+@@ -26677,20 +27853,147 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
              }
          } else if (event.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
              currentFocusedVirtualView = 0;
@@ -4993,7 +4994,7 @@ index 6b45401..9d1f2b9 100644
                      info.setBoundsInParent(rect);
                      if (accessibilityVirtualViewBounds.get(virtualViewId) == null || !accessibilityVirtualViewBounds.get(virtualViewId).equals(rect)) {
                          accessibilityVirtualViewBounds.put(virtualViewId, new Rect(rect));
-@@ -27774,7 +29632,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate                 } else if (virtualViewId == REPLY) {
+@@ -27774,6 +29632,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate                 } else if (virtualViewId == REPLY) {
                      info.setEnabled(true);
                      StringBuilder sb = new StringBuilder();
 -                    sb.append(getString("Reply", R.string.Reply));
@@ -5991,7 +5992,7 @@ index 8d4a32c..f02ea36 100644
  
  import org.telegram.messenger.AndroidUtilities;
  import org.telegram.messenger.LocaleController;
-@@ -86,6 +91,165 @@ public class PollEditTextCell extends FrameLayout implements SuggestEmojiView.An
+@@ -86,5 +91,164 @@ public class PollEditTextCell extends FrameLayout implements SuggestEmojiView.An
      private AnimatorSet checkBoxAnimation;     private boolean alwaysShowText2;
      private ChatActivityEnterViewAnimatedIconView emojiButton;
 +    private ReorderDelegate reorderDelegate;
@@ -6983,7 +6984,7 @@ index 9dec6be..30407d3 100644
      public final static int OPTION_FACT_CHECK = 106;
      public final static int OPTION_EDIT_PRICE = 107;
      public final static int OPTION_GIFT = 108;
-@@ -1761,6 +1760,127 @@ public class ChatActivity extends BaseFragment implements
+@@ -1761,6 +1760,126 @@ public class ChatActivity extends BaseFragment implements
          return chatListView;
      }
  
@@ -7987,7 +7988,7 @@ index 34c61bf..720f204 100644
          @Override
          protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
              childrenMeasuredWidth = 0;
-@@ -1320,6 +1414,11 @@ public class Bulletin {
+@@ -1320,6 +1414,10 @@ public class Bulletin {
              return button;
          }
  +        @Override
@@ -9984,7 +9985,7 @@ diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boos
 index 6ce7a67..703b5c0 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells/selector/SelectorUserCell.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells/selector/SelectorUserCell.java
-@@ -110,6 +110,7 @@ public class SelectorUserCell extends BaseCell {
+@@ -110,5 +110,6 @@ public class SelectorUserCell extends BaseCell {
      public void setOptions(View.OnClickListener listener) {
          if (listener != null) {
              optionsView.setVisibility(View.VISIBLE);
@@ -10984,7 +10985,7 @@ diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/Tooltip.java
 index 52a94a9..023be15 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/Components/Tooltip.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/Tooltip.java
-@@ -84,6 +84,10 @@ public class Tooltip extends TextView {
+@@ -84,6 +84,9 @@ public class Tooltip extends TextView {
          updateTooltipPosition();
          showing = true;
  +        // it comes up beside what it is about and takes itself away after two seconds. Nothing
@@ -12984,7 +12985,7 @@ index fd96880..17371c9 100644
          proxyButtonView.setOnClickListener(v -> presentFragment(new ProxyListActivity()));
          proxyButtonView.setAlpha(0f);
          proxyButtonView.setVisibility(View.GONE);
-@@ -7452,6 +7453,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
+@@ -7452,5 +7453,6 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                      passwordButton = new ImageView(context);                     passwordButton.setImageResource(R.drawable.msg_message);
                      AndroidUtilities.updateViewVisibilityAnimated(passwordButton, true, 0.1f, false);
 +                    passwordButton.setContentDescription(getString(R.string.SettingsHelp));
@@ -13967,7 +13968,7 @@ index 4c50280..ea5c6d7 100644
  import android.widget.FrameLayout;
  import android.widget.LinearLayout;
  import android.widget.TextView;
-@@ -3124,6 +3126,36 @@ public class StatisticActivity extends BaseFragment implements NotificationCente
+@@ -3124,6 +3126,35 @@ public class StatisticActivity extends BaseFragment implements NotificationCente
          }
      }
  
@@ -14983,7 +14984,8 @@ index 9bfe1b5..0ea4ab4 100644
 +                if (doc == null && documentId != 0) {
 +                    doc = AnimatedEmojiDrawable.findDocument(currentAccount, documentId);
 +                }
-+                CharSequence description = doc == null ? null : emoji ? MessageObject.describeCustomEmoji(doc) : MessageObject.findAnimatedEmojiEmoticon(doc, null);+                if (TextUtils.isEmpty(description)) {
++                CharSequence description = doc == null ? null : emoji ? MessageObject.describeCustomEmoji(doc) : MessageObject.findAnimatedEmojiEmoticon(doc, null);
++                if (TextUtils.isEmpty(description)) {
 +                    description = LocaleController.getString(emoji ? R.string.Emoji : R.string.AttachSticker);
 +                }
 +                info.setContentDescription(description);
@@ -15982,7 +15984,8 @@ index ef0c264..9eb8f48 100644
                      }
                  }
                  if (dialogId == 0 && (BuildVars.DEBUG_PRIVATE_VERSION && Theme.getActiveTheme().getAccent(false) != null || currentWallpaper instanceof WallpapersListActivity.ColorWallpaper && !Theme.DEFAULT_BACKGROUND_SLUG.equals(((WallpapersListActivity.ColorWallpaper) currentWallpaper).slug) || currentWallpaper instanceof TLRPC.TL_wallPaper)) {
--                    menu2.addItem(5, R.drawable.msg_header_share);+                    menu2.addItem(5, R.drawable.msg_header_share).setContentDescription(LocaleController.getString(R.string.ShareFile));
+-                    menu2.addItem(5, R.drawable.msg_header_share);
++                    menu2.addItem(5, R.drawable.msg_header_share).setContentDescription(LocaleController.getString(R.string.ShareFile));
                  }
                  if (dialogId != 0 && shouldShowDayNightIcon) {
                      sunDrawable = new RLottieDrawable(R.raw.sun, dp(28), dp(28), true, null);
@@ -16878,7 +16881,7 @@ index b54c5d6..3489640 100644
  import org.telegram.messenger.AppGlobalConfig;
  import org.telegram.messenger.MediaController;
  import org.telegram.messenger.MessageObject;
-@@ -2586,6 +2590,253 @@ public class RichEditorListView extends UniversalRecyclerView {
+@@ -2586,6 +2590,252 @@ public class RichEditorListView extends UniversalRecyclerView {
          }
      }
  
@@ -17980,7 +17983,7 @@ index 169ab90..bf3b632 100644
      <string name="AccDescrMsgNotPlayed">Not played</string>
      <string name="AccDescrSearchNext">Next search result</string>
      <string name="AccDescrSearchPrev">Previous search result</string>
-@@ -5126,6 +5184,7 @@     <string name="AccDescrVideoCompressLow">Smaller size</string>
+@@ -5126,5 +5184,6 @@     <string name="AccDescrVideoCompressLow">Smaller size</string>
      <string name="AccDescrVideoCompressHigh">Higher quality</string>
      <string name="AccDescrPlayerDuration">%1$s of %2$s</string>
 +    <string name="AccDescrTransferredSize">%1$s of %2$s</string>
