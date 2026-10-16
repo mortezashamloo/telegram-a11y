@@ -6664,6 +6664,197 @@ def patch_round4_menu_back_focus() -> None:
     p.write_text(t, encoding="utf-8")
     print("ChatActivity menu back focus OK")
 
+def _multi_replace_once(path: Path, pairs, marker: str, label: str) -> None:
+    """Apply several exact replacements to one file: all of them or none (each anchor must occur exactly once)."""
+    if not path.exists():
+        print("%s not present -- nothing to do (%s)" % (path.name, label))
+        return
+    t = path.read_text(encoding="utf-8")
+    if marker in t:
+        print("%s already patched" % label)
+        return
+    for old, _new in pairs:
+        if t.count(old) != 1:
+            print("WARN: %s anchor found %d times in %s: %r" % (label, t.count(old), path.name, old[:70]))
+            return
+    for old, new in pairs:
+        t = t.replace(old, new, 1)
+    path.write_text(t, encoding="utf-8")
+    print("%s OK" % label)
+
+def patch_mehran_transfer_announcer_quiet() -> None:
+    """The fork's AccessibilityTransferAnnouncer says 'downloaded / not downloaded' and the percentage of every
+    transfer. Our project already reads transfer percentages its own way, and the state words are an Accessible
+    Settings switch (default Off), so the announcer follows that same switch and stays silent otherwise."""
+    p = JAVA / "org/telegram/ui/Components/AccessibilityTransferAnnouncer.java"
+    if not p.exists():
+        print("AccessibilityTransferAnnouncer not present (older fork patch) -- nothing to quiet")
+        return
+    t = p.read_text(encoding="utf-8")
+    if "a11y-fork: quiet unless" in t:
+        print("AccessibilityTransferAnnouncer already quiet")
+        return
+    reps = [
+        ("    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n        if (totalSize <= 0) {\n",
+         "    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n        if (a11yQuiet() || totalSize <= 0) { // a11y-fork: quiet unless the state-words switch is on\n"),
+        ("    public void onSuccess() {\n",
+         "    public void onSuccess() {\n        if (a11yQuiet()) {\n            reset();\n            return;\n        }\n"),
+        ("    public void setState(Object key, int newState, float progress, long totalSize, boolean withSize) {\n",
+         "    public void setState(Object key, int newState, float progress, long totalSize, boolean withSize) {\n        if (a11yQuiet()) {\n            return;\n        }\n"),
+        ("    private boolean isRead() {\n",
+         "    private static boolean a11yQuiet() {\n        try {\n            return !org.telegram.messenger.A11yConfig.getAnnounceDownloadState();\n        } catch (Throwable e) {\n            return true;\n        }\n    }\n\n    private boolean isRead() {\n"),
+    ]
+    for old, new in reps:
+        if t.count(old) != 1:
+            print("WARN: AccessibilityTransferAnnouncer anchor not found: %r" % old[:60])
+            return
+        t = t.replace(old, new, 1)
+    p.write_text(t, encoding="utf-8")
+    print("AccessibilityTransferAnnouncer made quiet unless the state-words switch is on OK")
+
+def patch_remove_mehran_progress_percent() -> None:
+    """The fork patch speaks the percentage (and 'x of y MB') of every download and upload: as the progress
+    changes, and inside what a message says. Our own RadialProgress already announces progress well, so the fork's
+    percentage is removed. The plain words (Downloading / Sending / Downloaded / Not downloaded) are kept: they stay
+    behind the existing 'Downloaded / not downloaded status' switch."""
+    marker = "a11y-fork: no progress percent"
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    _multi_replace_once(cmc, [
+        ("    private void announceTransferProgress(boolean sending, long loadedSize, long totalSize) {\n",
+         "    private void announceTransferProgress(boolean sending, long loadedSize, long totalSize) {\n"
+         "        // " + marker + ": numeric progress is handled by RadialProgress\n"),
+        ("        sb.append(\" \").append(percent).append(\"%\");\n"
+         "        if (totalSize > 0) {\n"
+         "            sb.append(\", \").append(formatString(R.string.AccDescrTransferredSize, AndroidUtilities.formatFileSize(loadedSize), AndroidUtilities.formatFileSize(totalSize)));\n"
+         "        }\n",
+         "        // " + marker + ": only the word (Downloading / Sending), no percentage and no size\n"),
+    ], marker, "ChatMessageCell fork progress percent removed")
+    ata = JAVA / "org/telegram/ui/Components/AccessibilityTransferAnnouncer.java"
+    _multi_replace_once(ata, [
+        ("    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n",
+         "    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n"
+         "        // " + marker + ": do not announce numeric progress here\n"),
+        ("        if (sameFile && newState == state && (newState != STATE_DOWNLOADING || step == stateStep || now - stateTime < MIN_INTERVAL)) {\n",
+         "        if (sameFile && newState == state) { // " + marker + ": no re-announcing while the percentage moves\n"),
+        ("        if (withSize && totalSize > 0) {\n"
+         "            return LocaleController.getString(R.string.Downloading) + \" \" + percent + \"%, \"\n"
+         "                + LocaleController.formatString(R.string.OfS, AndroidUtilities.formatFileSize(loadedSize), AndroidUtilities.formatFileSize(totalSize));\n"
+         "        }\n"
+         "        return LocaleController.getString(R.string.Downloading) + \" \" + percent + \"%\";\n",
+         "        return LocaleController.getString(R.string.Downloading); // " + marker + "\n"),
+    ], marker, "AccessibilityTransferAnnouncer progress percent removed")
+
+def patch_row_click_no_clicked_event() -> None:
+    """The newer fork patch makes a screen-reader press on a chat-list row (and a topic row) behave like a
+    finger's press by playing the click AND sending TYPE_VIEW_CLICKED. TalkBack answers that event by speaking the
+    whole row again, so after a tap the preview was read to its end and then the unread message was read once more
+    inside the chat. The older fork patch sent no such event. Keep the click sound, drop the event."""
+    rl = JAVA / "org/telegram/ui/Components/RecyclerListView.java"
+    _gate_once(
+        rl,
+        "        item.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);\n"
+        "        if (onItemClickListener != null) {\n"
+        "            onItemClickListener.onItemClick(item, position);\n"
+        "        } else if (onItemClickListenerExtended != null) {\n"
+        "            onItemClickListenerExtended.onItemClick(item, position, x, y);\n"
+        "        }\n",
+        "        // a11y-fork: no clicked event on a row press (TalkBack read the whole row again after it)\n"
+        "        if (onItemClickListener != null) {\n"
+        "            onItemClickListener.onItemClick(item, position);\n"
+        "        } else if (onItemClickListenerExtended != null) {\n"
+        "            onItemClickListenerExtended.onItemClick(item, position, x, y);\n"
+        "        }\n",
+        "RecyclerListView.clickItem no TYPE_VIEW_CLICKED")
+
+def patch_audio_bar_position_refresh() -> None:
+    """The top audio-player bar says how far the music got ("30 seconds of 5 minutes"), but that text is built only
+    when TalkBack asks for the node and the bar sends nothing when playback moves on, so while focus rests on the bar
+    TalkBack keeps the old number. While the bar's title is the focused item, tell TalkBack at most once every 1.5 s
+    that the window content changed (a plain event: it refreshes TalkBack's copy of the node and is not a live region,
+    so it is not spoken)."""
+    fcv = JAVA / "org/telegram/ui/Components/FragmentContextView.java"
+    marker = "a11y-fork: audio bar position refresh"
+    _multi_replace_once(fcv, [
+        ("        } else if (id == NotificationCenter.messagePlayingProgressDidChanged) {\n"
+         "            if (currentStyle == STYLE_AUDIO_PLAYER) {\n"
+         "                invalidate();\n"
+         "            }\n"
+         "        }\n"
+         "    }\n",
+         "        } else if (id == NotificationCenter.messagePlayingProgressDidChanged) {\n"
+         "            if (currentStyle == STYLE_AUDIO_PLAYER) {\n"
+         "                invalidate();\n"
+         "                a11yRefreshPlaybackPosition(); // " + marker + "\n"
+         "            }\n"
+         "        }\n"
+         "    }\n"
+         "\n"
+         "    // " + marker + "\n"
+         "    private long a11yLastPositionRefresh;\n"
+         "\n"
+         "    private void a11yRefreshPlaybackPosition() {\n"
+         "        try {\n"
+         "            if (!org.telegram.messenger.AndroidUtilities.isAccessibilityScreenReaderEnabled()) {\n"
+         "                return;\n"
+         "            }\n"
+         "            final long now = android.os.SystemClock.uptimeMillis();\n"
+         "            if (now - a11yLastPositionRefresh < 1500) {\n"
+         "                return;\n"
+         "            }\n"
+         "            // the whole bar is clickable, so TalkBack usually rests on the bar itself and not on the\n"
+         "            // text inside it; look at both\n"
+         "            View focused = isAccessibilityFocused() ? this : null;\n"
+         "            if (focused == null && titleTextView != null) {\n"
+         "                for (int i = 0; i < titleTextView.getChildCount(); i++) {\n"
+         "                    final View child = titleTextView.getChildAt(i);\n"
+         "                    if (child != null && child.isAccessibilityFocused()) {\n"
+         "                        focused = child;\n"
+         "                        break;\n"
+         "                    }\n"
+         "                }\n"
+         "            }\n"
+         "            if (focused == null) {\n"
+         "                return;\n"
+         "            }\n"
+         "            a11yLastPositionRefresh = now;\n"
+         "            // any content-changed event drops the screen reader's cached copy of the bar's nodes, so the\n"
+         "            // next time it reads them the position is built again. Not a live region: nothing is spoken\n"
+         "            final android.view.accessibility.AccessibilityEvent event = android.view.accessibility.AccessibilityEvent.obtain(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);\n"
+         "            event.setContentChangeTypes(android.view.accessibility.AccessibilityEvent.CONTENT_CHANGE_TYPE_SUBTREE);\n"
+         "            focused.sendAccessibilityEventUnchecked(event);\n"
+         "        } catch (Throwable ignore) {\n"
+         "        }\n"
+         "    }\n"),
+    ], marker, "FragmentContextView audio bar position refresh")
+
+def patch_longpress_same_menu_path() -> None:
+    """A long press under TalkBack opened the Message options with other arguments than the 'Message options'
+    action of TalkBack's actions list (which has never had the stuck-focus problem). An ordinary single message now
+    uses exactly the arguments of that action path; albums and service messages keep what they had."""
+    p = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not p.exists():
+        print("WARN: ChatActivity missing (long press same menu path)")
+        return
+    t = p.read_text(encoding="utf-8")
+    if "a11y-fork: long press same menu path" in t:
+        print("ChatActivity long press same menu path already patched")
+        return
+    old = ("            if (a11yOn2) {\n"
+           "                createMenu(cell, true, false, x, y, true);\n"
+           "            } else {\n")
+    if t.count(old) != 1:
+        print("WARN: ChatActivity long-press menu call found %d times (long press same menu path)" % t.count(old))
+        return
+    new = ("            if (a11yOn2) { // a11y-fork: long press same menu path\n"
+           "                final MessageObject a11yMo = cell != null ? cell.getMessageObject() : null;\n"
+           "                final boolean a11yGrouped = cell != null && cell.getCurrentMessagesGroup() != null;\n"
+           "                final boolean a11yPlain = a11yMo != null && a11yMo.messageOwner != null && a11yMo.messageOwner.action == null && !a11yGrouped;\n"
+           "                // same arguments as didPressOther (the Message options action of TalkBack's actions list)\n"
+           "                createMenu(cell, true, false, x, y, a11yGrouped || !a11yPlain, !a11yPlain);\n"
+           "            } else {\n")
+    p.write_text(t.replace(old, new, 1), encoding="utf-8")
+    print("ChatActivity long press uses the same menu path as the Message options action OK")
+
 def main() -> int:
     if not Path("telegram").is_dir():
         print("ERROR: telegram/ not found (clone DrKLO/Telegram as ./telegram)", file=sys.stderr)
@@ -6738,6 +6929,11 @@ def main() -> int:
     patch_round3_link_long_press_copy()
     patch_round3_category_folders()
     patch_round4_menu_back_focus()
+    patch_mehran_transfer_announcer_quiet()
+    patch_remove_mehran_progress_percent()
+    patch_row_click_no_clicked_event()
+    patch_audio_bar_position_refresh()
+    patch_longpress_same_menu_path()
     patch_unlabeled_buttons()
     patch_audit_unlabeled_buttons()
     patch_contacts_list_accessibility()
