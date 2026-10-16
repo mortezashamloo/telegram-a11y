@@ -4893,8 +4893,8 @@ def patch_category_filter() -> None:
         "        }\n"
         "    }\n"
         "\n"
-        "    private void showItemOptions() {\n")
-    _gate_once(da, "    private void showItemOptions() {\n", funcs, "DialogsActivity category filter functions")
+        "    public boolean addOrRemoveSelectedDialog(long did, View cell) {\n")
+    _gate_once(da, "    public boolean addOrRemoveSelectedDialog(long did, View cell) {\n", funcs, "DialogsActivity category filter functions")
 
 
 # ---------------------------------------------------------------------------------------------
