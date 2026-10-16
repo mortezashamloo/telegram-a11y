@@ -6350,14 +6350,15 @@ def patch_round3_link_long_press_copy() -> None:
         print("WARN: ChatActivity/AlertDialog missing (link copy)")
         return
     # 1) AlertDialog: a way to reach a row (to give it a long-click)
-    _r3_replace_once(
+    _multi_replace_once(
         adlg,
-        "    public int getItemsCount() {\n        return itemViews.size();\n    }\n",
-        "    public int getItemsCount() {\n        return itemViews.size();\n    }\n\n"
-        "    // a11y-fork: the view of a row of an items dialog (long-click on a link of the Links menu)\n"
-        "    public android.view.View a11yGetItemView(int item) {\n"
-        "        return item < 0 || item >= itemViews.size() ? null : itemViews.get(item);\n"
-        "    }\n",
+        [("    public int getItemsCount() {\n        return itemViews.size();\n    }\n",
+          "    public int getItemsCount() {\n        return itemViews.size();\n    }\n\n"
+          "    // a11y-fork: the view of a row of an items dialog (long-click on a link of the Links menu)\n"
+          "    public android.view.View a11yGetItemView(int item) {\n"
+          "        return item < 0 || item >= itemViews.size() ? null : itemViews.get(item);\n"
+          "    }\n")],
+        "a11yGetItemView",
         "AlertDialog a11yGetItemView")
     t = chat.read_text(encoding="utf-8")
     marker = "a11y-fork: link long-press copy"
