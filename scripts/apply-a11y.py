@@ -4893,8 +4893,12 @@ def patch_category_filter() -> None:
         "        }\n"
         "    }\n"
         "\n"
-        "    public boolean addOrRemoveSelectedDialog(long did, View cell) {\n")
-    _gate_once(da, "    public boolean addOrRemoveSelectedDialog(long did, View cell) {\n", funcs, "DialogsActivity category filter functions")
+        "    }\n")
+    _gate_once(
+        da,
+        "    private ActionBarMenuItem a11yCategoryItem; // a11y-fork: category filter button (setting, default OFF)\n",
+        funcs + ("    private ActionBarMenuItem a11yCategoryItem; // a11y-fork: category filter button (setting, default OFF)\n",),
+        "DialogsActivity category filter functions at class-level field anchor")
 
 
 # ---------------------------------------------------------------------------------------------
