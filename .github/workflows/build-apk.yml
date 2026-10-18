@@ -236,7 +236,7 @@ jobs:
           if not manifest.is_file():
               raise SystemExit(f"Android manifest not found: {manifest}")
           text = manifest.read_text(encoding="utf-8")
-          match = re.search(r"<application\\b[^>]*>", text, flags=re.S)
+          match = re.search(r"<application\b[^>]*>", text, flags=re.S)
           if not match:
               raise SystemExit("Could not find the application element in AndroidManifest.xml.")
           tag = match.group(0)
@@ -244,7 +244,7 @@ jobs:
               ("android:icon", "@mipmap/ic_launcher"),
               ("android:roundIcon", "@mipmap/ic_launcher_round"),
           ):
-              pattern = rf'\\b{re.escape(attr)}="[^"]*"'
+              pattern = rf'\b{re.escape(attr)}="[^"]*"'
               replacement = f'{attr}="{value}"'
               if re.search(pattern, tag):
                   tag = re.sub(pattern, replacement, tag, count=1)
