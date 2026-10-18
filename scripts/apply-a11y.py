@@ -4677,7 +4677,7 @@ def patch_old_style_menu() -> None:
         "            FileLog.e(e);\n"
         "        }\n"
         "    }\n\n"
-        "    private void showItemOptions() {\n",
+        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
         "DialogsActivity old-style menu list")
 
 
