@@ -370,11 +370,43 @@ def patch_download_completion_beep() -> None:
 """
             if methods_anchor in t:
                 t = t.replace(methods_anchor, methods + methods_anchor, 1)
+            else:
+                # Older A11yConfig.java uses showSettingsDialog() and onOff(), not
+                # buildSettingsItems(). Install the same accessors before that helper.
+                legacy_anchor = "    private static String onOff(boolean value) {"
+                if legacy_anchor in t:
+                    t = t.replace(legacy_anchor, methods + legacy_anchor, 1)
 
         # Current fork uses buildSettingsItems() and indexed handleSettingsClick().
         row_anchor = "        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));"
         if "A11yDownloadCompleteBeepLabel" not in t and row_anchor in t:
             t = t.replace(row_anchor, row_anchor + '\n        items.add(LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));', 1)
+
+        # Compatibility path for the older AlertDialog.setItems() settings list.
+        if "A11yDownloadCompleteBeepLabel" not in t:
+            legacy_row = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenu()))\n            };'
+            legacy_row_new = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenu())),\n                    LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep()))\n            };'
+            if legacy_row in t:
+                t = t.replace(legacy_row, legacy_row_new, 1)
+            legacy_click = '''                        } else if (which == 8) {
+                            setLinksMenu(!getLinksMenu());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yLinksLabel, onOff(getLinksMenu())));
+                        }
+'''
+            legacy_click_new = '''                        } else if (which == 8) {
+                            setLinksMenu(!getLinksMenu());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yLinksLabel, onOff(getLinksMenu())));
+                        } else if (which == 9) { // a11y-fork: download-completion beep
+                            setDownloadCompleteBeep(!getDownloadCompleteBeep());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));
+                        }
+'''
+            if legacy_click in t:
+                t = t.replace(legacy_click, legacy_click_new, 1)
+
         case_anchor = """                default:
                     return;"""
         case = """                case 22: // a11y-fork: download-completion beep
@@ -387,7 +419,9 @@ def patch_download_completion_beep() -> None:
 
         # Older variants may still use a switch with no buildSettingsItems(); do not
         # silently claim success if the expected settings structure was not found.
-        if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and "case 22:" in t:
+        modern_setting_ok = "case 22: // a11y-fork: download-completion beep" in t
+        legacy_setting_ok = "which == 9" in t and "A11yDownloadCompleteBeepLabel" in t
+        if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and (modern_setting_ok or legacy_setting_ok):
             cfg.write_text(t, encoding="utf-8")
             print("Accessible Settings download-completion beep toggle OK")
         else:
