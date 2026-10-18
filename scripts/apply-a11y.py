@@ -4643,7 +4643,7 @@ def patch_old_style_menu() -> None:
         "DialogsActivity old-style menu refresh")
     _gate_once(
         da,
-        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
+        "    private void showItemOptions() {\n",
         "    // a11y-fork: the entries of the old side drawer, each opening the screen the drawer opened\n"
         "    private void a11yShowOldStyleMenu() {\n"
         "        try {\n"
@@ -4676,7 +4676,7 @@ def patch_old_style_menu() -> None:
         "            FileLog.e(e);\n"
         "        }\n"
         "    }\n\n"
-        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
+        "    private void showItemOptions() {\n",
         "DialogsActivity old-style menu list")
 
 
@@ -4930,8 +4930,8 @@ def patch_category_filter() -> None:
         )
     _gate_once(
         da,
-        "    private ActionBarMenuItem a11yCategoryItem; // a11y-fork: category filter button (setting, default OFF)\n",
-        funcs + "    private ActionBarMenuItem a11yCategoryItem; // a11y-fork: category filter button (setting, default OFF)\n",
+        "    private void showItemOptions() {\n",
+        funcs + "    private void showItemOptions() {\n",
         "DialogsActivity category filter functions at class-level field anchor")
 
 
