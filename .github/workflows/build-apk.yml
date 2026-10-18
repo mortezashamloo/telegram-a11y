@@ -181,6 +181,49 @@ jobs:
           grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
           grep -n "^APP_PACKAGE\|^RELEASE_" telegram/gradle.properties || true
 
+      # Apply the project logo to Telegram launcher icon resources.
+      - name: Apply Telegram A11y launcher logo
+        run: |
+          set -e
+          python3 -m pip install --quiet cairosvg pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          import cairosvg
+          from PIL import Image
+          import io
+
+          source = Path("patches-repo/assets/telegram-a11y-logo.svg")
+          png = cairosvg.svg2png(url=str(source), output_width=1024, output_height=1024)
+          image = Image.open(io.BytesIO(png)).convert("RGBA")
+          res = Path("telegram/TMessagesProj/src/main/res")
+          if not res.exists():
+              raise SystemExit(f"Android resources directory not found: {res}")
+          changed = 0
+          for folder in res.glob("mipmap-*"):
+              if not folder.is_dir():
+                  continue
+              for name in ("ic_launcher.png", "ic_launcher_round.png"):
+                  target = folder / name
+                  if target.exists():
+                      size = (target.width, target.height) if hasattr(target, "width") else None
+                      with Image.open(target) as old:
+                          dims = old.size
+                      image.resize(dims, Image.Resampling.LANCZOS).save(target)
+                      changed += 1
+          # Adaptive launcher icons use a foreground drawable; replace only existing PNG assets.
+          for folder in res.glob("drawable*"):
+              if folder.is_dir():
+                  target = folder / "ic_launcher_foreground.png"
+                  if target.exists():
+                      with Image.open(target) as old:
+                          dims = old.size
+                      image.resize(dims, Image.Resampling.LANCZOS).save(target)
+                      changed += 1
+          if changed == 0:
+              raise SystemExit("No existing launcher PNG assets were found; refusing a silent no-op.")
+          print(f"Applied Morteza Shamloo Telegram A11y logo to {changed} launcher image(s).")
+          PY
+
       # Own package name (contains "shamloo"). It is set LAST, after prepare-release-signing.py, so
       # nothing can overwrite it. google-services.json must also know the package, otherwise the
       # google-services Gradle plugin stops the build with "No matching client found".
