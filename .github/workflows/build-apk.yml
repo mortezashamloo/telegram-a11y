@@ -181,7 +181,7 @@ jobs:
           grep -n "a11y-fork\|minifyEnabled\|storeFile\|applicationId\|APP_PACKAGE" telegram/TMessagesProj_App/build.gradle | head -40 || true
           grep -n "^APP_PACKAGE\|^RELEASE_" telegram/gradle.properties || true
 
-      # Apply the project logo to Telegram launcher icon resources.
+      # Apply the project logo to the actual launcher icon, including Android adaptive icons.
       - name: Apply Telegram A11y launcher logo
         run: |
           set -e
@@ -191,37 +191,68 @@ jobs:
           import cairosvg
           from PIL import Image
           import io
+          import re
 
           source = Path("patches-repo/assets/telegram-a11y-logo.svg")
+          if not source.is_file():
+              raise SystemExit(f"Project logo is missing: {source}")
           png = cairosvg.svg2png(url=str(source), output_width=1024, output_height=1024)
           image = Image.open(io.BytesIO(png)).convert("RGBA")
           res = Path("telegram/TMessagesProj/src/main/res")
-          if not res.exists():
+          if not res.is_dir():
               raise SystemExit(f"Android resources directory not found: {res}")
-          changed = 0
+
+          changed = []
+          # Legacy density-specific launcher icons and the foreground referenced by
+          # mipmap-anydpi-v26/ic_launcher.xml both need the project logo.
           for folder in res.glob("mipmap-*"):
               if not folder.is_dir():
                   continue
-              for name in ("ic_launcher.png", "ic_launcher_round.png"):
+              for name in ("ic_launcher.png", "ic_launcher_round.png", "icon_foreground.png"):
                   target = folder / name
-                  if target.exists():
-                      size = (target.width, target.height) if hasattr(target, "width") else None
+                  if target.is_file():
                       with Image.open(target) as old:
                           dims = old.size
                       image.resize(dims, Image.Resampling.LANCZOS).save(target)
-                      changed += 1
-          # Adaptive launcher icons use a foreground drawable; replace only existing PNG assets.
+                      changed.append(str(target))
+
+          # Keep compatibility with source revisions that use a drawable foreground.
           for folder in res.glob("drawable*"):
               if folder.is_dir():
                   target = folder / "ic_launcher_foreground.png"
-                  if target.exists():
+                  if target.is_file():
                       with Image.open(target) as old:
                           dims = old.size
                       image.resize(dims, Image.Resampling.LANCZOS).save(target)
-                      changed += 1
-          if changed == 0:
-              raise SystemExit("No existing launcher PNG assets were found; refusing a silent no-op.")
-          print(f"Applied Morteza Shamloo Telegram A11y logo to {changed} launcher image(s).")
+                      changed.append(str(target))
+
+          if not changed:
+              raise SystemExit("No launcher icon PNG assets were found; refusing a silent no-op.")
+
+          # Explicitly select these resources for the app itself. The default enabled
+          # launcher alias inherits the application icon, while disabled alternate icons
+          # retain their original resources.
+          manifest = Path("telegram/TMessagesProj/src/main/AndroidManifest.xml")
+          if not manifest.is_file():
+              raise SystemExit(f"Android manifest not found: {manifest}")
+          text = manifest.read_text(encoding="utf-8")
+          match = re.search(r"<application\\b[^>]*>", text, flags=re.S)
+          if not match:
+              raise SystemExit("Could not find the application element in AndroidManifest.xml.")
+          tag = match.group(0)
+          for attr, value in (
+              ("android:icon", "@mipmap/ic_launcher"),
+              ("android:roundIcon", "@mipmap/ic_launcher_round"),
+          ):
+              pattern = rf'\\b{re.escape(attr)}="[^"]*"'
+              replacement = f'{attr}="{value}"'
+              if re.search(pattern, tag):
+                  tag = re.sub(pattern, replacement, tag, count=1)
+              else:
+                  tag = tag[:-1] + f' {replacement}>'
+          text = text[:match.start()] + tag + text[match.end():]
+          manifest.write_text(text, encoding="utf-8")
+          print(f"Applied project logo to {len(changed)} launcher PNG(s) and set the app launcher icon.")
           PY
 
       # Own package name (contains "shamloo"). It is set LAST, after prepare-release-signing.py, so
