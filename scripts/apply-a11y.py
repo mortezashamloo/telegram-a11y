@@ -370,11 +370,43 @@ def patch_download_completion_beep() -> None:
 """
             if methods_anchor in t:
                 t = t.replace(methods_anchor, methods + methods_anchor, 1)
+            else:
+                # Older A11yConfig.java uses showSettingsDialog() and onOff(), not
+                # buildSettingsItems(). Install the same accessors before that helper.
+                legacy_anchor = "    private static String onOff(boolean value) {"
+                if legacy_anchor in t:
+                    t = t.replace(legacy_anchor, methods + legacy_anchor, 1)
 
         # Current fork uses buildSettingsItems() and indexed handleSettingsClick().
         row_anchor = "        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));"
         if "A11yDownloadCompleteBeepLabel" not in t and row_anchor in t:
             t = t.replace(row_anchor, row_anchor + '\n        items.add(LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));', 1)
+
+        # Compatibility path for the older AlertDialog.setItems() settings list.
+        if "A11yDownloadCompleteBeepLabel" not in t:
+            legacy_row = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenu()))\n            };'
+            legacy_row_new = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenu())),\n                    LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep()))\n            };'
+            if legacy_row in t:
+                t = t.replace(legacy_row, legacy_row_new, 1)
+            legacy_click = '''                        } else if (which == 8) {
+                            setLinksMenu(!getLinksMenu());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yLinksLabel, onOff(getLinksMenu())));
+                        }
+'''
+            legacy_click_new = '''                        } else if (which == 8) {
+                            setLinksMenu(!getLinksMenu());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yLinksLabel, onOff(getLinksMenu())));
+                        } else if (which == 9) { // a11y-fork: download-completion beep
+                            setDownloadCompleteBeep(!getDownloadCompleteBeep());
+                            announce(activity, LocaleController.formatString(
+                                    R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));
+                        }
+'''
+            if legacy_click in t:
+                t = t.replace(legacy_click, legacy_click_new, 1)
+
         case_anchor = """                default:
                     return;"""
         case = """                case 22: // a11y-fork: download-completion beep
@@ -387,7 +419,9 @@ def patch_download_completion_beep() -> None:
 
         # Older variants may still use a switch with no buildSettingsItems(); do not
         # silently claim success if the expected settings structure was not found.
-        if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and "case 22:" in t:
+        modern_setting_ok = "case 22: // a11y-fork: download-completion beep" in t
+        legacy_setting_ok = "which == 9" in t and "A11yDownloadCompleteBeepLabel" in t
+        if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and (modern_setting_ok or legacy_setting_ok):
             cfg.write_text(t, encoding="utf-8")
             print("Accessible Settings download-completion beep toggle OK")
         else:
@@ -4609,7 +4643,7 @@ def patch_old_style_menu() -> None:
         "DialogsActivity old-style menu refresh")
     _gate_once(
         da,
-        "    private void showItemOptions() {\n",
+        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
         "    // a11y-fork: the entries of the old side drawer, each opening the screen the drawer opened\n"
         "    private void a11yShowOldStyleMenu() {\n"
         "        try {\n"
@@ -4642,7 +4676,7 @@ def patch_old_style_menu() -> None:
         "            FileLog.e(e);\n"
         "        }\n"
         "    }\n\n"
-        "    private void showItemOptions() {\n",
+        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
         "DialogsActivity old-style menu list")
 
 
@@ -4893,8 +4927,12 @@ def patch_category_filter() -> None:
         "        }\n"
         "    }\n"
         "\n"
-        "    private void showItemOptions() {\n")
-    _gate_once(da, "    private void showItemOptions() {\n", funcs, "DialogsActivity category filter functions")
+        )
+    _gate_once(
+        da,
+        "    private static java.lang.ref.WeakReference<DialogsActivity> a11yCategoryInstance;\n",
+        "    private static java.lang.ref.WeakReference<DialogsActivity> a11yCategoryInstance;\n" + funcs,
+        "DialogsActivity category filter functions at class-level field anchor")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -6096,86 +6134,765 @@ def patch_dialogs_select_all() -> None:
         "DialogsActivity select-all handler")
 
 
-def patch_stuck_focus_after_longpress() -> None:
-    """Clear stale RecyclerListView touch state when message options close, preventing TalkBack focus from sticking."""
-    rl = JAVA / "org/telegram/ui/Components/RecyclerListView.java"
-    marker = "a11y-fork: reset touch state after menu v1"
-    if not rl.exists():
-        print("WARN: RecyclerListView.java missing (stuck focus)")
+def patch_round3_a11yconfig() -> None:
+    """Accessible Settings: one new switch (default OFF) + dialogs that follow Telegram's theme.
+
+    - "Counts on the media tabs of groups and channels"  (A11yConfig.getTabCounts)
+    - every Accessible Settings dialog (the list and its pickers) takes its background from
+      Telegram's current theme (dialogBackground), its text from dialogTextBlack and a dark or
+      light base by the luminance of that background, so Dark / Black / custom themes are followed.
+    """
+    cfgp = JAVA / "org/telegram/messenger/A11yConfig.java"
+    if not cfgp.exists():
+        print("WARN: A11yConfig.java missing (round3)")
         return
-    t = rl.read_text(encoding="utf-8")
-    if marker not in t:
-        anchor = "    public void cancelClickRunnables(boolean uncheck) {\n"
-        if t.count(anchor) != 1:
-            print("WARN: RecyclerListView cancelClickRunnables anchor found %d times (stuck focus)" % t.count(anchor))
+    t = cfgp.read_text(encoding="utf-8")
+    marker = "a11y-fork: round3 settings v1"
+    if marker in t:
+        print("A11yConfig round3 already patched")
+        return
+    anchor = "    private static java.util.ArrayList<String> buildSettingsItems() {\n"
+    if anchor not in t:
+        print("WARN: A11yConfig buildSettingsItems not found (round3)")
+        return
+    code = r'''    // a11y-fork: round3 settings v1
+    public static final String PREF_TAB_COUNTS = "a11y_media_tab_counts";
+
+    /** Write the number of items on the media tabs (Media, Files, Links, Music, Voice ...) of a group or channel. Default OFF. */
+    public static boolean getTabCounts() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_TAB_COUNTS, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setTabCounts(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_TAB_COUNTS, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    // ---- Accessible Settings dialogs follow Telegram's current theme ----
+    private static int a11yDialogBase() {
+        try {
+            final int bg = org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogBackground);
+            final boolean dark = androidx.core.graphics.ColorUtils.calculateLuminance(bg) < 0.5;
+            return dark ? android.R.style.Theme_DeviceDefault_Dialog_Alert : android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+        } catch (Throwable ignore) {
+            return android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+        }
+    }
+
+    private static android.content.Context a11yThemedContext(Activity activity) {
+        try {
+            return new android.view.ContextThemeWrapper(activity, a11yDialogBase());
+        } catch (Throwable ignore) {
+            return activity;
+        }
+    }
+
+    private static AlertDialog.Builder a11yBuilder(Activity activity) {
+        try {
+            return new AlertDialog.Builder(activity, a11yDialogBase());
+        } catch (Throwable ignore) {
+            return new AlertDialog.Builder(activity);
+        }
+    }
+
+    /** Paint a shown dialog with Telegram's own dialog colours (background, title, text, buttons). */
+    private static void a11yStyle(AlertDialog d) {
+        try {
+            final int bg = org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogBackground);
+            final int text = org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextBlack);
+            final int accent = org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextBlue);
+            if (d.getWindow() != null) {
+                final android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+                shape.setColor(bg);
+                shape.setCornerRadius(AndroidUtilities.dp(12));
+                d.getWindow().setBackgroundDrawable(shape);
+            }
+            final int titleId = d.getContext().getResources().getIdentifier("alertTitle", "id", "android");
+            if (titleId != 0) {
+                final android.view.View title = d.findViewById(titleId);
+                if (title instanceof android.widget.TextView) {
+                    ((android.widget.TextView) title).setTextColor(text);
+                }
+            }
+            final int[] which = new int[]{android.content.DialogInterface.BUTTON_POSITIVE, android.content.DialogInterface.BUTTON_NEGATIVE, android.content.DialogInterface.BUTTON_NEUTRAL};
+            for (int i = 0; i < which.length; i++) {
+                final android.widget.Button b = d.getButton(which[i]);
+                if (b != null) {
+                    b.setTextColor(accent);
+                }
+            }
+        } catch (Throwable ignore) {
+        }
+    }
+
+    private static void a11yShow(AlertDialog.Builder builder) {
+        try {
+            final AlertDialog d = builder.create();
+            d.show();
+            a11yStyle(d);
+        } catch (Throwable ignore) {
+        }
+    }
+
+'''
+    t = t.replace(anchor, code + anchor, 1)
+
+    old = ("        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));\n"
+           "        return items;\n")
+    new = ("        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));\n"
+           "        items.add(LocaleController.formatString(R.string.A11yTabCountsLabel, onOff(getTabCounts())));\n"
+           "        return items;\n")
+    if t.count(old) != 1:
+        print("WARN: A11yConfig settings items anchor not found (round3)")
+        return
+    t = t.replace(old, new, 1)
+
+    old = ("                default:\n"
+           "                    return;\n"
+           "            }\n"
+           "            refresh.run();\n")
+    new = ("                case 23:\n"
+           "                    setTabCounts(!getTabCounts());\n"
+           "                    message = LocaleController.formatString(R.string.A11yTabCountsLabel, onOff(getTabCounts()));\n"
+           "                    break;\n"
+) + old
+    if t.count(old) != 1:
+        print("WARN: A11yConfig settings switch anchor not found (round3)")
+        return
+    t = t.replace(old, new, 1)
+
+    # main dialog: themed adapter + builder + style after show
+    old = ("            final android.widget.ArrayAdapter<String> adapter =\n"
+           "                    new android.widget.ArrayAdapter<>(activity, android.R.layout.simple_list_item_1, items);\n")
+    new = ("            final android.widget.ArrayAdapter<String> adapter =\n"
+           "                    new android.widget.ArrayAdapter<String>(a11yThemedContext(activity), android.R.layout.simple_list_item_1, items) {\n"
+           "                        @Override\n"
+           "                        public android.view.View getView(int position, android.view.View convertView, android.view.ViewGroup parent) {\n"
+           "                            final android.view.View v = super.getView(position, convertView, parent);\n"
+           "                            try {\n"
+           "                                if (v instanceof android.widget.TextView) {\n"
+           "                                    ((android.widget.TextView) v).setTextColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextBlack));\n"
+           "                                }\n"
+           "                            } catch (Throwable ignore) {\n"
+           "                            }\n"
+           "                            return v;\n"
+           "                        }\n"
+           "                    };\n")
+    if t.count(old) != 1:
+        print("WARN: A11yConfig settings adapter anchor not found (round3)")
+        return
+    t = t.replace(old, new, 1)
+    old = "            final AlertDialog dialog = new AlertDialog.Builder(activity)\n"
+    if t.count(old) != 1:
+        print("WARN: A11yConfig main dialog builder not found (round3)")
+        return
+    t = t.replace(old, "            final AlertDialog dialog = a11yBuilder(activity)\n", 1)
+    old = "            dialog.show();\n            // the stock click handler dismisses the dialog; ours only refreshes the row\n"
+    if t.count(old) != 1:
+        print("WARN: A11yConfig main dialog show not found (round3)")
+        return
+    t = t.replace(old, "            dialog.show();\n            a11yStyle(dialog);\n            // the stock click handler dismisses the dialog; ours only refreshes the row\n", 1)
+
+    # pickers: builder chains ending in .show();
+    pat = re.compile(r"new AlertDialog\.Builder\(activity\)((?:(?!new AlertDialog)[\s\S])*?)\n(\s*)\.show\(\);")
+    t, n = pat.subn(lambda m: "a11yShow(a11yBuilder(activity)" + m.group(1) + ");", t)
+    print("A11yConfig picker dialogs themed: %d" % n)
+    if t.count("new AlertDialog.Builder(activity)") > 1:  # one is the fallback inside a11yBuilder itself
+        print("WARN: an A11yConfig dialog was left un-themed")
+    cfgp.write_text(t, encoding="utf-8")
+    print("A11yConfig round3 switches + theme-following dialogs OK")
+
+def patch_round3_media_tab_counts() -> None:
+    """Group / channel / user info: write the number of items on each media tab (setting, default OFF)."""
+    p = JAVA / "org/telegram/ui/Components/SharedMediaLayout.java"
+    if not p.exists():
+        print("WARN: SharedMediaLayout missing (tab counts)")
+        return
+    t = p.read_text(encoding="utf-8")
+    marker = "a11y-fork: media tab counts"
+    if marker in t:
+        print("SharedMediaLayout tab counts already patched")
+        return
+    ok = True
+    # field + helper
+    old = "    private int[] hasMedia;\n"
+    if t.count(old) != 1:
+        print("WARN: SharedMediaLayout hasMedia field not found (tab counts)")
+        return
+    t = t.replace(old, old + r'''    // a11y-fork: media tab counts
+    private String a11yTabCountSig = "";
+
+    private CharSequence a11yTabCount(CharSequence label, int count) {
+        try {
+            if (org.telegram.messenger.A11yConfig.getTabCounts() && count > 0) {
+                return label + " " + count;
+            }
+        } catch (Throwable ignore) {
+        }
+        return label;
+    }
+''', 1)
+    lines = [
+        ("TAB_PHOTOVIDEO", "SharedMediaTabFull2", "hasMedia[0]"),
+        ("TAB_PHOTOVIDEO", "SharedMediaTab2", "hasMedia[0]"),
+        ("TAB_FILES", "SharedFilesTab2", "hasMedia[1]"),
+        ("TAB_LINKS", "SharedLinksTab2", "hasMedia[3]"),
+        ("TAB_AUDIO", "SharedMusicTab2", "hasMedia[4]"),
+        ("TAB_POLL", "SharedPollTab", "hasMedia[MEDIA_POLL]"),
+        ("TAB_VOICE", "SharedVoiceTab2", "hasMedia[2]"),
+        ("TAB_GIF", "SharedGIFsTab2", "hasMedia[5]"),
+        ("TAB_COMMON_GROUPS", "SharedGroupsTab2", "hasMedia[6]"),
+    ]
+    for tab, res, cnt in lines:
+        # every occurrence of this tab line (Music appears twice: normal and encrypted chats)
+        old = "tabs.add(new Pair(%s, getString(R.string.%s)));" % (tab, res)
+        new = "tabs.add(new Pair(%s, a11yTabCount(getString(R.string.%s), %s)));" % (tab, res, cnt)
+        if t.count(old) == 0:
+            print("WARN: SharedMediaLayout tab line not found: %s / %s" % (tab, res))
+            ok = False
+            continue
+        t = t.replace(old, new)
+    # rebuild when only the counts changed
+    old = ("        if (changed > 0) {\n"
+           "            if (animated && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {\n"
+           "                final TransitionSet transitionSet = new TransitionSet();\n")
+    if t.count(old) != 1:
+        print("WARN: SharedMediaLayout updateTabs anchor not found (tab counts)")
+        return
+    t = t.replace(old, ("        // a11y-fork: media tab counts -- rebuild the tabs when only a count (or the setting) changed\n"
+                        "        try {\n"
+                        "            final String a11yNewSig = org.telegram.messenger.A11yConfig.getTabCounts() ? java.util.Arrays.toString(hasMedia) : \"\";\n"
+                        "            if (!a11yNewSig.equals(a11yTabCountSig)) {\n"
+                        "                a11yTabCountSig = a11yNewSig;\n"
+                        "                changed++;\n"
+                        "            }\n"
+                        "        } catch (Throwable ignore) {\n"
+                        "        }\n") + old, 1)
+    p.write_text(t, encoding="utf-8")
+    print("SharedMediaLayout media tab counts %s" % ("OK" if ok else "(with warnings)"))
+
+def patch_round3_link_long_press_copy() -> None:
+    """A link held down (a normal long press, or TalkBack's long-click on a link) is copied at once and
+    "Link copied" is spoken; the same long press on a row of the message-options Links menu copies it.
+    Links menu: v2ray style links (vless / vmess / trojan / ss / ssr / hysteria / hy2 / tuic / wireguard /
+    socks) written in the text are found too, not only http(s)."""
+    chat = JAVA / "org/telegram/ui/ChatActivity.java"
+    adlg = JAVA / "org/telegram/ui/ActionBar/AlertDialog.java"
+    if not chat.exists() or not adlg.exists():
+        print("WARN: ChatActivity/AlertDialog missing (link copy)")
+        return
+    # 1) AlertDialog: a way to reach a row (to give it a long-click)
+    _multi_replace_once(
+        adlg,
+        [("    public int getItemsCount() {\n        return itemViews.size();\n    }\n",
+          "    public int getItemsCount() {\n        return itemViews.size();\n    }\n\n"
+          "    // a11y-fork: the view of a row of an items dialog (long-click on a link of the Links menu)\n"
+          "    public android.view.View a11yGetItemView(int item) {\n"
+          "        return item < 0 || item >= itemViews.size() ? null : itemViews.get(item);\n"
+          "    }\n")],
+        "a11yGetItemView",
+        "AlertDialog a11yGetItemView")
+    t = chat.read_text(encoding="utf-8")
+    marker = "a11y-fork: link long-press copy"
+    if marker in t:
+        print("ChatActivity link copy already patched")
+        return
+    # 2) didPressMessageUrl: long press on a link copies it
+    old = ("    private void didPressMessageUrl(CharacterStyle url, boolean longPress, MessageObject messageObject, ChatMessageCell cell) {\n"
+           "        if (url == null || getParentActivity() == null) {\n"
+           "            return;\n"
+           "        }\n")
+    if t.count(old) != 1:
+        print("WARN: ChatActivity didPressMessageUrl anchor not found (link copy)")
+        return
+    helper = r'''    // a11y-fork: link long-press copy
+    private void a11ySayLinkCopied() {
+        try {
+            final String said = LocaleController.getString(R.string.A11yLinkCopied);
+            if (getParentActivity() != null) {
+                getParentActivity().getWindow().getDecorView().announceForAccessibility(said);
+            }
+            BulletinFactory.of(this).createCopyBulletin(said).show();
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
+    private boolean a11yCopyLinkOnLongPress(CharacterStyle url, MessageObject messageObject, ChatMessageCell cell) {
+        try {
+            if (url == null || url instanceof URLSpanMono || url instanceof URLSpanUserMention || url instanceof FormattedDateSpan) {
+                return false;
+            }
+            String s = null;
+            if (url instanceof URLSpanNoUnderline) {
+                s = ((URLSpanNoUnderline) url).getURL();
+            } else if (url instanceof URLSpan) {
+                s = ((URLSpan) url).getURL();
+            }
+            if (s == null) {
+                return false;
+            }
+            s = s.trim();
+            final String low = s.toLowerCase();
+            if (s.length() == 0 || low.startsWith("tel:") || s.startsWith("@") || s.startsWith("#") || s.startsWith("$") || s.startsWith("/")
+                    || low.startsWith("video") || low.startsWith("audio") || low.startsWith("card:")) {
+                return false; // phone numbers, mentions, hashtags, bot commands, time stamps keep their own long press
+            }
+            final boolean noforwards = isPeerNoForwards() || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
+            if (noforwards) {
+                return false; // copying is not allowed in this chat
+            }
+            AndroidUtilities.addToClipboard(s);
+            if (cell != null) {
+                cell.resetPressedLink(-1);
+            }
+            a11ySayLinkCopied();
+            return true;
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+        return false;
+    }
+
+'''
+    t = t.replace(old, helper + old + "        if (longPress && a11yCopyLinkOnLongPress(url, messageObject, cell)) { // a11y-fork: link long-press copy\n            return;\n        }\n", 1)
+
+    # 3) Links menu: v2ray style links are found
+    old = ("            String raw = message.messageOwner.message;\n"
+           "            return raw != null && raw.matches(\"(?s).*https?://[^\\\\s]+.*\");\n")
+    new = ("            String raw = message.messageOwner.message;\n"
+           "            return raw != null && A11Y_LINK_PATTERN.matcher(raw).find();\n")
+    if t.count(old) != 1:
+        print("WARN: ChatActivity a11yMessageHasLinks regex anchor not found (link copy)")
+        return
+    t = t.replace(old, new, 1)
+    old = "        // a11y-fork: links menu helper\n    private boolean a11yMessageHasLinks(MessageObject message) {\n"
+    if t.count(old) != 1:
+        print("WARN: ChatActivity links helper anchor not found (link copy)")
+        return
+    t = t.replace(old, ("        // a11y-fork: links menu helper\n"
+                        "    private static final java.util.regex.Pattern A11Y_LINK_PATTERN = java.util.regex.Pattern.compile(\"(?<![A-Za-z0-9+.\\\\-])(?:https?|vless|vmess|trojan|ssr?|hysteria2?|hy2|tuic|wireguard|socks5?)://[^\\\\s<>\\\"]+\", java.util.regex.Pattern.CASE_INSENSITIVE);\n\n"
+                        "    private boolean a11yMessageHasLinks(MessageObject message) {\n"), 1)
+    old = "            java.util.regex.Matcher m=java.util.regex.Pattern.compile(\"https?://[^\\\\s<>\\\"]+\").matcher(raw);\n"
+    if t.count(old) != 1:
+        print("WARN: ChatActivity links matcher anchor not found (link copy)")
+        return
+    t = t.replace(old, "            java.util.regex.Matcher m=A11Y_LINK_PATTERN.matcher(raw);\n", 1)
+    old = "                while(url.endsWith(\".\")||url.endsWith(\",\")||url.endsWith(\")\")||url.endsWith(\"]\")) url=url.substring(0,url.length()-1);\n"
+    if t.count(old) != 1:
+        print("WARN: ChatActivity links trim anchor not found (link copy)")
+        return
+    t = t.replace(old, ("                final boolean a11yWebLink = url.regionMatches(true, 0, \"http\", 0, 4);\n"
+                        "                while(url.endsWith(\".\")||url.endsWith(\",\")||(a11yWebLink&&(url.endsWith(\")\")||url.endsWith(\"]\")))) url=url.substring(0,url.length()-1);\n"), 1)
+
+    # 4) Links menu rows: long-press copies the link
+    old = "            new AlertDialog.Builder(getParentActivity()).setTitle(LocaleController.getString(R.string.A11yLinks)).setItems(a11yShown,(dialog,which)->{\n"
+    if t.count(old) != 1:
+        print("WARN: ChatActivity links dialog builder anchor not found (link copy)")
+        return
+    t = t.replace(old, "            final AlertDialog a11yLinksDialog = new AlertDialog.Builder(getParentActivity()).setTitle(LocaleController.getString(R.string.A11yLinks)).setItems(a11yShown,(dialog,which)->{\n", 1)
+    old = "            }).setNegativeButton(LocaleController.getString(R.string.A11yCancel),null).show();\n        } catch(Throwable e) { FileLog.e(e); }\n"
+    if t.count(old) != 1:
+        print("WARN: ChatActivity links dialog end anchor not found (link copy)")
+        return
+    new = ("            }).setNegativeButton(LocaleController.getString(R.string.A11yCancel),null).show();\n"
+           "            // a11y-fork: link long-press copy -- holding a row copies that link (v2ray links too)\n"
+           "            for (int a11yRow = 0; a11yRow < values.length; a11yRow++) {\n"
+           "                final String a11yCopyText = values[a11yRow].startsWith(\"mailto:\") ? a11yShown[a11yRow] : values[a11yRow];\n"
+           "                final android.view.View a11yRowView = a11yLinksDialog.a11yGetItemView(a11yRow);\n"
+           "                if (a11yRowView != null) {\n"
+           "                    a11yRowView.setOnLongClickListener(v -> {\n"
+           "                        AndroidUtilities.addToClipboard(a11yCopyText);\n"
+           "                        a11ySayLinkCopied();\n"
+           "                        return true;\n"
+           "                    });\n"
+           "                }\n"
+           "            }\n"
+           "        } catch(Throwable e) { FileLog.e(e); }\n")
+    t = t.replace(old, new, 1)
+    chat.write_text(t, encoding="utf-8")
+    print("ChatActivity link long-press copy + v2ray links in the Links menu OK")
+
+def patch_round3_category_folders() -> None:
+    """The category dropdown of the chat list also lists the user's own Telegram folders (those made in the
+    official app): All, the folders, then the built-in categories. With no folders it is exactly the old list."""
+    p = JAVA / "org/telegram/ui/DialogsActivity.java"
+    if not p.exists():
+        print("WARN: DialogsActivity missing (category folders)")
+        return
+    t = p.read_text(encoding="utf-8")
+    marker = "a11y-fork: category folders"
+    if marker in t:
+        print("DialogsActivity category folders already patched")
+        return
+    # filter: a folder is chosen -> its own dialogs
+    old = ("    private ArrayList<TLRPC.Dialog> a11yFilterByCategory(ArrayList<TLRPC.Dialog> base, int account) {\n"
+           "        final int cat = org.telegram.messenger.A11yConfig.categoryFilterValue;\n"
+           "        final ArrayList<TLRPC.Dialog> out = new ArrayList<>();\n"
+           "        final MessagesController mc = MessagesController.getInstance(account);\n")
+    if t.count(old) != 1:
+        print("WARN: DialogsActivity a11yFilterByCategory anchor not found (category folders)")
+        return
+    new = old + ("        if (cat >= 1000) { // a11y-fork: category folders -- one of the user's Telegram folders\n"
+                 "            final MessagesController.DialogFilter a11yFolder = a11yFindFolder(account, cat - 1000);\n"
+                 "            if (a11yFolder == null) {\n"
+                 "                org.telegram.messenger.A11yConfig.categoryFilterValue = 0;\n"
+                 "                return base;\n"
+                 "            }\n"
+                 "            for (int i = 0; i < a11yFolder.dialogs.size(); i++) {\n"
+                 "                final TLRPC.Dialog fd = a11yFolder.dialogs.get(i);\n"
+                 "                if (fd != null && !(fd instanceof TLRPC.TL_dialogFolder)) {\n"
+                 "                    out.add(fd);\n"
+                 "                }\n"
+                 "            }\n"
+                 "            return out;\n"
+                 "        }\n")
+    t = t.replace(old, new, 1)
+    # helper + name
+    old = "    private String a11yCategoryName(int v) {\n        switch (v) {\n"
+    if t.count(old) != 1:
+        print("WARN: DialogsActivity a11yCategoryName anchor not found (category folders)")
+        return
+    helper = ("    private MessagesController.DialogFilter a11yFindFolder(int account, int folderId) {\n"
+              "        try {\n"
+              "            final ArrayList<MessagesController.DialogFilter> all = MessagesController.getInstance(account).getDialogFilters();\n"
+              "            for (int i = 0; i < all.size(); i++) {\n"
+              "                final MessagesController.DialogFilter f = all.get(i);\n"
+              "                if (f != null && !f.isDefault() && f.id == folderId) {\n"
+              "                    return f;\n"
+              "                }\n"
+              "            }\n"
+              "        } catch (Throwable e) {\n"
+              "            FileLog.e(e);\n"
+              "        }\n"
+              "        return null;\n"
+              "    }\n\n")
+    t = t.replace(old, helper + "    private String a11yCategoryName(int v) {\n"
+                  "        if (v >= 1000) { // a11y-fork: category folders\n"
+                  "            final MessagesController.DialogFilter f = a11yFindFolder(currentAccount, v - 1000);\n"
+                  "            if (f != null && f.name != null) {\n"
+                  "                return f.name;\n"
+                  "            }\n"
+                  "            return getString(R.string.FilterAllChats);\n"
+                  "        }\n"
+                  "        switch (v) {\n", 1)
+    # menu
+    old = ("            for (int v = 0; v <= 6; v++) {\n"
+           "                final int value = v;\n"
+           "                io.addChecked(cur == value, a11yCategoryName(value), () -> a11ySetCategory(value));\n"
+           "            }\n")
+    if t.count(old) != 1:
+        print("WARN: DialogsActivity category menu loop anchor not found (category folders)")
+        return
+    new = ("            // a11y-fork: category folders -- All, then the user's Telegram folders (if any), then the built-in categories\n"
+           "            io.addChecked(cur == 0, a11yCategoryName(0), () -> a11ySetCategory(0));\n"
+           "            try {\n"
+           "                final ArrayList<MessagesController.DialogFilter> a11yFolders = getMessagesController().getDialogFilters();\n"
+           "                for (int i = 0; i < a11yFolders.size(); i++) {\n"
+           "                    final MessagesController.DialogFilter f = a11yFolders.get(i);\n"
+           "                    if (f == null || f.isDefault() || f.name == null) {\n"
+           "                        continue;\n"
+           "                    }\n"
+           "                    final int value = 1000 + f.id;\n"
+           "                    io.addChecked(cur == value, f.name, () -> a11ySetCategory(value));\n"
+           "                }\n"
+           "            } catch (Throwable e) {\n"
+           "                FileLog.e(e);\n"
+           "            }\n"
+           "            for (int v = 1; v <= 6; v++) {\n"
+           "                final int value = v;\n"
+           "                io.addChecked(cur == value, a11yCategoryName(value), () -> a11ySetCategory(value));\n"
+           "            }\n")
+    t = t.replace(old, new, 1)
+    p.write_text(t, encoding="utf-8")
+    print("DialogsActivity category folders OK")
+
+def patch_round4_menu_back_focus() -> None:
+    """Message options closed with Back: TalkBack focus goes back to the message the menu was opened on,
+    so swiping right continues with the next message (before, the focus was lost until a two-finger scroll)."""
+    p = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not p.exists():
+        print("WARN: ChatActivity missing (menu back focus)")
+        return
+    t = p.read_text(encoding="utf-8")
+    if "a11y-fork: menu back focus" in t:
+        print("ChatActivity menu back focus already patched")
+        return
+    head = ("            scrimPopupWindow = new ActionBarPopupWindow(scrimPopupContainerLayout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT) {\n"
+            "                @Override\n"
+            "                public void dismiss() {\n"
+            "                    super.dismiss();\n"
+            "                    if (scrimPopupWindow != this) {\n"
+            "                        return;\n"
+            "                    }\n"
+            "                    if (Bulletin.getVisibleBulletin() == messageSeenPrivacyBulletin && messageSeenPrivacyBulletin != null) {\n")
+    if t.count(head) != 1:
+        print("WARN: ChatActivity message popup dismiss anchor found %d times (menu back focus)" % t.count(head))
+        return
+    mid = ("                        messageSeenPrivacyBulletin.hide();\n"
+           "                        messageSeenPrivacyBulletin = null;\n"
+           "                    }\n"
+           "                    scrimPopupWindow = null;\n"
+           "                    menuDeleteItem = null;\n"
+           "                    scrimPopupWindowItems = null;\n"
+           "                    chatLayoutManager.setCanScrollVertically(true);\n")
+    if t.count(head + mid) != 1:
+        print("WARN: ChatActivity dismiss body anchor found %d times (menu back focus)" % t.count(head + mid))
+        return
+    t = t.replace(head + mid, "            final MessageObject a11yFocusMessage = selectedObject; // a11y-fork: menu back focus\n            a11yMenuOptionChosen = false;\n" + head + mid + "                    a11yRestoreFocusAfterMenu(a11yFocusMessage);\n", 1)
+    click = ("                    cell.setOnClickListener(v1 -> {\n"
+             "                        if (selectedObject == null || i >= options.size()) {\n"
+             "                            return;\n"
+             "                        }\n"
+             "                        processSelectedOption(options.get(i));\n")
+    if t.count(click) != 1:
+        print("WARN: ChatActivity menu item click anchor found %d times (menu back focus)" % t.count(click))
+        return
+    t = t.replace(click, click.replace("                        processSelectedOption(options.get(i));\n",
+                                       "                        a11yMenuOptionChosen = true;\n                        processSelectedOption(options.get(i));\n"), 1)
+    anchor = "    public void closeMenu() {\n        closeMenu(true);\n    }\n"
+    if t.count(anchor) != 1:
+        print("WARN: ChatActivity closeMenu anchor not found (menu back focus)")
+        return
+    helper = r'''    private boolean a11yMenuOptionChosen;
+
+    private void a11yRestoreFocusAfterMenu(final MessageObject message) {
+        try {
+            if (message == null || !AndroidUtilities.isAccessibilityScreenReaderEnabled()) {
+                return;
+            }
+            AndroidUtilities.runOnUIThread(() -> {
+                try {
+                    if (scrimPopupWindow != null || chatListView == null) {
+                        return;
+                    }
+                    // an option that opened another screen or a dialog, or put the cursor in the message field, keeps its own focus
+                    if (getParentLayout() == null || getParentLayout().getLastFragment() != this || visibleDialog != null
+                            || (chatActivityEnterView != null && chatActivityEnterView.getEditField() != null && chatActivityEnterView.getEditField().isFocused())) {
+                        return;
+                    }
+                    for (int i = 0; i < chatListView.getChildCount(); i++) {
+                        final View c = chatListView.getChildAt(i);
+                        if (c instanceof ChatMessageCell) {
+                            final MessageObject mo = ((ChatMessageCell) c).getMessageObject();
+                            if (mo != null && mo.getId() == message.getId() && mo.getDialogId() == message.getDialogId()) {
+                                ((ChatMessageCell) c).resetAccessibilityStopFocus();
+                                c.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);
+                                c.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
+                                return;
+                            }
+                        }
+                    }
+                } catch (Throwable e) {
+                    FileLog.e(e);
+                }
+            }, 350);
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
+'''
+    t = t.replace(anchor, helper + anchor, 1)
+    p.write_text(t, encoding="utf-8")
+    print("ChatActivity menu back focus OK")
+
+def _multi_replace_once(path: Path, pairs, marker: str, label: str) -> None:
+    """Apply several exact replacements to one file: all of them or none (each anchor must occur exactly once)."""
+    if not path.exists():
+        print("%s not present -- nothing to do (%s)" % (path.name, label))
+        return
+    t = path.read_text(encoding="utf-8")
+    if marker in t:
+        print("%s already patched" % label)
+        return
+    for old, _new in pairs:
+        if t.count(old) != 1:
+            print("WARN: %s anchor found %d times in %s: %r" % (label, t.count(old), path.name, old[:70]))
             return
-        method = (
-            "    // " + marker + "\n"
-            "    public void a11yResetTouchState() {\n"
-            "        try {\n"
-            "            if (selectChildRunnable != null) {\n"
-            "                AndroidUtilities.cancelRunOnUIThread(selectChildRunnable);\n"
-            "                selectChildRunnable = null;\n"
-            "            }\n"
-            "            if (currentChildView != null) {\n"
-            "                View a11yChild = currentChildView;\n"
-            "                MotionEvent a11yCancel = MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0);\n"
-            "                try {\n"
-            "                    a11yChild.onTouchEvent(a11yCancel);\n"
-            "                } catch (Throwable ignore) {\n"
-            "                }\n"
-            "                a11yCancel.recycle();\n"
-            "                onChildPressed(a11yChild, 0, 0, false);\n"
-            "                currentChildView = null;\n"
-            "                removeSelection(a11yChild, null);\n"
-            "            }\n"
-            "            interceptedByChild = false;\n"
-            "            if (longPressCalled) {\n"
-            "                longPressCalled = false;\n"
-            "                if (onItemLongClickListenerExtended != null) {\n"
-            "                    onItemLongClickListenerExtended.onLongClickRelease();\n"
-            "                }\n"
-            "            }\n"
-            "            selectorRect.setEmpty();\n"
-            "        } catch (Throwable e) {\n"
-            "            FileLog.e(e);\n"
-            "        }\n"
-            "    }\n\n"
-        )
-        t = t.replace(anchor, method + anchor, 1)
-        rl.write_text(t, encoding="utf-8")
-        print("RecyclerListView a11yResetTouchState OK")
-    else:
-        print("RecyclerListView a11yResetTouchState already patched")
+    for old, new in pairs:
+        t = t.replace(old, new, 1)
+    path.write_text(t, encoding="utf-8")
+    print("%s OK" % label)
 
-    ca = JAVA / "org/telegram/ui/ChatActivity.java"
-    if not ca.exists():
-        print("WARN: ChatActivity.java missing (stuck focus)")
+def patch_mehran_transfer_announcer_quiet() -> None:
+    """The fork's AccessibilityTransferAnnouncer says 'downloaded / not downloaded' and the percentage of every
+    transfer. Our project already reads transfer percentages its own way, and the state words are an Accessible
+    Settings switch (default Off), so the announcer follows that same switch and stays silent otherwise."""
+    p = JAVA / "org/telegram/ui/Components/AccessibilityTransferAnnouncer.java"
+    if not p.exists():
+        print("AccessibilityTransferAnnouncer not present (older fork patch) -- nothing to quiet")
         return
-    c = ca.read_text(encoding="utf-8")
-    if marker in c:
-        print("ChatActivity stuck-focus reset already patched")
+    t = p.read_text(encoding="utf-8")
+    if "a11y-fork: quiet unless" in t:
+        print("AccessibilityTransferAnnouncer already quiet")
         return
-    anchor = ("                    scrimPopupWindowItems = null;\n"
-              "                    chatLayoutManager.setCanScrollVertically(true);\n")
-    n = c.count(anchor)
-    if n < 1:
-        print("WARN: ChatActivity message-menu dismiss anchor not found (stuck focus)")
-        return
-    add = (
-        "                    // " + marker + "\n"
-        "                    try {\n"
-        "                        if (org.telegram.messenger.AndroidUtilities.isAccessibilityScreenReaderEnabled() && chatListView != null) {\n"
-        "                            chatListView.a11yResetTouchState();\n"
-        "                            chatListView.post(() -> chatListView.a11yResetTouchState());\n"
-        "                        }\n"
-        "                    } catch (Throwable ignore) {\n"
-        "                    }\n"
-    )
-    c = c.replace(anchor, anchor + add)
-    ca.write_text(c, encoding="utf-8")
-    print("ChatActivity stuck-focus reset OK (%d menu dismiss sites)" % n)
+    reps = [
+        ("    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n        if (totalSize <= 0) {\n",
+         "    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n        if (a11yQuiet() || totalSize <= 0) { // a11y-fork: quiet unless the state-words switch is on\n"),
+        ("    public void onSuccess() {\n",
+         "    public void onSuccess() {\n        if (a11yQuiet()) {\n            reset();\n            return;\n        }\n"),
+        ("    public void setState(Object key, int newState, float progress, long totalSize, boolean withSize) {\n",
+         "    public void setState(Object key, int newState, float progress, long totalSize, boolean withSize) {\n        if (a11yQuiet()) {\n            return;\n        }\n"),
+        ("    private boolean isRead() {\n",
+         "    private static boolean a11yQuiet() {\n        try {\n            return !org.telegram.messenger.A11yConfig.getAnnounceDownloadState();\n        } catch (Throwable e) {\n            return true;\n        }\n    }\n\n    private boolean isRead() {\n"),
+    ]
+    for old, new in reps:
+        if t.count(old) != 1:
+            print("WARN: AccessibilityTransferAnnouncer anchor not found: %r" % old[:60])
+            return
+        t = t.replace(old, new, 1)
+    p.write_text(t, encoding="utf-8")
+    print("AccessibilityTransferAnnouncer made quiet unless the state-words switch is on OK")
 
+def patch_remove_mehran_progress_percent() -> None:
+    """The fork patch speaks the percentage (and 'x of y MB') of every download and upload: as the progress
+    changes, and inside what a message says. Our own RadialProgress already announces progress well, so the fork's
+    percentage is removed. The plain words (Downloading / Sending / Downloaded / Not downloaded) are kept: they stay
+    behind the existing 'Downloaded / not downloaded status' switch."""
+    marker = "a11y-fork: no progress percent"
+    cmc = JAVA / "org/telegram/ui/Cells/ChatMessageCell.java"
+    _multi_replace_once(cmc, [
+        ("    private void announceTransferProgress(boolean sending, long loadedSize, long totalSize) {\n",
+         "    private void announceTransferProgress(boolean sending, long loadedSize, long totalSize) {\n"
+         "        // " + marker + ": numeric progress is handled by RadialProgress\n"),
+        ("        sb.append(\" \").append(percent).append(\"%\");\n"
+         "        if (totalSize > 0) {\n"
+         "            sb.append(\", \").append(formatString(R.string.AccDescrTransferredSize, AndroidUtilities.formatFileSize(loadedSize), AndroidUtilities.formatFileSize(totalSize)));\n"
+         "        }\n",
+         "        // " + marker + ": only the word (Downloading / Sending), no percentage and no size\n"),
+    ], marker, "ChatMessageCell fork progress percent removed")
+    ata = JAVA / "org/telegram/ui/Components/AccessibilityTransferAnnouncer.java"
+    _multi_replace_once(ata, [
+        ("    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n",
+         "    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n"
+         "        // " + marker + ": do not announce numeric progress here\n"),
+        ("        if (sameFile && newState == state && (newState != STATE_DOWNLOADING || step == stateStep || now - stateTime < MIN_INTERVAL)) {\n",
+         "        if (sameFile && newState == state) { // " + marker + ": no re-announcing while the percentage moves\n"),
+        ("        if (withSize && totalSize > 0) {\n"
+         "            return LocaleController.getString(R.string.Downloading) + \" \" + percent + \"%, \"\n"
+         "                + LocaleController.formatString(R.string.OfS, AndroidUtilities.formatFileSize(loadedSize), AndroidUtilities.formatFileSize(totalSize));\n"
+         "        }\n"
+         "        return LocaleController.getString(R.string.Downloading) + \" \" + percent + \"%\";\n",
+         "        return LocaleController.getString(R.string.Downloading); // " + marker + "\n"),
+    ], marker, "AccessibilityTransferAnnouncer progress percent removed")
+
+def patch_row_click_no_clicked_event() -> None:
+    """The newer fork patch makes a screen-reader press on a chat-list row (and a topic row) behave like a
+    finger's press by playing the click AND sending TYPE_VIEW_CLICKED. TalkBack answers that event by speaking the
+    whole row again, so after a tap the preview was read to its end and then the unread message was read once more
+    inside the chat. The older fork patch sent no such event. Keep the click sound, drop the event."""
+    rl = JAVA / "org/telegram/ui/Components/RecyclerListView.java"
+    _gate_once(
+        rl,
+        "        item.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);\n"
+        "        if (onItemClickListener != null) {\n"
+        "            onItemClickListener.onItemClick(item, position);\n"
+        "        } else if (onItemClickListenerExtended != null) {\n"
+        "            onItemClickListenerExtended.onItemClick(item, position, x, y);\n"
+        "        }\n",
+        "        // a11y-fork: no clicked event on a row press (TalkBack read the whole row again after it)\n"
+        "        if (onItemClickListener != null) {\n"
+        "            onItemClickListener.onItemClick(item, position);\n"
+        "        } else if (onItemClickListenerExtended != null) {\n"
+        "            onItemClickListenerExtended.onItemClick(item, position, x, y);\n"
+        "        }\n",
+        "RecyclerListView.clickItem no TYPE_VIEW_CLICKED")
+
+def patch_audio_bar_position_refresh() -> None:
+    """The top audio-player bar says how far the music got ("30 seconds of 5 minutes"), but that text is built only
+    when TalkBack asks for the node and the bar sends nothing when playback moves on, so while focus rests on the bar
+    TalkBack keeps the old number. While the bar's title is the focused item, tell TalkBack at most once every 1.5 s
+    that the window content changed (a plain event: it refreshes TalkBack's copy of the node and is not a live region,
+    so it is not spoken)."""
+    fcv = JAVA / "org/telegram/ui/Components/FragmentContextView.java"
+    marker = "a11y-fork: audio bar position refresh"
+    _multi_replace_once(fcv, [
+        ("        } else if (id == NotificationCenter.messagePlayingProgressDidChanged) {\n"
+         "            if (currentStyle == STYLE_AUDIO_PLAYER) {\n"
+         "                invalidate();\n"
+         "            }\n"
+         "        }\n"
+         "    }\n",
+         "        } else if (id == NotificationCenter.messagePlayingProgressDidChanged) {\n"
+         "            if (currentStyle == STYLE_AUDIO_PLAYER) {\n"
+         "                invalidate();\n"
+         "                a11yRefreshPlaybackPosition(); // " + marker + "\n"
+         "            }\n"
+         "        }\n"
+         "    }\n"
+         "\n"
+         "    // " + marker + "\n"
+         "    private long a11yLastPositionRefresh;\n"
+         "\n"
+         "    private void a11yRefreshPlaybackPosition() {\n"
+         "        try {\n"
+         "            if (!org.telegram.messenger.AndroidUtilities.isAccessibilityScreenReaderEnabled()) {\n"
+         "                return;\n"
+         "            }\n"
+         "            final long now = android.os.SystemClock.uptimeMillis();\n"
+         "            if (now - a11yLastPositionRefresh < 1500) {\n"
+         "                return;\n"
+         "            }\n"
+         "            // the whole bar is clickable, so TalkBack usually rests on the bar itself and not on the\n"
+         "            // text inside it; look at both\n"
+         "            View focused = isAccessibilityFocused() ? this : null;\n"
+         "            if (focused == null && titleTextView != null) {\n"
+         "                for (int i = 0; i < titleTextView.getChildCount(); i++) {\n"
+         "                    final View child = titleTextView.getChildAt(i);\n"
+         "                    if (child != null && child.isAccessibilityFocused()) {\n"
+         "                        focused = child;\n"
+         "                        break;\n"
+         "                    }\n"
+         "                }\n"
+         "            }\n"
+         "            if (focused == null) {\n"
+         "                return;\n"
+         "            }\n"
+         "            a11yLastPositionRefresh = now;\n"
+         "            // any content-changed event drops the screen reader's cached copy of the bar's nodes, so the\n"
+         "            // next time it reads them the position is built again. Not a live region: nothing is spoken\n"
+         "            final android.view.accessibility.AccessibilityEvent event = android.view.accessibility.AccessibilityEvent.obtain(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);\n"
+         "            event.setContentChangeTypes(android.view.accessibility.AccessibilityEvent.CONTENT_CHANGE_TYPE_SUBTREE);\n"
+         "            focused.sendAccessibilityEventUnchecked(event);\n"
+         "        } catch (Throwable ignore) {\n"
+         "        }\n"
+         "    }\n"),
+    ], marker, "FragmentContextView audio bar position refresh")
+
+def patch_longpress_same_menu_path() -> None:
+    """A long press under TalkBack opened the Message options with other arguments than the 'Message options'
+    action of TalkBack's actions list (which has never had the stuck-focus problem). An ordinary single message now
+    uses exactly the arguments of that action path; albums and service messages keep what they had."""
+    p = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not p.exists():
+        print("WARN: ChatActivity missing (long press same menu path)")
+        return
+    t = p.read_text(encoding="utf-8")
+    if "a11y-fork: long press same menu path" in t:
+        print("ChatActivity long press same menu path already patched")
+        return
+    old = ("            if (a11yOn2) {\n"
+           "                createMenu(cell, true, false, x, y, true);\n"
+           "            } else {\n")
+    if t.count(old) != 1:
+        print("WARN: ChatActivity long-press menu call found %d times (long press same menu path)" % t.count(old))
+        return
+    new = ("            if (a11yOn2) { // a11y-fork: long press same menu path\n"
+           "                final MessageObject a11yMo = cell != null ? cell.getMessageObject() : null;\n"
+           "                final boolean a11yGrouped = cell != null && cell.getCurrentMessagesGroup() != null;\n"
+           "                final boolean a11yPlain = a11yMo != null && a11yMo.messageOwner != null && a11yMo.messageOwner.action == null && !a11yGrouped;\n"
+           "                // same arguments as didPressOther (the Message options action of TalkBack's actions list)\n"
+           "                createMenu(cell, true, false, x, y, a11yGrouped || !a11yPlain, !a11yPlain);\n"
+           "            } else {\n")
+    p.write_text(t.replace(old, new, 1), encoding="utf-8")
+    print("ChatActivity long press uses the same menu path as the Message options action OK")
 
 def main() -> int:
     if not Path("telegram").is_dir():
@@ -6245,6 +6962,17 @@ def main() -> int:
     patch_sender_options_menu()
     patch_selection_announce()
     patch_dialogs_select_all()
+    patch_round3_a11yconfig()
+    patch_download_completion_beep()
+    patch_round3_media_tab_counts()
+    patch_round3_link_long_press_copy()
+    patch_round3_category_folders()
+    patch_round4_menu_back_focus()
+    patch_mehran_transfer_announcer_quiet()
+    patch_remove_mehran_progress_percent()
+    patch_row_click_no_clicked_event()
+    patch_audio_bar_position_refresh()
+    patch_longpress_same_menu_path()
     patch_unlabeled_buttons()
     patch_audit_unlabeled_buttons()
     patch_contacts_list_accessibility()
@@ -6255,10 +6983,8 @@ def main() -> int:
     if not MEHRAN:
         patch_chat_message_cell_granularity_navigation_legacy()
     patch_stuck_together_bubbles_long_press()
-    patch_stuck_focus_after_longpress()
     if MEHRAN:
         patch_mehran_strings_persian()
-    patch_download_completion_beep()
     # MUST stay last: it rewrites English text injected by the patches above
     # (Selected / Bot Buttons / Forwarded to Saved / Accessible settings ...).
     patch_a11y_localization()
