@@ -4643,8 +4643,7 @@ def patch_old_style_menu() -> None:
         "DialogsActivity old-style menu refresh")
     _gate_once(
         da,
-        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
-        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n"
+        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
         "    // a11y-fork: the entries of the old side drawer, each opening the screen the drawer opened\n"
         "    private void a11yShowOldStyleMenu() {\n"
         "        try {\n"
@@ -4677,7 +4676,7 @@ def patch_old_style_menu() -> None:
         "            FileLog.e(e);\n"
         "        }\n"
         "    }\n\n"
-        "    private ActionBarMenuItem a11yMenuItem; // a11y-fork: old-style main menu button (setting, default OFF)\n",
+        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
         "DialogsActivity old-style menu list")
 
 
