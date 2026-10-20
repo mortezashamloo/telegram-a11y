@@ -42,6 +42,8 @@ jobs:
           set -e
           git clone --recursive --depth 1 https://github.com/DrKLO/Telegram.git telegram
           cd telegram
+          git fetch --depth 1 origin f2908b14
+          git checkout --detach f2908b14
           git submodule sync --recursive
           git submodule update --init --recursive --depth 1 || git submodule update --init --recursive
           if [ ! -f TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle ] && [ ! -f TMessagesProj/lib/jlatexmath/build.gradle ]; then

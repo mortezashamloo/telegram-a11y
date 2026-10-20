@@ -119,7 +119,7 @@ def _set_string(path: Path, name: str, value: str) -> None:
     if f'name="{name}"' in t:
         t2, _ = re.subn(
             rf'(<string\s+name="{name}">)[^<]*(</string>)',
-            rf"\1{value}\2",
+            lambda m: m.group(1) + value + m.group(2),
             t,
             count=1,
         )
@@ -174,7 +174,6 @@ def _patch_a11y_string_resources() -> None:
         "A11yStatusOff": "Status preview off",
         "A11yForwardSavedNoQuoteLabel": "Forward to Saved Messages with no quote: %s",
         "A11yRecordingBeepLabel": "Recording start beep: %s",
-        "A11yDownloadCompleteBeepLabel": "Beep when download completes: %s",
         "A11ySolarCalendarLabel": "Solar calendar: %s",
         "A11yBlockSmallFilesLabel": "Do not auto-download small files: %s",
         "A11yNoAutoDownloadLabel": "Do not auto-download files: %s",
@@ -210,7 +209,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yCommentOne": "1 comment",
         "A11yCommentsCount": "%1$d comments",
         "A11yUserStatusLabel": "User status announcements (typing, recording, online): %s",
-        "A11yChatOpenSoundLabel": "Touch sound when a chat opens and when a message is tapped: %s",
+        "A11yChatOpenSoundLabel": "Touch sound when a message is tapped: %s",
         "A11ySenderOptionsLabel": "Sender options in message menu: %s",
         "A11yVoiceShareSaveLabel": "Share and save to music for voice messages: %s",
         "A11yPlayerSeekLabel": "Rewind and forward in audio player: %s",
@@ -222,7 +221,9 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryLabel": "Chat category filter in the chat list: %s",
         "A11yForwardHere": "Forward here",
         "A11yForwardHereLabel": "Forward here in message options: %s",
-        "A11yDownloadCompleteBeepLabel": "Download completion beep: %s",
+        "A11yTabCountsLabel": "Counts on the media tabs of groups and channels: %s",
+        "A11yDownloadBeepLabel": "Beep when a download finishes: %s",
+        "A11yLinkCopied": "Link copied",
         "A11yForwardedHere": "Forwarded here",
         "A11yCategoryButton": "Category: %s",
         "A11yCategoryPrivate": "Private chats",
@@ -261,7 +262,6 @@ def _patch_a11y_string_resources() -> None:
         "A11yStatusOn": "نمایش وضعیت روشن شد", "A11yStatusOff": "نمایش وضعیت خاموش شد",
         "A11yForwardSavedNoQuoteLabel": "فوروارد به پیام‌های ذخیره‌شده بدون نقل‌قول: %s",
         "A11yRecordingBeepLabel": "بوق شروع ضبط: %s",
-        "A11yDownloadCompleteBeepLabel": "بوق هنگام اتمام دانلود: %s",
         "A11ySolarCalendarLabel": "تقویم خورشیدی: %s",
         "A11yBlockSmallFilesLabel": "دانلود خودکار فایل‌های کم‌حجم را متوقف کن: %s",
         "A11yNoAutoDownloadLabel": "دانلود خودکار هیچ فایلی: %s",
@@ -293,7 +293,7 @@ def _patch_a11y_string_resources() -> None:
         "A11yCommentOne": "1 نظر",
         "A11yCommentsCount": "%1$d نظر",
         "A11yUserStatusLabel": "اعلام وضعیت کاربر (در حال تایپ، ضبط ویس، آنلاین): %s",
-        "A11yChatOpenSoundLabel": "صدای لمس هنگام باز شدن چت و ضربه روی پیام: %s",
+        "A11yChatOpenSoundLabel": "صدای لمس هنگام ضربه روی پیام: %s",
         "A11ySenderOptionsLabel": "گزینه‌های فرستنده در منوی پیام: %s",
         "A11yVoiceShareSaveLabel": "اشتراک‌گذاری و ذخیره در موسیقی برای پیام‌های صوتی: %s",
         "A11yPlayerSeekLabel": "عقب و جلو در پخش‌کننده‌ی صدا: %s",
@@ -305,7 +305,9 @@ def _patch_a11y_string_resources() -> None:
         "A11yCategoryLabel": "فیلتر دسته‌بندی چت‌ها در لیست چت: %s",
         "A11yForwardHere": "فوروارد همین‌جا",
         "A11yForwardHereLabel": "فوروارد همین‌جا در گزینه‌های پیام: %s",
-        "A11yDownloadCompleteBeepLabel": "بوق پایان دانلود: %s",
+        "A11yTabCountsLabel": "نمایش تعداد روی تب‌های رسانه‌ی گروه و کانال: %s",
+        "A11yDownloadBeepLabel": "بوق پایان دانلود: %s",
+        "A11yLinkCopied": "لینک کپی شد",
         "A11yForwardedHere": "پیام دوباره در همین گفتگو ارسال شد",
         "A11yCategoryButton": "دسته‌بندی: %s",
         "A11yCategoryPrivate": "گفتگوهای خصوصی",
@@ -337,150 +339,6 @@ def _patch_a11y_string_resources() -> None:
         for name, value in values.items():
             _set_string(path, name, value)
 
-
-
-def patch_download_completion_beep() -> None:
-    """Add an optional, disabled-by-default beep when a download finishes, independent of TalkBack focus."""
-    cfg = JAVA / "org/telegram/messenger/A11yConfig.java"
-    if cfg.exists():
-        t = cfg.read_text(encoding="utf-8")
-        pref_anchor = '    public static final String PREF_RECORDING_BEEP = "a11y_recording_beep";'
-        if "PREF_DOWNLOAD_COMPLETE_BEEP" not in t and pref_anchor in t:
-            t = t.replace(pref_anchor, pref_anchor + '\n    public static final String PREF_DOWNLOAD_COMPLETE_BEEP = "a11y_download_complete_beep";', 1)
-
-        # Add the preference accessors exactly once.
-        if "getDownloadCompleteBeep()" not in t:
-            methods_anchor = "    private static java.util.ArrayList<String> buildSettingsItems() {"
-            methods = """    // a11y-fork: download-completion beep (default OFF)
-    public static boolean getDownloadCompleteBeep() {
-        try {
-            return MessagesController.getGlobalMainSettings().getBoolean(PREF_DOWNLOAD_COMPLETE_BEEP, false);
-        } catch (Throwable ignore) {
-            return false;
-        }
-    }
-
-    public static void setDownloadCompleteBeep(boolean value) {
-        try {
-            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_DOWNLOAD_COMPLETE_BEEP, value).apply();
-        } catch (Throwable ignore) {
-        }
-    }
-
-"""
-            if methods_anchor in t:
-                t = t.replace(methods_anchor, methods + methods_anchor, 1)
-            else:
-                # Older A11yConfig.java uses showSettingsDialog() and onOff(), not
-                # buildSettingsItems(). Install the same accessors before that helper.
-                legacy_anchor = "    private static String onOff(boolean value) {"
-                if legacy_anchor in t:
-                    t = t.replace(legacy_anchor, methods + legacy_anchor, 1)
-
-        # Current fork uses buildSettingsItems() and indexed handleSettingsClick().
-        row_anchor = "        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));"
-        if "A11yDownloadCompleteBeepLabel" not in t and row_anchor in t:
-            t = t.replace(row_anchor, row_anchor + '\n        items.add(LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));', 1)
-
-        # Compatibility path for the older AlertDialog.setItems() settings list.
-        if "A11yDownloadCompleteBeepLabel" not in t:
-            legacy_row = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenu()))\n            };'
-            legacy_row_new = '                    LocaleController.formatString(R.string.A11yLinksLabel, onOff(getLinksMenu())),\n                    LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep()))\n            };'
-            if legacy_row in t:
-                t = t.replace(legacy_row, legacy_row_new, 1)
-            legacy_click = '''                        } else if (which == 8) {
-                            setLinksMenu(!getLinksMenu());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yLinksLabel, onOff(getLinksMenu())));
-                        }
-'''
-            legacy_click_new = '''                        } else if (which == 8) {
-                            setLinksMenu(!getLinksMenu());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yLinksLabel, onOff(getLinksMenu())));
-                        } else if (which == 9) { // a11y-fork: download-completion beep
-                            setDownloadCompleteBeep(!getDownloadCompleteBeep());
-                            announce(activity, LocaleController.formatString(
-                                    R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep())));
-                        }
-'''
-            if legacy_click in t:
-                t = t.replace(legacy_click, legacy_click_new, 1)
-
-        case_anchor = """                default:
-                    return;"""
-        case = """                case 22: // a11y-fork: download-completion beep
-                    setDownloadCompleteBeep(!getDownloadCompleteBeep());
-                    message = LocaleController.formatString(R.string.A11yDownloadCompleteBeepLabel, onOff(getDownloadCompleteBeep()));
-                    break;
-"""
-        if "case 22: // a11y-fork: download-completion beep" not in t and case_anchor in t:
-            t = t.replace(case_anchor, case + case_anchor, 1)
-
-        # Older variants may still use a switch with no buildSettingsItems(); do not
-        # silently claim success if the expected settings structure was not found.
-        modern_setting_ok = "case 22: // a11y-fork: download-completion beep" in t
-        legacy_setting_ok = "which == 9" in t and "A11yDownloadCompleteBeepLabel" in t
-        if "getDownloadCompleteBeep()" in t and "A11yDownloadCompleteBeepLabel" in t and (modern_setting_ok or legacy_setting_ok):
-            cfg.write_text(t, encoding="utf-8")
-            print("Accessible Settings download-completion beep toggle OK")
-        else:
-            print("WARN: could not fully install download-completion beep setting")
-    else:
-        print("WARN: A11yConfig missing (download-completion beep)")
-
-    fl = JAVA / "org/telegram/messenger/FileLoader.java"
-    if not fl.exists():
-        print("WARN: FileLoader missing (download-completion beep)")
-        return
-    t = fl.read_text(encoding="utf-8")
-    marker = "a11y-fork: download-completion beep"
-    if marker in t:
-        print("FileLoader download-completion beep already patched")
-        return
-
-    anchor = """                if (!operation.isPreloadVideoOperation()) {
-                    loadOperationPathsUI.remove(fileName);
-                    if (delegate != null) {
-                        delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
-                    }
-                }
-
-                checkDownloadQueue(operation, operation.getQueue(), 0);"""
-    block = """                if (!operation.isPreloadVideoOperation()) {
-                    loadOperationPathsUI.remove(fileName);
-                    if (delegate != null) {
-                        delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
-                    }
-                }
-
-                // a11y-fork: download-completion beep (user-controlled; default OFF).
-                // Keep this outside the delegate/cell callback so TalkBack focus and
-                // delegate attachment do not determine whether the beep is played.
-                if (!operation.isPreloadVideoOperation()) {
-                    try {
-                        if (org.telegram.messenger.A11yConfig.getDownloadCompleteBeep()) {
-                            android.content.Context a11yContext = org.telegram.messenger.ApplicationLoader.applicationContext;
-                            if (a11yContext != null) {
-                                android.media.ToneGenerator a11yTone = new android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 85);
-                                a11yTone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 140);
-                                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                                    try { a11yTone.release(); } catch (Throwable ignored) {}
-                                }, 200);
-                            }
-                        }
-                    } catch (Throwable a11yBeepError) {
-                        org.telegram.messenger.FileLog.e(a11yBeepError);
-                    }
-                }
-
-                checkDownloadQueue(operation, operation.getQueue(), 0);"""
-    if anchor not in t:
-        print("WARN: FileLoader completion callback anchor not found")
-        return
-    t = t.replace(anchor, block, 1)
-    fl.write_text(t, encoding="utf-8")
-    print("FileLoader download-completion beep OK")
 
 def patch_a11y_localization() -> None:
     """Replace accessibility-fork hard-coded runtime text with localized resources."""
@@ -634,8 +492,7 @@ def install_a11y_config() -> None:
                 "            int nowYear = now.get(java.util.Calendar.YEAR);\n"
                 "            int msgDay = msg.get(java.util.Calendar.DAY_OF_YEAR);\n"
                 "            int msgYear = msg.get(java.util.Calendar.YEAR);\n"
-                "            java.text.SimpleDateFormat timeFmt = new java.text.SimpleDateFormat(\"HH:mm\", java.util.Locale.getDefault());\n"
-                "            String time = timeFmt.format(new java.util.Date(dateMs));\n"
+                "            String time = LocaleController.getInstance().getFormatterDay().format(new java.util.Date(dateMs));\n"
                 "            if (msgDay == nowDay && msgYear == nowYear) {\n"
                 "                return LocaleController.formatString(R.string.TodayAtFormatted, time);\n"
                 "            } else if (msgDay + 1 == nowDay && msgYear == nowYear) {\n"
@@ -643,7 +500,7 @@ def install_a11y_config() -> None:
                 "            } else {\n"
                 "                String solar = formatSolarDate(unixSeconds);\n"
                 "                if (solar == null || solar.isEmpty()) return LocaleController.formatDateAudio(unixSeconds, true);\n"
-                "                return solar + \" \" + LocaleController.getString(R.string.A11yAt) + \" \" + time;\n"
+                "                return LocaleController.formatString(R.string.formatDateAtTime, solar, time);\n"
                 "            }\n"
                 "        } catch (Throwable ignore) {\n"
                 "            return LocaleController.formatDateAudio(unixSeconds, true);\n"
@@ -1065,7 +922,9 @@ def patch_forward_menu_extras() -> None:
              "                    items.add(LocaleController.getString(R.string.A11yForwardWithoutQuote));\n"
              f"                    options.add({OPTION_FORWARD_NO_QUOTE});\n"
              "                    icons.add(R.drawable.msg_forward);\n"
-             "                    if (org.telegram.messenger.A11yConfig.getForwardHere()) { // a11y-fork: forward here (setting, default OFF)\n"
+             "                    // a11y-fork: the same \"cannot write here\" rule ChatActivity itself uses (not in the chat, a channel you cannot post in, or no permission to send)\n"
+             "                    boolean a11yCannotWriteHere = currentChat != null && (org.telegram.messenger.ChatObject.isNotInChat(currentChat) && !isThreadChat() || org.telegram.messenger.ChatObject.isChannel(currentChat) && !org.telegram.messenger.ChatObject.canPost(currentChat) && !currentChat.megagroup || !org.telegram.messenger.ChatObject.canSendMessages(currentChat));\n"
+             "                    if (org.telegram.messenger.A11yConfig.getForwardHere() && !a11yCannotWriteHere) { // a11y-fork: forward here (hidden where you cannot write)\n"
              "                        items.add(LocaleController.getString(R.string.A11yForwardHere));\n"
              f"                        options.add({OPTION_FORWARD_HERE});\n"
              "                        icons.add(R.drawable.msg_forward);\n"
@@ -1138,8 +997,7 @@ def patch_reactions_as_menu() -> None:
     # which implements the Reactions menu item using OPTION_TOGGLE_REACTIONS_ROW.
     # Do not add a second item with OPTION_REACTIONS_MENU.
     if "OPTION_TOGGLE_REACTIONS_ROW" in t and "Accessibility: put reactions behind" in t:
-        print("ChatActivity Reactions menu already provided by 04-comment-and-reactions.patch")
-        return
+        print("ChatActivity Reactions menu already provided by 04-comment-and-reactions.patch")        return
     if "a11y-fork: reactions menu item" in t:
         print("ChatActivity reactions-menu already patched")
         return
@@ -1770,7 +1628,9 @@ def patch_dialogcell_time_last() -> None:
         "            if (lastMessageDate == 0) {\n"
         "                a11yLastDate = message.messageOwner.date;\n"
         "            }\n"
-        "            String a11yPreviewDate = LocaleController.formatDateAudio(a11yLastDate, true);\n"
+        "            String a11yPreviewDate = (isTopic && org.telegram.messenger.A11yConfig.getSolarCalendar())\n"
+        "                    ? org.telegram.messenger.A11yConfig.formatSolarDateAudio(a11yLastDate)\n"
+        "                    : LocaleController.formatDateAudio(a11yLastDate, true); // a11y-fork: topic rows follow the Solar calendar setting\n"
         "            if (message.isOut()) {\n"
         "                sb.append(LocaleController.formatString(\"AccDescrSentDate\", R.string.AccDescrSentDate, a11yPreviewDate));\n"
         "            } else {\n"
@@ -1986,6 +1846,34 @@ def patch_links_as_menu() -> None:
         } catch (Throwable ignore) { return false; }
     }
 
+    // a11y-fork: "<visible link text> <address>"; just the address when the text already is the address
+    private String a11yLinkLabel(String anchor, String url) {
+        if (url == null) return "";
+        StringBuilder sb = new StringBuilder();
+        boolean prevSpace = true;
+        if (anchor != null) {
+            for (int i = 0; i < anchor.length(); i++) {
+                char ch = anchor.charAt(i);
+                if (Character.isWhitespace(ch)) {
+                    if (!prevSpace) sb.append(' ');
+                    prevSpace = true;
+                } else {
+                    sb.append(ch);
+                    prevSpace = false;
+                }
+            }
+        }
+        String text = sb.toString().trim();
+        if (text.length() == 0) return url;
+        String a = text.toLowerCase();
+        String u = url.toLowerCase();
+        if (a.startsWith("https://")) a = a.substring(8); else if (a.startsWith("http://")) a = a.substring(7);
+        if (u.startsWith("https://")) u = u.substring(8); else if (u.startsWith("http://")) u = u.substring(7);
+        if (a.endsWith("/")) a = a.substring(0, a.length() - 1);
+        if (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+        return a.equals(u) ? url : text + " " + url;
+    }
+
     private void a11yShowMessageLinks(MessageObject message) {
         try {
             java.util.ArrayList<String> links = new java.util.ArrayList<>();
@@ -1998,7 +1886,11 @@ def patch_links_as_menu() -> None:
                     String a11yLabel = null;
                     if (e instanceof TLRPC.TL_messageEntityTextUrl) {
                         url = ((TLRPC.TL_messageEntityTextUrl)e).url;
-                        a11yLabel = url;
+                        // a11y-fork: the row shows the link's own text first, then the address, the way the
+                        // message reads ("Download for Android https://play.google.com/...")
+                        int a11yTs = Math.max(0, Math.min(raw.length(), e.offset));
+                        int a11yTe = Math.max(a11yTs, Math.min(raw.length(), a11yTs + e.length));
+                        a11yLabel = a11yLinkLabel(raw.substring(a11yTs, a11yTe), url);
                     } else if (e instanceof TLRPC.TL_messageEntityUrl || e instanceof TLRPC.TL_messageEntityEmail) {
                         int s=Math.max(0,Math.min(raw.length(),e.offset));
                         int end=Math.max(s,Math.min(raw.length(),s+e.length));
@@ -2104,8 +1996,7 @@ def patch_bot_buttons_menu() -> None:
     t = cmc.read_text(encoding="utf-8")
     if "a11y-fork: bot buttons menu" in t:
         print("ChatMessageCell bot-buttons-menu already patched")
-    else:
-        old = (
+    else:        old = (
             "            final int separatorHeight = dp(4 + 4);\n"
             "            if (!messageObject.isRestrictedMessage && !messageObject.isRepostPreview "
             "&& (currentPosition == null || currentMessagesGroup != null && currentMessagesGroup.isDocuments "
@@ -2865,6 +2756,8 @@ def patch_fork_quiet_download_state() -> None:
                                       "        }\n", 1)
             sac.write_text(t, encoding="utf-8")
             print("SharedAudioCell download-state setting OK")
+        elif "AccessibilityTransferAnnouncer" in t:
+            print("SharedAudioCell uses the fork's announcer (made quiet unless the switch is on)")
         else:
             print("WARN: SharedAudioCell appendAccessibilityDownloadState not found")
 
@@ -3102,8 +2995,7 @@ def patch_contacts_list_accessibility() -> None:
         "        if (adminTextView != null && adminTextView.getVisibility() == VISIBLE) {\n"
         "            CharSequence admin = adminTextView.getText();\n",
         "UserCell mutual contact")
-    ca = JAVA / "org/telegram/ui/Adapters/ContactsAdapter.java"
-    _gate_once(
+    ca = JAVA / "org/telegram/ui/Adapters/ContactsAdapter.java"    _gate_once(
         ca,
         "                UserCell cell = new UserCell(mContext, 58, 1, false);\n                cell.setCallCellStyle(58);\n",
         "                UserCell cell = new UserCell(mContext, 58, 1, false);\n"
@@ -3261,6 +3153,92 @@ def patch_reply_longpress_opens_options() -> None:
         "            if (messageObject == null) return;\n"
         "            if (messageObject.isReplyToStory() && messageObject.messageOwner.replyStory != null) {\n",
         "ChatActivity reply long-press opens Message options")
+
+
+def patch_stuck_focus_after_longpress() -> None:
+    """After a REAL (touch) long press opens Message options, the popup window can swallow the
+    finger-up, so RecyclerListView keeps stale touch state (currentChildView still pressed,
+    longPressCalled still true). TalkBack focus then sticks on that message after Back until a
+    scroll (whose onScrollStateChanged clears exactly that state) happens. Opening Message options
+    from TalkBack's Actions menu sends no touch, so it never shows the bug. Fix: clear that state
+    when the message menu closes."""
+    rl = JAVA / "org/telegram/ui/Components/RecyclerListView.java"
+    marker = "a11y-fork: reset touch state after menu v1"
+    if not rl.exists():
+        print("WARN: RecyclerListView.java missing (stuck focus)")
+        return
+    t = rl.read_text(encoding="utf-8")
+    if marker not in t:
+        anchor = "    public void cancelClickRunnables(boolean uncheck) {\n"
+        if t.count(anchor) != 1:
+            print("WARN: RecyclerListView cancelClickRunnables anchor found %d times (stuck focus)" % t.count(anchor))
+            return
+        method = (
+            "    // " + marker + "\n"
+            "    public void a11yResetTouchState() {\n"
+            "        try {\n"
+            "            if (selectChildRunnable != null) {\n"
+            "                AndroidUtilities.cancelRunOnUIThread(selectChildRunnable);\n"
+            "                selectChildRunnable = null;\n"
+            "            }\n"
+            "            if (currentChildView != null) {\n"
+            "                View a11yChild = currentChildView;\n"
+            "                MotionEvent a11yCancel = MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0);\n"
+            "                try {\n"
+            "                    a11yChild.onTouchEvent(a11yCancel);\n"
+            "                } catch (Throwable ignore) {\n"
+            "                }\n"
+            "                a11yCancel.recycle();\n"
+            "                onChildPressed(a11yChild, 0, 0, false);\n"
+            "                currentChildView = null;\n"
+            "                removeSelection(a11yChild, null);\n"
+            "            }\n"
+            "            interceptedByChild = false;\n"
+            "            if (longPressCalled) {\n"
+            "                longPressCalled = false;\n"
+            "                if (onItemLongClickListenerExtended != null) {\n"
+            "                    onItemLongClickListenerExtended.onLongClickRelease();\n"
+            "                }\n"
+            "            }\n"
+            "            selectorRect.setEmpty();\n"
+            "        } catch (Throwable e) {\n"
+            "            FileLog.e(e);\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        t = t.replace(anchor, method + anchor, 1)
+        rl.write_text(t, encoding="utf-8")
+        print("RecyclerListView a11yResetTouchState OK")
+    else:
+        print("RecyclerListView a11yResetTouchState already patched")
+
+    ca = JAVA / "org/telegram/ui/ChatActivity.java"
+    if not ca.exists():
+        print("WARN: ChatActivity.java missing (stuck focus)")
+        return
+    c = ca.read_text(encoding="utf-8")
+    if marker in c:
+        print("ChatActivity stuck-focus reset already patched")
+        return
+    anchor = ("                    scrimPopupWindowItems = null;\n"
+              "                    chatLayoutManager.setCanScrollVertically(true);\n")
+    n = c.count(anchor)
+    if n < 1:
+        print("WARN: ChatActivity message-menu dismiss anchor not found (stuck focus)")
+        return
+    add = (
+        "                    // " + marker + "\n"
+        "                    try {\n"
+        "                        if (org.telegram.messenger.AndroidUtilities.isAccessibilityScreenReaderEnabled() && chatListView != null) {\n"
+        "                            chatListView.a11yResetTouchState();\n"
+        "                            chatListView.post(() -> chatListView.a11yResetTouchState());\n"
+        "                        }\n"
+        "                    } catch (Throwable ignore) {\n"
+        "                    }\n"
+    )
+    c = c.replace(anchor, anchor + add)
+    ca.write_text(c, encoding="utf-8")
+    print("ChatActivity stuck-focus reset OK (%d menu dismiss sites)" % n)
 
 
 def patch_longclickable_flag() -> None:
@@ -4016,8 +3994,7 @@ def patch_share_send_button_label() -> None:
     sa = JAVA / "org/telegram/ui/Components/ShareAlert.java"
     _gate_once(
         sa,
-        "        writeButtonContainer.setFocusableInTouchMode(true);\n",
-        "        writeButtonContainer.setFocusableInTouchMode(true);\n"
+        "        writeButtonContainer.setFocusableInTouchMode(true);\n",        "        writeButtonContainer.setFocusableInTouchMode(true);\n"
         "        writeButtonContainer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); // a11y-fork: the real button is the child\n",
         "ShareAlert frame hidden from TalkBack")
     _gate_once(
@@ -4643,7 +4620,7 @@ def patch_old_style_menu() -> None:
         "DialogsActivity old-style menu refresh")
     _gate_once(
         da,
-        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
+        "    private void showItemOptions() {\n",
         "    // a11y-fork: the entries of the old side drawer, each opening the screen the drawer opened\n"
         "    private void a11yShowOldStyleMenu() {\n"
         "        try {\n"
@@ -4676,7 +4653,7 @@ def patch_old_style_menu() -> None:
         "            FileLog.e(e);\n"
         "        }\n"
         "    }\n\n"
-        "    public ArrayList<TLRPC.Dialog> getDialogsArray(int currentAccount, int dialogsType, int folderId, boolean frozen) {\n",
+        "    private void showItemOptions() {\n",
         "DialogsActivity old-style menu list")
 
 
@@ -4927,12 +4904,8 @@ def patch_category_filter() -> None:
         "        }\n"
         "    }\n"
         "\n"
-        )
-    _gate_once(
-        da,
-        "    private static java.lang.ref.WeakReference<DialogsActivity> a11yCategoryInstance;\n",
-        "    private static java.lang.ref.WeakReference<DialogsActivity> a11yCategoryInstance;\n" + funcs,
-        "DialogsActivity category filter functions at class-level field anchor")
+        "    private void showItemOptions() {\n")
+    _gate_once(da, "    private void showItemOptions() {\n", funcs, "DialogsActivity category filter functions")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -5020,8 +4993,7 @@ _LEGACY_DRAWER_BLOB = (
     "tXaGlgfJwexugjgqt6thitC5haHaVzKUur31f1FRP1MC5GMsIgLg+j+4C0lFaRVgkDwhl1MEQpNPwHxqG5uhSrEXn6rEupBp9Pv/WbwfqXEUAz"
     "29UdVN3mQ5obk6XjFJoZXIg/OLloGJB3wf1ZkL5cNWnaRFXg07MpuiPk7+ieILCAWKXpA3sdDOfAkzJHv+EiLMQPXB495MUsn4go0TSDfiaKIW"
     "cxvs7wWUo+RfPsL3uzL2d0D2TlRTZbF2K0WwPNgWzCaUrmUuON4nyW8AlPYPw2i+4KBKokYm/q8h2/v5xDO2fLg3VZZmmFJT2xgaEQtaFwxZdx"
-    "iuuw96BxcYUOKBa6T4hTohnehQ7vLXh2HZXF5Q1P16cwmjxFofGuywgeTtZpeh9+/fXDvqTfDes8Kq/Ztx+F9nFlPduMNstubuKyTYhOg29pWx"
-    "18GQzH8IPGSM80WyLzIQRfdjI+Ow0nh68ux6dT9uNztrdrD9+WDmn1OtkxnS7pCwy3dZokLkqtl+7SBm/3Hz17PEoSwqPWsz9eZOBrTLJF+T7K"
+    "iuuw96BxcYUOKBa6T4hTohnehQ7vLXh2HZXF5Q1P16cwmjxFofGuywgeTtZpeh9+/fXDvqTfDes8Kq/Ztx+F9nFlPduMNstubuKyTYhOg29pWx"    "18GQzH8IPGSM80WyLzIQRfdjI+Ow0nh68ux6dT9uNztrdrD9+WDmn1OtkxnS7pCwy3dZokLkqtl+7SBm/3Hz17PEoSwqPWsz9eZOBrTLJF+T7K"
     "eRCYD3tWHZfGoNNL+GAI8YFh/GGGpTf80rEjPZyMOSCabXI0p8kWlta0LcmV01ZqmoiLZjzleXBLTxfNODylwKkJr6n3TBrGUk/1cTKv2Er7/Z"
     "w5OR+Y8FXdUfFxoa5tOsHDEgudiRwCGJHVKmJ4cnZ4dHl+Mf5lOD2yeorU+SAyaVRQOQELGkOaYXiIc+fK/AD9hwcwPXnodY8AUfwIdOK9yiFk"
     "f/7J2uDAqPoNqcWuZKStWVQ109qCdamo6kVYU7xgHatrFmJU+EE7aGudHd41ptqqLosUf4U3VNa/NM0jugqXTBE11OUd8v+uYYZg8+4LJ9XF1Z"
@@ -5594,6 +5566,27 @@ def patch_old_menu_extras() -> None:
     d = t.index(bt_end, c)
     theme_block = t[a:b]
     bots_block = t[c:d]
+    # keep only the declaration and the balanced `if (launchActivity != null ...) { ... }` block: upstream may wrap it
+    # in an else { } of its own (a wallet check), whose closing brace must not be copied along
+    _ip = bots_block.find("if (launchActivity != null")
+    if _ip < 0:
+        print("WARN: old-style menu extras: bots if-block not found")
+        return
+    _open = bots_block.index("{", _ip)
+    _depth = 0
+    _end = -1
+    for _k in range(_open, len(bots_block)):
+        if bots_block[_k] == "{":
+            _depth += 1
+        elif bots_block[_k] == "}":
+            _depth -= 1
+            if _depth == 0:
+                _end = _k + 1
+                break
+    if _end < 0:
+        print("WARN: old-style menu extras: bots if-block is not balanced")
+        return
+    bots_block = bots_block[:_end] + "\n"
     if "io.add(" not in theme_block or "addBot" not in bots_block:
         print("WARN: old-style menu extras: extracted blocks look wrong")
         return
@@ -5999,8 +5992,7 @@ def patch_selection_announce() -> None:
         "    }\n",
         "ChatActivity message selection announce")
     # the menu's own Select item: use the 3-argument method so it is announced once, by its own code
-    _gate_once(
-        ca,
+    _gate_once(        ca,
         "                        addToSelectedMessages(toSelect, false);\n"
         "                        updateActionModeTitle();\n",
         "                        addToSelectedMessages(toSelect, false, true);\n"
@@ -6134,10 +6126,26 @@ def patch_dialogs_select_all() -> None:
         "DialogsActivity select-all handler")
 
 
+def _r3_replace_once(path: Path, old: str, new: str, label: str) -> bool:
+    """Exact one-time replacement; prints OK / WARN."""
+    if not path.exists():
+        print("WARN: %s missing (%s)" % (path.name, label))
+        return False
+    t = path.read_text(encoding="utf-8")
+    n = t.count(old)
+    if n != 1:
+        print("WARN: %s: anchor found %d times (%s)" % (path.name, n, label))
+        return False
+    path.write_text(t.replace(old, new, 1), encoding="utf-8")
+    print("%s OK" % label)
+    return True
+
+
 def patch_round3_a11yconfig() -> None:
-    """Accessible Settings: one new switch (default OFF) + dialogs that follow Telegram's theme.
+    """Accessible Settings: two new switches (both default OFF) + dialogs that follow Telegram's theme.
 
     - "Counts on the media tabs of groups and channels"  (A11yConfig.getTabCounts)
+    - "Beep when a download finishes"                    (A11yConfig.getDownloadBeep)
     - every Accessible Settings dialog (the list and its pickers) takes its background from
       Telegram's current theme (dialogBackground), its text from dialogTextBlack and a dark or
       light base by the luminance of that background, so Dark / Black / custom themes are followed.
@@ -6157,6 +6165,7 @@ def patch_round3_a11yconfig() -> None:
         return
     code = r'''    // a11y-fork: round3 settings v1
     public static final String PREF_TAB_COUNTS = "a11y_media_tab_counts";
+    public static final String PREF_DOWNLOAD_BEEP = "a11y_download_done_beep";
 
     /** Write the number of items on the media tabs (Media, Files, Links, Music, Voice ...) of a group or channel. Default OFF. */
     public static boolean getTabCounts() {
@@ -6170,6 +6179,52 @@ def patch_round3_a11yconfig() -> None:
     public static void setTabCounts(boolean value) {
         try {
             MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_TAB_COUNTS, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /** Beep when a download the user started has finished, wherever TalkBack focus is. Default OFF. */
+    public static boolean getDownloadBeep() {
+        try {
+            return MessagesController.getGlobalMainSettings().getBoolean(PREF_DOWNLOAD_BEEP, false);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void setDownloadBeep(boolean value) {
+        try {
+            MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_DOWNLOAD_BEEP, value).apply();
+        } catch (Throwable ignore) {
+        }
+    }
+
+    private static long lastDownloadBeepMs = -100000;
+
+    /** Called from FileLoader (any thread) when a download that the user started has finished. */
+    public static void playDownloadDoneBeep() {
+        try {
+            if (!getDownloadBeep()) {
+                return;
+            }
+            final long now = android.os.SystemClock.elapsedRealtime();
+            if (now - lastDownloadBeepMs < 600) {
+                return; // several files of an album finishing together: one beep
+            }
+            lastDownloadBeepMs = now;
+            AndroidUtilities.runOnUIThread(() -> {
+                try {
+                    final android.media.ToneGenerator tone = new android.media.ToneGenerator(android.media.AudioManager.STREAM_RING, 90);
+                    tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 200);
+                    AndroidUtilities.runOnUIThread(() -> {
+                        try {
+                            tone.release();
+                        } catch (Throwable ignore) {
+                        }
+                    }, 320);
+                } catch (Throwable ignore) {
+                }
+            });
         } catch (Throwable ignore) {
         }
     }
@@ -6247,6 +6302,7 @@ def patch_round3_a11yconfig() -> None:
            "        return items;\n")
     new = ("        items.add(LocaleController.formatString(R.string.A11yForwardHereLabel, onOff(getForwardHere())));\n"
            "        items.add(LocaleController.formatString(R.string.A11yTabCountsLabel, onOff(getTabCounts())));\n"
+           "        items.add(LocaleController.formatString(R.string.A11yDownloadBeepLabel, onOff(getDownloadBeep())));\n"
            "        return items;\n")
     if t.count(old) != 1:
         print("WARN: A11yConfig settings items anchor not found (round3)")
@@ -6257,11 +6313,14 @@ def patch_round3_a11yconfig() -> None:
            "                    return;\n"
            "            }\n"
            "            refresh.run();\n")
-    new = ("                case 23:\n"
+    new = ("                case 22:\n"
            "                    setTabCounts(!getTabCounts());\n"
            "                    message = LocaleController.formatString(R.string.A11yTabCountsLabel, onOff(getTabCounts()));\n"
            "                    break;\n"
-) + old
+           "                case 23:\n"
+           "                    setDownloadBeep(!getDownloadBeep());\n"
+           "                    message = LocaleController.formatString(R.string.A11yDownloadBeepLabel, onOff(getDownloadBeep()));\n"
+           "                    break;\n") + old
     if t.count(old) != 1:
         print("WARN: A11yConfig settings switch anchor not found (round3)")
         return
@@ -6307,6 +6366,7 @@ def patch_round3_a11yconfig() -> None:
         print("WARN: an A11yConfig dialog was left un-themed")
     cfgp.write_text(t, encoding="utf-8")
     print("A11yConfig round3 switches + theme-following dialogs OK")
+
 
 def patch_round3_media_tab_counts() -> None:
     """Group / channel / user info: write the number of items on each media tab (setting, default OFF)."""
@@ -6377,6 +6437,7 @@ def patch_round3_media_tab_counts() -> None:
     p.write_text(t, encoding="utf-8")
     print("SharedMediaLayout media tab counts %s" % ("OK" if ok else "(with warnings)"))
 
+
 def patch_round3_link_long_press_copy() -> None:
     """A link held down (a normal long press, or TalkBack's long-click on a link) is copied at once and
     "Link copied" is spoken; the same long press on a row of the message-options Links menu copies it.
@@ -6388,15 +6449,17 @@ def patch_round3_link_long_press_copy() -> None:
         print("WARN: ChatActivity/AlertDialog missing (link copy)")
         return
     # 1) AlertDialog: a way to reach a row (to give it a long-click)
-    _multi_replace_once(
+    if "a11yGetItemView" in adlg.read_text(encoding="utf-8"):
+        print("AlertDialog a11yGetItemView already patched")
+    else:
+      _r3_replace_once(
         adlg,
-        [("    public int getItemsCount() {\n        return itemViews.size();\n    }\n",
-          "    public int getItemsCount() {\n        return itemViews.size();\n    }\n\n"
-          "    // a11y-fork: the view of a row of an items dialog (long-click on a link of the Links menu)\n"
-          "    public android.view.View a11yGetItemView(int item) {\n"
-          "        return item < 0 || item >= itemViews.size() ? null : itemViews.get(item);\n"
-          "    }\n")],
-        "a11yGetItemView",
+        "    public int getItemsCount() {\n        return itemViews.size();\n    }\n",
+        "    public int getItemsCount() {\n        return itemViews.size();\n    }\n\n"
+        "    // a11y-fork: the view of a row of an items dialog (long-click on a link of the Links menu)\n"
+        "    public android.view.View a11yGetItemView(int item) {\n"
+        "        return item < 0 || item >= itemViews.size() ? null : itemViews.get(item);\n"
+        "    }\n",
         "AlertDialog a11yGetItemView")
     t = chat.read_text(encoding="utf-8")
     marker = "a11y-fork: link long-press copy"
@@ -6519,6 +6582,67 @@ def patch_round3_link_long_press_copy() -> None:
     chat.write_text(t, encoding="utf-8")
     print("ChatActivity link long-press copy + v2ray links in the Links menu OK")
 
+
+def patch_private_seen_loading_text() -> None:
+    """The "seen at ..." row that long-pressing one of your own messages in a private chat adds to the
+    menu (MessagePrivateSeenView) keeps a placeholder text, literally "loading text ", for its shimmer
+    animation, and TalkBack reads it out. While the time is loading the row now says "Loading..."
+    (Telegram's own string, translated), and the placeholder is hidden from TalkBack the rest of the time."""
+    p = JAVA / "org/telegram/ui/Components/MessagePrivateSeenView.java"
+    if not p.exists():
+        print("WARN: MessagePrivateSeenView.java missing (loading text)")
+        return
+    t = p.read_text(encoding="utf-8")
+    marker = "a11y-fork: private seen loading"
+    if marker in t:
+        print("MessagePrivateSeenView loading text already patched")
+        return
+    NO = "android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO"
+    steps = [
+        # (old, new, expected count)
+        ("        loadingView.setText(text);\n",
+         "        loadingView.setText(text);\n"
+         "        loadingView.setContentDescription(LocaleController.getString(R.string.Loading)); // " + marker + "\n", 1),
+        ("            valueLayout.setAlpha(1f);\n            loadingView.setAlpha(0f);\n",
+         "            valueLayout.setAlpha(1f);\n            loadingView.setAlpha(0f);\n"
+         "            loadingView.setImportantForAccessibility(" + NO + "); // a11y-fork: private seen loading\n", 2),
+        ("        valueLayout.setAlpha(0f);\n        loadingView.setAlpha(1f);\n",
+         "        valueLayout.setAlpha(0f);\n        loadingView.setAlpha(1f);\n"
+         "        loadingView.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES); // a11y-fork: private seen loading\n"
+         "        valueLayout.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);\n", 1),
+        ("            valueLayout.animate().alpha(1f)",
+         "            loadingView.setImportantForAccessibility(" + NO + "); // a11y-fork: private seen loading\n"
+         "            valueLayout.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);\n"
+         "            valueLayout.animate().alpha(1f)", 1),
+    ]
+    for old, new, count in steps:
+        if t.count(old) != count:
+            print("WARN: MessagePrivateSeenView anchor found %d times, expected %d (loading text)" % (t.count(old), count))
+            return
+    for old, new, count in steps:
+        t = t.replace(old, new)
+    p.write_text(t, encoding="utf-8")
+    print("MessagePrivateSeenView loading text OK")
+
+
+def patch_round3_download_beep() -> None:
+    """Beep when a download the user started finishes (FileLoader; wherever the focus is). Setting, default OFF."""
+    p = JAVA / "org/telegram/messenger/FileLoader.java"
+    if p.exists() and "playDownloadDoneBeep" in p.read_text(encoding="utf-8"):
+        print("FileLoader download-finished beep already patched")
+        return
+    _r3_replace_once(
+        p,
+        "                    if (document != null && messageObject.putInDownloadsStore) {\n"
+        "                        getDownloadController().onDownloadComplete(messageObject);\n"
+        "                    }\n",
+        "                    if (document != null && messageObject.putInDownloadsStore) {\n"
+        "                        getDownloadController().onDownloadComplete(messageObject);\n"
+        "                        org.telegram.messenger.A11yConfig.playDownloadDoneBeep(); // a11y-fork: download finished beep (setting)\n"
+        "                    }\n",
+        "FileLoader download-finished beep")
+
+
 def patch_round3_category_folders() -> None:
     """The category dropdown of the chat list also lists the user's own Telegram folders (those made in the
     official app): All, the folders, then the built-in categories. With no folders it is exactly the old list."""
@@ -6613,113 +6737,6 @@ def patch_round3_category_folders() -> None:
     p.write_text(t, encoding="utf-8")
     print("DialogsActivity category folders OK")
 
-def patch_round4_menu_back_focus() -> None:
-    """Message options closed with Back: TalkBack focus goes back to the message the menu was opened on,
-    so swiping right continues with the next message (before, the focus was lost until a two-finger scroll)."""
-    p = JAVA / "org/telegram/ui/ChatActivity.java"
-    if not p.exists():
-        print("WARN: ChatActivity missing (menu back focus)")
-        return
-    t = p.read_text(encoding="utf-8")
-    if "a11y-fork: menu back focus" in t:
-        print("ChatActivity menu back focus already patched")
-        return
-    head = ("            scrimPopupWindow = new ActionBarPopupWindow(scrimPopupContainerLayout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT) {\n"
-            "                @Override\n"
-            "                public void dismiss() {\n"
-            "                    super.dismiss();\n"
-            "                    if (scrimPopupWindow != this) {\n"
-            "                        return;\n"
-            "                    }\n"
-            "                    if (Bulletin.getVisibleBulletin() == messageSeenPrivacyBulletin && messageSeenPrivacyBulletin != null) {\n")
-    if t.count(head) != 1:
-        print("WARN: ChatActivity message popup dismiss anchor found %d times (menu back focus)" % t.count(head))
-        return
-    mid = ("                        messageSeenPrivacyBulletin.hide();\n"
-           "                        messageSeenPrivacyBulletin = null;\n"
-           "                    }\n"
-           "                    scrimPopupWindow = null;\n"
-           "                    menuDeleteItem = null;\n"
-           "                    scrimPopupWindowItems = null;\n"
-           "                    chatLayoutManager.setCanScrollVertically(true);\n")
-    if t.count(head + mid) != 1:
-        print("WARN: ChatActivity dismiss body anchor found %d times (menu back focus)" % t.count(head + mid))
-        return
-    t = t.replace(head + mid, "            final MessageObject a11yFocusMessage = selectedObject; // a11y-fork: menu back focus\n            a11yMenuOptionChosen = false;\n" + head + mid + "                    a11yRestoreFocusAfterMenu(a11yFocusMessage);\n", 1)
-    click = ("                    cell.setOnClickListener(v1 -> {\n"
-             "                        if (selectedObject == null || i >= options.size()) {\n"
-             "                            return;\n"
-             "                        }\n"
-             "                        processSelectedOption(options.get(i));\n")
-    if t.count(click) != 1:
-        print("WARN: ChatActivity menu item click anchor found %d times (menu back focus)" % t.count(click))
-        return
-    t = t.replace(click, click.replace("                        processSelectedOption(options.get(i));\n",
-                                       "                        a11yMenuOptionChosen = true;\n                        processSelectedOption(options.get(i));\n"), 1)
-    anchor = "    public void closeMenu() {\n        closeMenu(true);\n    }\n"
-    if t.count(anchor) != 1:
-        print("WARN: ChatActivity closeMenu anchor not found (menu back focus)")
-        return
-    helper = r'''    private boolean a11yMenuOptionChosen;
-
-    private void a11yRestoreFocusAfterMenu(final MessageObject message) {
-        try {
-            if (message == null || !AndroidUtilities.isAccessibilityScreenReaderEnabled()) {
-                return;
-            }
-            AndroidUtilities.runOnUIThread(() -> {
-                try {
-                    if (scrimPopupWindow != null || chatListView == null) {
-                        return;
-                    }
-                    // an option that opened another screen or a dialog, or put the cursor in the message field, keeps its own focus
-                    if (getParentLayout() == null || getParentLayout().getLastFragment() != this || visibleDialog != null
-                            || (chatActivityEnterView != null && chatActivityEnterView.getEditField() != null && chatActivityEnterView.getEditField().isFocused())) {
-                        return;
-                    }
-                    for (int i = 0; i < chatListView.getChildCount(); i++) {
-                        final View c = chatListView.getChildAt(i);
-                        if (c instanceof ChatMessageCell) {
-                            final MessageObject mo = ((ChatMessageCell) c).getMessageObject();
-                            if (mo != null && mo.getId() == message.getId() && mo.getDialogId() == message.getDialogId()) {
-                                ((ChatMessageCell) c).resetAccessibilityStopFocus();
-                                c.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);
-                                c.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
-                                return;
-                            }
-                        }
-                    }
-                } catch (Throwable e) {
-                    FileLog.e(e);
-                }
-            }, 350);
-        } catch (Throwable e) {
-            FileLog.e(e);
-        }
-    }
-
-'''
-    t = t.replace(anchor, helper + anchor, 1)
-    p.write_text(t, encoding="utf-8")
-    print("ChatActivity menu back focus OK")
-
-def _multi_replace_once(path: Path, pairs, marker: str, label: str) -> None:
-    """Apply several exact replacements to one file: all of them or none (each anchor must occur exactly once)."""
-    if not path.exists():
-        print("%s not present -- nothing to do (%s)" % (path.name, label))
-        return
-    t = path.read_text(encoding="utf-8")
-    if marker in t:
-        print("%s already patched" % label)
-        return
-    for old, _new in pairs:
-        if t.count(old) != 1:
-            print("WARN: %s anchor found %d times in %s: %r" % (label, t.count(old), path.name, old[:70]))
-            return
-    for old, new in pairs:
-        t = t.replace(old, new, 1)
-    path.write_text(t, encoding="utf-8")
-    print("%s OK" % label)
 
 def patch_mehran_transfer_announcer_quiet() -> None:
     """The fork's AccessibilityTransferAnnouncer says 'downloaded / not downloaded' and the percentage of every
@@ -6751,6 +6768,26 @@ def patch_mehran_transfer_announcer_quiet() -> None:
     p.write_text(t, encoding="utf-8")
     print("AccessibilityTransferAnnouncer made quiet unless the state-words switch is on OK")
 
+
+def _multi_replace_once(path: Path, pairs, marker: str, label: str) -> None:
+    """Apply several exact replacements to one file: all of them or none (each anchor must occur exactly once)."""
+    if not path.exists():
+        print("%s not present -- nothing to do (%s)" % (path.name, label))
+        return
+    t = path.read_text(encoding="utf-8")
+    if marker in t:
+        print("%s already patched" % label)
+        return
+    for old, _new in pairs:
+        if t.count(old) != 1:
+            print("WARN: %s anchor found %d times in %s: %r" % (label, t.count(old), path.name, old[:70]))
+            return
+    for old, new in pairs:
+        t = t.replace(old, new, 1)
+    path.write_text(t, encoding="utf-8")
+    print("%s OK" % label)
+
+
 def patch_remove_mehran_progress_percent() -> None:
     """The fork patch speaks the percentage (and 'x of y MB') of every download and upload: as the progress
     changes, and inside what a message says. Our own RadialProgress already announces progress well, so the fork's
@@ -6761,7 +6798,9 @@ def patch_remove_mehran_progress_percent() -> None:
     _multi_replace_once(cmc, [
         ("    private void announceTransferProgress(boolean sending, long loadedSize, long totalSize) {\n",
          "    private void announceTransferProgress(boolean sending, long loadedSize, long totalSize) {\n"
-         "        // " + marker + ": numeric progress is handled by RadialProgress\n"),
+         "        if (true) { // " + marker + ": our own RadialProgress announces it\n"
+         "            return;\n"
+         "        }\n"),
         ("        sb.append(\" \").append(percent).append(\"%\");\n"
          "        if (totalSize > 0) {\n"
          "            sb.append(\", \").append(formatString(R.string.AccDescrTransferredSize, AndroidUtilities.formatFileSize(loadedSize), AndroidUtilities.formatFileSize(totalSize)));\n"
@@ -6772,7 +6811,9 @@ def patch_remove_mehran_progress_percent() -> None:
     _multi_replace_once(ata, [
         ("    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n",
          "    public void onProgress(long loadedSize, long totalSize, boolean withSize) {\n"
-         "        // " + marker + ": do not announce numeric progress here\n"),
+         "        if (true) { // " + marker + "\n"
+         "            return;\n"
+         "        }\n"),
         ("        if (sameFile && newState == state && (newState != STATE_DOWNLOADING || step == stateStep || now - stateTime < MIN_INTERVAL)) {\n",
          "        if (sameFile && newState == state) { // " + marker + ": no re-announcing while the percentage moves\n"),
         ("        if (withSize && totalSize > 0) {\n"
@@ -6782,6 +6823,7 @@ def patch_remove_mehran_progress_percent() -> None:
          "        return LocaleController.getString(R.string.Downloading) + \" \" + percent + \"%\";\n",
          "        return LocaleController.getString(R.string.Downloading); // " + marker + "\n"),
     ], marker, "AccessibilityTransferAnnouncer progress percent removed")
+
 
 def patch_row_click_no_clicked_event() -> None:
     """The newer fork patch makes a screen-reader press on a chat-list row (and a topic row) behave like a
@@ -6804,6 +6846,7 @@ def patch_row_click_no_clicked_event() -> None:
         "            onItemClickListenerExtended.onItemClick(item, position, x, y);\n"
         "        }\n",
         "RecyclerListView.clickItem no TYPE_VIEW_CLICKED")
+
 
 def patch_audio_bar_position_refresh() -> None:
     """The top audio-player bar says how far the music got ("30 seconds of 5 minutes"), but that text is built only
@@ -6866,6 +6909,7 @@ def patch_audio_bar_position_refresh() -> None:
          "    }\n"),
     ], marker, "FragmentContextView audio bar position refresh")
 
+
 def patch_longpress_same_menu_path() -> None:
     """A long press under TalkBack opened the Message options with other arguments than the 'Message options'
     action of TalkBack's actions list (which has never had the stuck-focus problem). An ordinary single message now
@@ -6893,6 +6937,7 @@ def patch_longpress_same_menu_path() -> None:
            "            } else {\n")
     p.write_text(t.replace(old, new, 1), encoding="utf-8")
     print("ChatActivity long press uses the same menu path as the Message options action OK")
+
 
 def main() -> int:
     if not Path("telegram").is_dir():
@@ -6946,8 +6991,7 @@ def main() -> int:
     if MEHRAN:
         patch_album_and_user_status_switches()
     patch_admin_tag_switch()
-    patch_share_send_button_label()
-    patch_chat_open_sound()
+    patch_share_send_button_label()    # patch_chat_open_sound() is off: the fork plays the click when a chat row is pressed
     patch_message_tap_sound()
     patch_proxy_toolbar_button()
     patch_old_style_menu()
@@ -6956,23 +7000,12 @@ def main() -> int:
     patch_legacy_navigation_drawer()
     patch_old_menu_hides_options()
     patch_old_menu_extras()
-    patch_dialog_row_tap_sound()
+    # patch_dialog_row_tap_sound() is off: the fork plays the click when a chat row is pressed
     patch_voice_share()
     patch_player_seek_buttons()
     patch_sender_options_menu()
     patch_selection_announce()
     patch_dialogs_select_all()
-    patch_round3_a11yconfig()
-    patch_download_completion_beep()
-    patch_round3_media_tab_counts()
-    patch_round3_link_long_press_copy()
-    patch_round3_category_folders()
-    patch_round4_menu_back_focus()
-    patch_mehran_transfer_announcer_quiet()
-    patch_remove_mehran_progress_percent()
-    patch_row_click_no_clicked_event()
-    patch_audio_bar_position_refresh()
-    patch_longpress_same_menu_path()
     patch_unlabeled_buttons()
     patch_audit_unlabeled_buttons()
     patch_contacts_list_accessibility()
@@ -6980,11 +7013,23 @@ def main() -> int:
     patch_more_unlabeled_buttons()
     patch_reply_longpress_opens_options()
     patch_longclickable_flag()
+    patch_stuck_focus_after_longpress()
     if not MEHRAN:
         patch_chat_message_cell_granularity_navigation_legacy()
     patch_stuck_together_bubbles_long_press()
     if MEHRAN:
         patch_mehran_strings_persian()
+    patch_round3_a11yconfig()
+    patch_round3_media_tab_counts()
+    patch_round3_link_long_press_copy()
+    patch_round3_download_beep()
+    patch_private_seen_loading_text()
+    patch_round3_category_folders()
+    patch_mehran_transfer_announcer_quiet()
+    patch_remove_mehran_progress_percent()
+    patch_row_click_no_clicked_event()
+    patch_audio_bar_position_refresh()
+    patch_longpress_same_menu_path()
     # MUST stay last: it rewrites English text injected by the patches above
     # (Selected / Bot Buttons / Forwarded to Saved / Accessible settings ...).
     patch_a11y_localization()
