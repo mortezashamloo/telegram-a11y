@@ -38,8 +38,8 @@ jobs:
           KEY=$(find patches-repo/scripts -type f \( -name '*.py' -o -name '*.patch' -o -name '*.java' \) -print0 2>/dev/null \
                  | sort -z | xargs -0 cat 2>/dev/null | sha256sum | cut -c1-16)
           if [ -z "$KEY" ]; then KEY="nopatches"; fi
-          echo "key=$KEY-\${{ steps.telegram_upstream.outputs.sha }}" >> "$GITHUB_OUTPUT"
-          echo "Patches/upstream cache key: $KEY-\${{ steps.telegram_upstream.outputs.sha }}"
+          echo "key=$KEY-${{ steps.telegram_upstream.outputs.sha }}" >> "$GITHUB_OUTPUT"
+          echo "Patches/upstream cache key: $KEY-${{ steps.telegram_upstream.outputs.sha }}"
 
       - name: Cache Telegram clone
         id: cache_telegram
@@ -55,7 +55,7 @@ jobs:
           git clone --recursive --depth 1 --branch master https://github.com/DrKLO/Telegram.git telegram
           cd telegram
           ACTUAL_SHA=$(git rev-parse HEAD)
-          EXPECTED_SHA="\${{ steps.telegram_upstream.outputs.sha }}"
+          EXPECTED_SHA="${{ steps.telegram_upstream.outputs.sha }}"
           echo "Telegram source commit: $ACTUAL_SHA"
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "ERROR: Telegram master moved during clone (expected $EXPECTED_SHA, got $ACTUAL_SHA). Refusing to build an untracked revision."
