@@ -5594,6 +5594,16 @@ def patch_old_menu_extras() -> None:
     d = t.index(bt_end, c)
     theme_block = t[a:b]
     bots_block = t[c:d]
+    # The source bots block lives inside the original wallet `else:` branch.
+    # Its final 8-space brace closes that outer `else`, not the bots `if`.
+    # This code is copied into a standalone try block in a11yShowOldStyleMenu(),
+    # so retaining that brace closes the try before its catch and breaks Java
+    # compilation ("try without catch"). Remove only that outer branch brace.
+    if bots_block.endswith("        }\n"):
+        bots_block = bots_block[:-len("        }\n")]
+    else:
+        print("WARN: old-style menu extras: expected trailing wallet-else brace not found")
+        return
     if "io.add(" not in theme_block or "addBot" not in bots_block:
         print("WARN: old-style menu extras: extracted blocks look wrong")
         return
