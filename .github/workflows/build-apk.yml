@@ -17,8 +17,20 @@ jobs:
         with:
           path: patches-repo
 
-      # a11y-fork: cache key based on the scripts folder (apply-a11y.py, A11yConfig.java,
-      # mehran-a11y.patch), so any change invalidates the Telegram clone cache.
+      # Resolve upstream master on every run so the cache is tied to the latest Telegram source.
+      - name: Resolve latest Telegram commit
+        id: telegram_upstream
+        run: |
+          set -e
+          SHA=$(git ls-remote https://github.com/DrKLO/Telegram.git refs/heads/master | cut -f1)
+          if [ -z "$SHA" ]; then
+            echo "ERROR: Could not resolve latest Telegram master commit"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Latest Telegram master: $SHA"
+
+      # Invalidate the Telegram clone cache when patches or upstream master changes.
       - name: Compute patches cache key
         id: patches_key
         run: |
@@ -26,8 +38,8 @@ jobs:
           KEY=$(find patches-repo/scripts -type f \( -name '*.py' -o -name '*.patch' -o -name '*.java' \) -print0 2>/dev/null \
                  | sort -z | xargs -0 cat 2>/dev/null | sha256sum | cut -c1-16)
           if [ -z "$KEY" ]; then KEY="nopatches"; fi
-          echo "key=$KEY" >> "$GITHUB_OUTPUT"
-          echo "Patches cache key: $KEY"
+          echo "key=$KEY-\${{ steps.telegram_upstream.outputs.sha }}" >> "$GITHUB_OUTPUT"
+          echo "Patches/upstream cache key: $KEY-\${{ steps.telegram_upstream.outputs.sha }}"
 
       - name: Cache Telegram clone
         id: cache_telegram
@@ -40,10 +52,15 @@ jobs:
         if: steps.cache_telegram.outputs.cache-hit != 'true'
         run: |
           set -e
-          git clone --recursive --depth 1 https://github.com/DrKLO/Telegram.git telegram
+          git clone --recursive --depth 1 --branch master https://github.com/DrKLO/Telegram.git telegram
           cd telegram
-          git fetch --depth 1 origin f2908b14
-          git checkout --detach f2908b14
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          EXPECTED_SHA="\${{ steps.telegram_upstream.outputs.sha }}"
+          echo "Telegram source commit: $ACTUAL_SHA"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "ERROR: Telegram master moved during clone (expected $EXPECTED_SHA, got $ACTUAL_SHA). Refusing to build an untracked revision."
+            exit 1
+          fi
           git submodule sync --recursive
           git submodule update --init --recursive --depth 1 || git submodule update --init --recursive
           if [ ! -f TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle ] && [ ! -f TMessagesProj/lib/jlatexmath/build.gradle ]; then
