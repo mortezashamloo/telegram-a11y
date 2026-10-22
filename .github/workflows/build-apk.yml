@@ -4,13 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       create_release:
-        type: boolean
+        type: choice
         description: 'Create a Release'
-        default: false
-        required: false
+        options:
+          - 'No'
+          - 'Yes'
+        default: 'No'
+        required: true
       tag_name:
         type: string
         description: 'Release Tag (e.g. v1.0.0 - optional)'
+        default: ''
+        required: false
+      release_title:
+        type: string
+        description: 'Release Title (e.g. Telegram Accessible v1.0 - optional)'
         default: ''
         required: false
       release_description:
@@ -311,11 +319,11 @@ jobs:
           retention-days: 14
 
       - name: Create GitHub Release
-        if: ${{ inputs.create_release }}
+        if: ${{ inputs.create_release == 'Yes' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag_name != '' && inputs.tag_name || format('v{0}', github.run_number) }}
-          name: ${{ inputs.tag_name != '' && inputs.tag_name || format('Release v{0}', github.run_number) }}
+          name: ${{ inputs.release_title != '' && inputs.release_title || (inputs.tag_name != '' && inputs.tag_name || format('Release v{0}', github.run_number)) }}
           body: ${{ inputs.release_description != '' && inputs.release_description || 'Automatic build release.' }}
           draft: false
           prerelease: false
